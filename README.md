@@ -30,7 +30,7 @@ Local machine                       Public VPS
 ### 1. Build
 
 ```bash
-git clone https://github.com/your-user/gotunnel
+git clone https://github.com/RGPtv/gotunnel
 cd gotunnel
 go build -o gotunnel .
 ```

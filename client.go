@@ -35,11 +35,10 @@ func normalizeServerAddr(raw string) string {
 	raw = strings.TrimRight(raw, "/")
 
 	if !strings.Contains(raw, "://") {
-		// bare host:port or bare hostname
 		if _, _, err := net.SplitHostPort(raw); err == nil {
-			return raw // already host:port
+			return raw
 		}
-		return raw + ":443" // bare hostname, assume TLS 443
+		return raw + ":443"
 	}
 
 	u, err := url.Parse(raw)
@@ -60,11 +59,11 @@ func normalizeServerAddr(raw string) string {
 
 func runClient(args []string) {
 	fs := flag.NewFlagSet("client", flag.ExitOnError)
-	server   := fs.String("server", "",              "Tunnel server — host:port or https://host[:port] (required)")
-	token    := fs.String("token",  "",              "Auth token — must match server's -token (required)")
-	target   := fs.String("target", "localhost:8080","Local service to tunnel, e.g. localhost:11434")
-	workers  := fs.Int("workers",   5,               "Number of parallel tunnel connections")
-	insecure := fs.Bool("k",        false,           "Skip TLS cert verification (for self-signed certs)")
+	server   := fs.String("server",  "",               "Tunnel server — host:port or https://host[:port] (required)")
+	token    := fs.String("token",   "",               "Auth token — must match server's -token (required)")
+	target   := fs.String("target",  "localhost:8080", "Local service to tunnel, e.g. localhost:3000")
+	workers  := fs.Int("workers",    10,               "Number of parallel tunnel connections")
+	insecure := fs.Bool("k",         false,            "Skip TLS cert verification (for self-signed certs)")
 	fs.Parse(args)
 
 	if *server == "" {
@@ -87,10 +86,10 @@ func runClient(args []string) {
 					Timeout:   10 * time.Second,
 					KeepAlive: 30 * time.Second,
 				}).DialContext,
-				MaxIdleConns:          100,
-				MaxIdleConnsPerHost:   20,
+				MaxIdleConns:          200,
+				MaxIdleConnsPerHost:   50,
 				IdleConnTimeout:       90 * time.Second,
-				ResponseHeaderTimeout: 0, // no timeout — target service may be slow to respond
+				ResponseHeaderTimeout: 0, // no timeout — target may be slow
 			},
 			CheckRedirect: func(*http.Request, []*http.Request) error {
 				return http.ErrUseLastResponse // pass redirects through unchanged
@@ -105,7 +104,6 @@ func runClient(args []string) {
 		log.Printf("⚠  TLS cert verification disabled (-k)")
 	}
 
-	// Start all workers; block until channel closes (never, in normal operation).
 	done := make(chan struct{})
 	for i := 0; i < *workers; i++ {
 		go c.runWorker(i + 1)
@@ -131,7 +129,7 @@ func (c *Client) runWorker(id int) {
 }
 
 // connectAndServe opens one TLS connection to the server, authenticates, and
-// then processes HTTP requests in a loop until the connection breaks.
+// then processes HTTP/WebSocket requests in a loop until the connection breaks.
 func (c *Client) connectAndServe(id int) error {
 	conn, err := tls.Dial("tcp", c.serverAddr, c.tlsConfig)
 	if err != nil {
@@ -142,10 +140,8 @@ func (c *Client) connectAndServe(id int) error {
 	reader := bufio.NewReaderSize(conn, 64*1024)
 
 	// ── WebSocket upgrade handshake ───────────────────────────────────────────
-	// GitHub Codespaces (and most HTTP proxies) only forward connections that
-	// look like valid WebSocket upgrades. We perform a real WS handshake so the
-	// proxy is satisfied, then use the resulting raw TCP connection as our
-	// tunnel transport.
+	// Most HTTP proxies (GitHub Codespaces, ngrok, etc.) only forward
+	// connections that look like valid WebSocket upgrades.
 	wsKey := base64.StdEncoding.EncodeToString([]byte("gotunnel-key"))
 	fmt.Fprintf(conn,
 		"GET /_tunnel/connect HTTP/1.1\r\n"+
@@ -189,6 +185,16 @@ func (c *Client) connectAndServe(id int) error {
 
 		log.Printf("[w%d] ← %s %s", id, req.Method, req.URL.RequestURI())
 
+		// WebSocket upgrade from a browser — handle as a raw TCP pipe.
+		if strings.ToLower(req.Header.Get("Upgrade")) == "websocket" {
+			if err := c.handleWebSocket(id, conn, reader, req); err != nil {
+				return fmt.Errorf("websocket: %w", err)
+			}
+			// After a WebSocket session the tunnel connection is spent.
+			return nil
+		}
+
+		// Regular HTTP request.
 		resp, proxyErr := c.forwardToTarget(req)
 		if proxyErr != nil {
 			log.Printf("[w%d] target error: %v", id, proxyErr)
@@ -207,11 +213,63 @@ func (c *Client) connectAndServe(id int) error {
 	}
 }
 
+// handleWebSocket dials the local target, completes the WebSocket handshake,
+// then pipes both directions until either side closes.
+func (c *Client) handleWebSocket(id int, tunnelConn net.Conn, tunnelReader *bufio.Reader, req *http.Request) error {
+	// Dial the local target directly (raw TCP so we can splice).
+	targetConn, err := net.DialTimeout("tcp", c.targetAddr, 10*time.Second)
+	if err != nil {
+		writeErrorResponse(tunnelConn, 502, err.Error())
+		return fmt.Errorf("dial target for ws: %w", err)
+	}
+	defer targetConn.Close()
+
+	// Rewrite and forward the upgrade request to the local service.
+	req.URL.Scheme = "http"
+	req.URL.Host = c.targetAddr
+	req.Host = c.targetAddr
+	req.RequestURI = ""
+	req.Header.Del("X-Forwarded-For")
+	req.Header.Del("X-Forwarded-Proto")
+
+	if err := req.Write(targetConn); err != nil {
+		return fmt.Errorf("ws write to target: %w", err)
+	}
+
+	// Read the 101 from the local service and relay it back through the tunnel.
+	targetReader := bufio.NewReaderSize(targetConn, 64*1024)
+	resp, err := http.ReadResponse(targetReader, req)
+	if err != nil {
+		return fmt.Errorf("ws read from target: %w", err)
+	}
+	if err := resp.Write(tunnelConn); err != nil {
+		return fmt.Errorf("ws relay 101: %w", err)
+	}
+
+	log.Printf("[w%d] ws open: %s", id, req.URL.Path)
+
+	// Splice: tunnel ↔ target, bidirectionally.
+	done := make(chan struct{}, 2)
+	cp := func(dst io.Writer, src io.Reader) {
+		io.Copy(dst, src)
+		done <- struct{}{}
+	}
+	go cp(targetConn, tunnelReader) // server → local target
+	go cp(tunnelConn, targetReader) // local target → server
+	<-done
+
+	log.Printf("[w%d] ws closed: %s", id, req.URL.Path)
+	return nil
+}
+
 // forwardToTarget rewrites the request URL to point at the local target service.
 func (c *Client) forwardToTarget(req *http.Request) (*http.Response, error) {
 	req.URL.Scheme = "http"
 	req.URL.Host = c.targetAddr
-	req.Host = c.targetAddr
+	// Preserve the original Host header — many apps depend on it for routing.
+	if req.Host == "" {
+		req.Host = c.targetAddr
+	}
 	req.RequestURI = "" // must be empty when using http.Client
 
 	req.Header.Del("X-Forwarded-For")

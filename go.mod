@@ -1,3 +1,3 @@
-module github.com/local/gotunnel
+module github.com/RGPtv/gotunnel
 
 go 1.21

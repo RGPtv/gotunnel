@@ -68,7 +68,7 @@ func runServer(args []string) {
 	token := fs.String("token", "", "Shared auth token — must match client's -token (required)")
 	certFile := fs.String("cert", "", "TLS cert PEM file (auto-generated if empty)")
 	keyFile := fs.String("key", "", "TLS key PEM file (auto-generated if empty)")
-	apiKey := fs.String("apikey", "", "Optional API key required on all HTTP requests")
+	apiKey := fs.String("apikey", "", "Optional API key required on all HTTP requests (use 'auto' to auto-generate)")
 	auth := fs.String("auth", "", "Optional HTTP Basic Auth (format: user:pass)")
 	domain := fs.String("domain", "", "Base domain for subdomain routing (e.g., example.com)")
 	noTLS := fs.Bool("notls", false, "Disable TLS on tunnel port (use when behind a TLS-terminating proxy)")
@@ -87,6 +87,15 @@ func runServer(args []string) {
 		*token = hex.EncodeToString(b)
 		log.Printf("▶  Auto-generated token (give this to your clients)")
 		log.Printf("   %s...", (*token)[:8])
+	}
+
+	if *apiKey == "auto" {
+		b := make([]byte, 16)
+		if _, err := rand.Read(b); err != nil {
+			log.Fatalf("failed to generate apikey: %v", err)
+		}
+		*apiKey = hex.EncodeToString(b)
+		log.Printf("▶  Auto-generated API key: %s", *apiKey)
 	}
 
 	if *inspect != "" && *inspectPass == "" {

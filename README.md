@@ -16,10 +16,10 @@ Local machine                       Public VPS
 
 - **Standard Library Only**: Built entirely with the Go standard library. No external dependencies.
 - **Terminal UI**: Real-time traffic monitoring in the terminal.
-- **Web Inspector**: Local web interface (`localhost:4040`) for traffic inspection and request replay.
+- **Modern Dashboard UI**: Redesigned tabbed web inspector (`localhost:4040`) featuring a navigation sidebar, overview metrics, and a full traffic inspector panel.
 - **Protocol Support**: HTTP, WebSockets, and raw TCP.
 - **Subdomain Routing**: Route traffic to multiple local services using subdomains.
-- **Security**: Supports HTTP Basic Auth, auto-generated self-signed TLS certificates, and API keys.
+- **Security**: Supports HTTP Basic Auth, auto-generated self-signed TLS certificates, and API key authentication (with automatic secure key generation).
 - **Configuration**: Manage tunnels via JSON configuration files.
 
 ## Installation
@@ -43,10 +43,11 @@ Run the server on your remote machine (e.g., a public VPS). By default, it liste
   -http :8080 \
   -tun :2222 \
   -domain example.com \  # Optional: enable subdomain routing
-  -auth admin:secret     # Optional: HTTP basic authentication
+  -auth admin:secret \   # Optional: HTTP basic authentication
+  -apikey auto           # Optional: enable API key auth & auto-generate a secure key
 ```
 
-The server generates a secure 256-bit token on startup. Note this token as it is required for the client. Ensure ports `8080` and `2222` are open in your firewall.
+The server generates a secure 256-bit client token on startup (required for clients). If `-apikey auto` is set, a secure 256-bit API key is also auto-generated and logged. Ensure ports `8080` and `2222` are open in your firewall.
 
 ### 2. Start the Client
 
@@ -91,15 +92,24 @@ Start a specific tunnel from the configuration:
 ./gotunnel start api -k
 ```
 
-## Traffic Inspector
+## Web Dashboard & Traffic Inspector
 
-The server provides a web-based dashboard for monitoring and inspecting traffic.
+The server provides a modern, responsive web-based dashboard for monitoring, configuration overview, and request inspection.
 
-When the server is running, navigate to `http://127.0.0.1:4040` (or your configured inspector address). The dashboard provides:
-- Authentication management (view/copy tokens).
-- Active tunnel endpoints and connection states.
-- Real-time HTTP request/response inspection.
-- Request replay capabilities.
+When the server is running, navigate to `http://127.0.0.1:4040` (or your configured inspector address) and log in. The dashboard is divided into two primary views managed by the left sidebar navigation:
+
+### 1. Overview
+The default landing view, offering:
+- **Server Metrics**: Real-time tracking of total requests, active connections, proxy endpoints, and tunnel ports.
+- **Client Auth Token**: View, reveal, and quickly copy the shared client authentication token.
+- **API Key**: If API key authentication is enabled (e.g., via `-apikey auto`), this section displays the current API key, with fully integrated reveal and copy actions.
+
+### 2. Traffic Inspector
+An advanced request/response monitoring suite that provides:
+- **Real-Time Request Stream**: Instant updates of incoming HTTP requests with method, path, hostname, response status, and duration metrics.
+- **Search & Filters**: Quickly locate specific requests by searching their paths or methods.
+- **Deep Inspection**: View detailed HTTP headers and formatted body payloads for both requests and responses.
+- **Request Replay**: Trigger one-click replays of captured requests directly to your local service.
 
 ## Advanced Configuration
 
@@ -197,19 +207,20 @@ Connect the client using `wss://` (HTTPS):
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-http` | `:8080` | HTTP listen address |
+| `-http` | `:8080` | HTTP listen address for external users |
 | `-https` | | HTTPS listen address (requires `-cert` and `-key`) |
-| `-tun` | `:2222` | Tunnel listen address |
-| `-token` | *(auto)* | Shared authentication token |
+| `-tun` | `:2222` | Tunnel listen address for clients |
+| `-token` | *(auto)* | Shared client authentication token |
 | `-cert` | *(auto)* | TLS certificate PEM file |
 | `-key` | *(auto)* | TLS key PEM file |
-| `-apikey` | | Optional HTTP API key |
+| `-apikey` | | Optional HTTP API key required on all client requests (pass `auto` to auto-generate) |
 | `-auth` | | Optional HTTP Basic Auth (`user:pass`) |
-| `-domain` | | Base domain for routing |
-| `-inspect` | `:4040` | Inspector web UI address |
-| `-inspect-user`| `admin` | Dashboard username |
-| `-inspect-pass`| *(auto)* | Dashboard password |
+| `-domain` | | Base domain for subdomain routing |
+| `-inspect` | `:4040` | Inspector web UI address (empty to disable) |
+| `-inspect-user`| `admin` | Dashboard login username |
+| `-inspect-pass`| *(auto)* | Dashboard login password (auto-generated if empty) |
 | `-notls` | `false` | Disable TLS on tunnel port |
+| `-poolsize` | `512` | Maximum connection capacity per tunnel pool |
 
 ### `client`
 

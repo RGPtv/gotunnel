@@ -16,10 +16,10 @@ import (
 	"time"
 )
 
-//go:embed inspector_ui.html
+//go:embed ui/dashboard.html
 var inspectorHTML string
 
-//go:embed login_ui.html
+//go:embed ui/login.html
 var loginHTML string
 
 const maxCapturedRequests = 500
@@ -228,6 +228,7 @@ func (ins *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"uptime_sec":   int(time.Since(ins.StartTime).Seconds()),
 			"total":        total,
 			"token":        ins.Token,
+			"apikey":       ins.srv.apiKey,
 			"active_conns": active,
 		})
 	case "/api/tunnels":
@@ -396,6 +397,7 @@ func (ins *Inspector) handleStatusSSE(w http.ResponseWriter, r *http.Request) {
 				"uptime_sec":   int(time.Since(ins.StartTime).Seconds()),
 				"total":        total,
 				"token":        ins.Token,
+				"apikey":       ins.srv.apiKey,
 				"active_conns": active,
 				"tunnels":      tunnels,
 			}

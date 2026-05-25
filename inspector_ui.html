@@ -3,578 +3,1042 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>gotunnel — Dashboard</title>
+<title>gotunnel · Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-*{margin:0;padding:0;box-sizing:border-box}
-:root{
-  --bg:#06090f;--surface:#0d1117;--card:#151b27;--card-hover:#1a2233;
-  --border:#1e2a3a;--border-glow:rgba(56,189,248,.08);
-  --text:#e2e8f0;--text-secondary:#94a3b8;--muted:#475569;
-  --accent:#38bdf8;--accent-dim:rgba(56,189,248,.1);--accent-glow:rgba(56,189,248,.25);
-  --green:#22c55e;--green-dim:rgba(34,197,94,.12);--green-glow:rgba(34,197,94,.3);
-  --amber:#f59e0b;--amber-dim:rgba(245,158,11,.12);
-  --red:#ef4444;--red-dim:rgba(239,68,68,.12);
-  --purple:#a78bfa;--purple-dim:rgba(167,139,250,.12);
-  --get:#22c55e;--post:#3b82f6;--put:#f59e0b;--delete:#ef4444;--patch:#a78bfa;--head:#64748b;
-  --s2:#22c55e;--s3:#3b82f6;--s4:#f59e0b;--s5:#ef4444;
-  --radius:12px;--radius-sm:8px;
-}
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
-body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
-/* ── Scrollbar ─────────────────────────────── */
-::-webkit-scrollbar{width:6px}
-::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
-::-webkit-scrollbar-thumb:hover{background:var(--muted)}
+:root {
+  --bg: #0a0a0a;
+  --surface: #111111;
+  --surface-2: #161616;
+  --border: #1f1f1f;
+  --border-2: #2a2a2a;
+  --text: #ededed;
+  --text-2: #a1a1a1;
+  --text-3: #555555;
+  --accent: #ededed;
+  --blue: #3b82f6;
+  --green: #22c55e;
+  --amber: #f59e0b;
+  --red: #ef4444;
+  --purple: #a78bfa;
+  --cyan: #22d3ee;
+  --r: 8px;
+  --r-lg: 10px;
 
-/* ── Header ─────────────────────────────────── */
-header{
-  background:linear-gradient(180deg,var(--surface) 0%,rgba(13,17,23,.95) 100%);
-  border-bottom:1px solid var(--border);padding:0 24px;height:56px;
-  display:flex;align-items:center;justify-content:space-between;
-  position:sticky;top:0;z-index:100;backdrop-filter:blur(20px);
-}
-.brand{display:flex;align-items:center;gap:12px}
-.logo{
-  font-size:18px;font-weight:800;letter-spacing:-.5px;
-  background:linear-gradient(135deg,#38bdf8 0%,#818cf8 50%,#a78bfa 100%);
-  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
-}
-.badge{
-  font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;
-  background:var(--accent-dim);color:var(--accent);
-  padding:3px 10px;border-radius:20px;border:1px solid rgba(56,189,248,.15);
-}
-.header-right{display:flex;align-items:center;gap:16px}
-.status-pill{
-  display:flex;align-items:center;gap:8px;
-  background:var(--green-dim);border:1px solid rgba(34,197,94,.2);
-  padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;color:var(--green);
-}
-.status-dot{
-  width:7px;height:7px;border-radius:50%;background:var(--green);
-  box-shadow:0 0 8px var(--green-glow);animation:pulse 2s ease-in-out infinite;
-}
-@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.6;transform:scale(.85)}}
-.uptime{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
-.logout-btn{
-  font-size:12px;font-weight:600;color:var(--muted);background:none;
-  border:1px solid var(--border);padding:5px 14px;border-radius:20px;
-  cursor:pointer;transition:all .2s;font-family:'Inter',sans-serif;
-}
-.logout-btn:hover{color:var(--text);border-color:var(--text-secondary)}
+  --method-get: #22c55e;
+  --method-post: #3b82f6;
+  --method-put: #f59e0b;
+  --method-delete: #ef4444;
+  --method-patch: #a78bfa;
+  --method-head: #6b7280;
+  --method-options: #6b7280;
 
-/* ── Dashboard Grid ─────────────────────────── */
-.dashboard{padding:20px 24px;display:flex;flex-direction:column;gap:16px}
-
-/* ── Status Cards ───────────────────────────── */
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
-.card{
-  background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
-  padding:16px 20px;position:relative;overflow:hidden;
-  transition:border-color .2s,box-shadow .2s,transform .15s;
-}
-.card:hover{
-  border-color:rgba(56,189,248,.15);
-  box-shadow:0 4px 24px rgba(0,0,0,.3),0 0 0 1px var(--border-glow);
-  transform:translateY(-1px);
-}
-.card::before{
-  content:'';position:absolute;top:0;left:0;right:0;height:1px;
-  background:linear-gradient(90deg,transparent,rgba(56,189,248,.2),transparent);
-  opacity:0;transition:opacity .2s;
-}
-.card:hover::before{opacity:1}
-.card-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:8px}
-.card-value{font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:500;color:var(--text);word-break:break-all;line-height:1.5}
-.card-icon{position:absolute;top:14px;right:16px;font-size:18px;opacity:.4}
-
-/* ── Token Card (special) ───────────────────── */
-.card.token-card{grid-column:1 / -1}
-.token-row{display:flex;align-items:center;gap:10px}
-.token-value{
-  flex:1;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:500;
-  color:var(--accent);background:var(--accent-dim);
-  padding:8px 14px;border-radius:var(--radius-sm);border:1px solid rgba(56,189,248,.1);
-  letter-spacing:.3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-  user-select:all;
-}
-.token-value.masked{color:var(--muted);letter-spacing:2px;user-select:none}
-.token-btn{
-  display:flex;align-items:center;justify-content:center;
-  width:36px;height:36px;border-radius:var(--radius-sm);border:1px solid var(--border);
-  background:var(--card);color:var(--text-secondary);cursor:pointer;
-  transition:all .2s;flex-shrink:0;font-size:15px;
-}
-.token-btn:hover{background:var(--card-hover);border-color:var(--accent);color:var(--accent)}
-.token-btn.copied{background:var(--green-dim);border-color:var(--green);color:var(--green)}
-
-/* ── Section Headers ────────────────────────── */
-.section-header{
-  display:flex;align-items:center;justify-content:space-between;
-  padding:0 0 4px 0;
-}
-.section-title{
-  font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;
-  color:var(--text-secondary);display:flex;align-items:center;gap:8px;
-}
-.section-title .count{
-  font-size:11px;font-weight:600;color:var(--accent);
-  background:var(--accent-dim);padding:2px 8px;border-radius:10px;
-  font-variant-numeric:tabular-nums;
-}
-.clear-btn{
-  font-size:11px;font-weight:600;color:var(--muted);background:none;border:1px solid var(--border);
-  padding:4px 12px;border-radius:6px;cursor:pointer;transition:all .2s;
-}
-.clear-btn:hover{color:var(--text);border-color:var(--text-secondary)}
-
-/* ── Request Table ──────────────────────────── */
-.inspector{
-  background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
-  overflow:hidden;flex:1;min-height:300px;display:flex;flex-direction:column;
-}
-.table-header{
-  display:grid;grid-template-columns:80px 68px 1fr 60px 80px 80px;
-  padding:10px 20px;font-size:10px;font-weight:700;text-transform:uppercase;
-  letter-spacing:.6px;color:var(--muted);background:var(--surface);
-  border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10;
-}
-.req-scroll{overflow-y:auto;flex:1}
-.req-table{width:100%}
-.req-row{
-  display:grid;grid-template-columns:80px 68px 1fr 60px 80px 80px;
-  align-items:center;padding:9px 20px;border-bottom:1px solid rgba(30,42,58,.5);
-  cursor:pointer;transition:background .12s;font-size:13px;
-}
-.req-row:hover{background:var(--card-hover)}
-.req-row.new{animation:slideIn .4s ease}
-@keyframes slideIn{
-  from{opacity:0;transform:translateY(-6px);background:var(--accent-dim)}
-  to{opacity:1;transform:translateY(0);background:transparent}
+  --status-2: #22c55e;
+  --status-3: #3b82f6;
+  --status-4: #f59e0b;
+  --status-5: #ef4444;
 }
 
-.req-time{color:var(--muted);font-family:'JetBrains Mono',monospace;font-size:10px}
-.req-method{
-  font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;
-  padding:3px 0;border-radius:4px;text-align:center;width:54px;
+html { height: 100%; }
+body {
+  font-family: 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  -webkit-font-smoothing: antialiased;
+  font-size: 14px;
 }
-.req-method.GET{background:rgba(34,197,94,.12);color:var(--get)}
-.req-method.POST{background:rgba(59,130,246,.12);color:var(--post)}
-.req-method.PUT{background:rgba(245,158,11,.12);color:var(--put)}
-.req-method.DELETE{background:rgba(239,68,68,.12);color:var(--delete)}
-.req-method.PATCH{background:rgba(167,139,250,.12);color:var(--patch)}
-.req-method.HEAD,.req-method.OPTIONS{background:rgba(100,116,139,.12);color:var(--head)}
-.req-path{
-  font-family:'JetBrains Mono',monospace;font-size:12px;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:12px;
-}
-.req-status{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:12px}
-.req-status.s2{color:var(--s2)}.req-status.s3{color:var(--s3)}
-.req-status.s4{color:var(--s4)}.req-status.s5{color:var(--s5)}
-.req-dur{color:var(--muted);font-family:'JetBrains Mono',monospace;font-size:11px;text-align:right}
-.req-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px}
-.replay-btn{
-  background:transparent;color:var(--accent);border:1px solid rgba(56,189,248,.2);
-  border-radius:5px;padding:3px 8px;font-size:10px;font-weight:700;
-  cursor:pointer;transition:all .2s;font-family:'Inter',sans-serif;
-}
-.replay-btn:hover{background:var(--accent-dim);border-color:var(--accent)}
-.req-expand{color:var(--muted);transition:transform .2s;font-size:14px;cursor:pointer}
-.req-expand.open{transform:rotate(90deg);color:var(--accent)}
 
-/* ── Detail Panel ───────────────────────────── */
-.req-detail{
-  display:none;background:rgba(13,17,23,.6);border-bottom:1px solid var(--border);
-  padding:16px 20px;animation:fadeIn .2s ease;
-}
-.req-detail.open{display:block}
-@keyframes fadeIn{from{opacity:0}to{opacity:1}}
-.detail-cols{display:grid;grid-template-columns:1fr 1fr;gap:20px}
-.detail-section{margin-bottom:0}
-.detail-title{
-  font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;
-  color:var(--accent);margin-bottom:8px;
-}
-.detail-headers{font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.9;color:var(--muted)}
-.detail-headers .hdr-key{color:var(--text-secondary);font-weight:500}
+/* Scrollbars */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 99px; }
 
-/* ── Tunnels Grid ───────────────────────────── */
-.tunnels-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
-.tunnel-item{
-  background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);
-  padding:12px 16px;display:flex;align-items:center;gap:12px;
-  transition:border-color .2s,transform .15s,box-shadow .2s;
-  cursor:pointer;
+/* ── Top Nav ─────────────────────────────────── */
+nav {
+  height: 52px;
+  min-height: 52px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  gap: 0;
+  background: var(--bg);
+  z-index: 50;
 }
-.tunnel-item:hover{border-color:rgba(56,189,248,.3);transform:translateY(-1px)}
-.tunnel-item.selected{
-  border-color:var(--accent);
-  box-shadow:0 0 0 1px var(--accent-glow), inset 0 0 12px rgba(56,189,248,.05);
-}
-.tunnel-badge{
-  font-size:10px;font-weight:700;padding:3px 8px;border-radius:5px;flex-shrink:0;
-  font-family:'JetBrains Mono',monospace;
-}
-.tunnel-badge.http{background:rgba(34,197,94,.12);color:var(--get)}
-.tunnel-badge.tcp{background:rgba(167,139,250,.12);color:var(--purple)}
-.tunnel-endpoint{
-  font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text);
-  flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-}
-.tunnel-conns{font-size:11px;color:var(--muted);flex-shrink:0}
-.tunnel-empty{font-size:13px;color:var(--muted);padding:16px 0}
 
-/* ── Empty State ────────────────────────────── */
-.empty-state{
-  display:flex;flex-direction:column;align-items:center;justify-content:center;
-  padding:60px 24px;text-align:center;
+.nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-right: 24px;
 }
-.empty-icon{font-size:40px;margin-bottom:12px;opacity:.5}
-.empty-text{font-size:15px;font-weight:600;margin-bottom:6px;color:var(--text-secondary)}
-.empty-hint{font-size:12px;color:var(--muted)}
+
+.nav-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.nav-icon svg { width: 13px; height: 13px; }
+
+.nav-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -.2px;
+}
+
+.nav-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+  margin: 0 16px;
+}
+
+.nav-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+}
+
+.nav-tab {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-3);
+  padding: 6px 12px;
+  border-radius: var(--r);
+  cursor: pointer;
+  border: none;
+  background: none;
+  font-family: inherit;
+  transition: color .15s, background .15s;
+}
+.nav-tab:hover { color: var(--text-2); background: var(--surface); }
+.nav-tab.active { color: var(--text); background: var(--surface-2); }
+
+.nav-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.live-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--green);
+  background: rgba(34,197,94,.07);
+  border: 1px solid rgba(34,197,94,.15);
+  padding: 5px 12px;
+  border-radius: 99px;
+}
+.live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  animation: blink 2s ease infinite;
+}
+@keyframes blink {
+  0%,100% { opacity: 1; }
+  50%      { opacity: .4; }
+}
+
+.nav-uptime {
+  font-size: 13px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  font-family: 'Geist Mono', monospace;
+}
+
+.btn-ghost {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-2);
+  background: none;
+  border: 1px solid var(--border);
+  padding: 6px 14px;
+  border-radius: var(--r);
+  cursor: pointer;
+  font-family: inherit;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.btn-ghost:hover { color: var(--text); border-color: var(--border-2); background: var(--surface); }
+
+/* ── Layout ──────────────────────────────────── */
+.layout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── Sidebar ─────────────────────────────────── */
+.sidebar {
+  width: 260px;
+  min-width: 260px;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 20px 14px;
+  gap: 28px;
+}
+
+.sidebar-section { }
+.sidebar-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .6px;
+  color: var(--text-3);
+  padding: 0 8px;
+  margin-bottom: 8px;
+}
+
+.stat-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 8px;
+  border-radius: var(--r);
+}
+.stat-label {
+  font-size: 13px;
+  color: var(--text-2);
+}
+.stat-value {
+  font-family: 'Geist Mono', monospace;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+.stat-value.green { color: var(--green); }
+.stat-value.blue  { color: var(--cyan); }
+
+.tunnel-entry {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 8px;
+  border-radius: var(--r);
+  cursor: pointer;
+  transition: background .12s;
+  border: 1px solid transparent;
+}
+.tunnel-entry:hover { background: var(--surface); }
+.tunnel-entry.active {
+  background: var(--surface-2);
+  border-color: var(--border);
+}
+
+.t-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.t-dot.http  { background: var(--green); box-shadow: 0 0 6px rgba(34,197,94,.4); }
+.t-dot.tcp   { background: var(--purple); box-shadow: 0 0 6px rgba(167,139,250,.4); }
+
+.t-name {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.t-workers {
+  font-family: 'Geist Mono', monospace;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.tunnel-empty-msg {
+  font-size: 13px;
+  color: var(--text-3);
+  padding: 4px 8px;
+}
+
+/* Token section */
+.token-box {
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow: hidden;
+}
+.token-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+.token-header-label {
+  font-size: 12px;
+  color: var(--text-3);
+  font-weight: 500;
+}
+.token-actions { display: flex; gap: 4px; }
+.token-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: none;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: all .15s;
+}
+.token-btn:hover { color: var(--text-2); border-color: var(--border-2); background: var(--surface); }
+.token-btn.ok { color: var(--green); border-color: rgba(34,197,94,.3); background: rgba(34,197,94,.06); }
+.token-value {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  color: var(--text-2);
+  padding: 10px 12px;
+  word-break: break-all;
+  line-height: 1.7;
+  user-select: all;
+  cursor: text;
+}
+.token-value.masked {
+  color: var(--text-3);
+  letter-spacing: 3px;
+  cursor: default;
+  user-select: none;
+}
+
+/* ── Main content ────────────────────────────── */
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Inspector toolbar ───────────────────────── */
+.toolbar {
+  height: 44px;
+  min-height: 44px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  gap: 12px;
+  background: var(--bg);
+}
+
+.req-count {
+  font-size: 13px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.req-count strong { color: var(--text-2); font-weight: 600; }
+
+.filter-chip {
+  display: none;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--cyan);
+  background: rgba(34,211,238,.06);
+  border: 1px solid rgba(34,211,238,.15);
+  padding: 3px 8px;
+  border-radius: 99px;
+}
+.filter-chip.show { display: flex; }
+.filter-chip button {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  opacity: .7;
+  padding: 0;
+}
+.filter-chip button:hover { opacity: 1; }
+
+.ml-auto { margin-left: auto; }
+
+.btn-clear {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-3);
+  background: none;
+  border: 1px solid var(--border);
+  padding: 5px 12px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all .15s;
+}
+.btn-clear:hover { color: var(--text-2); border-color: var(--border-2); }
+
+/* ── Table ───────────────────────────────────── */
+.table-wrap {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.table-head {
+  display: grid;
+  grid-template-columns: 80px 72px 1fr 64px 90px 88px;
+  padding: 0 20px;
+  height: 36px;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.th {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: .4px;
+}
+.th:last-child { text-align: right; }
+
+.table-body {
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* Empty state */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 8px;
+  color: var(--text-3);
+}
+.empty svg { width: 28px; height: 28px; opacity: .4; }
+.empty p { font-size: 14px; }
+.empty span { font-size: 13px; opacity: .7; }
+
+/* Request rows */
+.req-row {
+  display: grid;
+  grid-template-columns: 80px 72px 1fr 64px 90px 88px;
+  align-items: center;
+  padding: 0 20px;
+  height: 42px;
+  border-bottom: 1px solid rgba(31,31,31,.6);
+  cursor: pointer;
+  transition: background .1s;
+}
+.req-row:hover { background: var(--surface); }
+.req-row.is-new { animation: flash .5s ease; }
+@keyframes flash {
+  0%   { background: rgba(34,211,238,.05); }
+  100% { background: transparent; }
+}
+
+.r-time {
+  font-family: 'Geist Mono', monospace;
+  font-size: 12px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.r-method {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  width: 52px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
+.r-method.GET     { color: var(--method-get);     background: rgba(34,197,94,.08); }
+.r-method.POST    { color: var(--method-post);    background: rgba(59,130,246,.08); }
+.r-method.PUT     { color: var(--method-put);     background: rgba(245,158,11,.08); }
+.r-method.DELETE  { color: var(--method-delete);  background: rgba(239,68,68,.08); }
+.r-method.PATCH   { color: var(--method-patch);   background: rgba(167,139,250,.08); }
+.r-method.HEAD,
+.r-method.OPTIONS { color: var(--method-head);    background: rgba(107,114,128,.08); }
+
+.r-path {
+  font-family: 'Geist Mono', monospace;
+  font-size: 13px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-right: 16px;
+}
+
+.r-status {
+  font-family: 'Geist Mono', monospace;
+  font-size: 13px;
+  font-weight: 600;
+}
+.r-status.s2 { color: var(--status-2); }
+.r-status.s3 { color: var(--status-3); }
+.r-status.s4 { color: var(--status-4); }
+.r-status.s5 { color: var(--status-5); }
+
+.r-dur {
+  font-family: 'Geist Mono', monospace;
+  font-size: 12px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.r-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.replay-btn {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-3);
+  background: none;
+  border: 1px solid var(--border);
+  padding: 4px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all .15s;
+  opacity: 0;
+}
+.req-row:hover .replay-btn { opacity: 1; }
+.replay-btn:hover { color: var(--text-2); border-color: var(--border-2); background: var(--surface); }
+
+.expand-icon {
+  width: 16px;
+  height: 16px;
+  color: var(--text-3);
+  transition: transform .18s, color .15s;
+  flex-shrink: 0;
+}
+.req-row:hover .expand-icon { color: var(--text-2); }
+.expand-icon.open { transform: rotate(90deg); color: var(--text-2); }
+
+/* Detail panel */
+.req-detail {
+  display: none;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 16px 20px;
+}
+.req-detail.open { display: block; animation: fadeIn .15s ease; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+.detail-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  color: var(--text-3);
+  margin-bottom: 10px;
+}
+
+.detail-headers {
+  font-family: 'Geist Mono', monospace;
+  font-size: 12px;
+  line-height: 2;
+  color: var(--text-3);
+}
+.hdr-k { color: var(--text-2); }
+
+/* Body preview */
+.detail-body {
+  font-family: 'Geist Mono', monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 12px 14px;
+  max-height: 140px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin-top: 10px;
+}
 
 /* ── Responsive ─────────────────────────────── */
-@media(max-width:768px){
-  .cards{grid-template-columns:1fr 1fr}
-  .card.token-card{grid-column:1 / -1}
-  .req-row,.table-header{grid-template-columns:65px 58px 1fr 45px 65px 65px;padding:8px 12px;font-size:12px}
-  .dashboard{padding:16px}
-  header{padding:0 16px}
+@media (max-width: 1024px) {
+  .sidebar { width: 220px; min-width: 220px; }
 }
-@media(max-width:480px){
-  .cards{grid-template-columns:1fr}
+@media (max-width: 700px) {
+  .sidebar { display: none; }
+  .table-head,
+  .req-row {
+    grid-template-columns: 70px 60px 1fr 52px 72px 72px;
+    padding: 0 14px;
+  }
 }
 </style>
 </head>
 <body>
 
-<header>
-  <div class="brand">
-    <span class="logo">gotunnel</span>
-    <span class="badge">Dashboard</span>
-  </div>
-  <div class="header-right">
-    <span class="uptime" id="uptime">0s</span>
-    <div class="status-pill">
-      <div class="status-dot"></div>
-      <span>Online</span>
+<!-- ── Nav ─────────────────────────────────── -->
+<nav>
+  <div class="nav-brand">
+    <div class="nav-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" color="#ededed">
+        <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+        <path d="M2 17l10 5 10-5"/>
+        <path d="M2 12l10 5 10-5"/>
+      </svg>
     </div>
-    <button class="logout-btn" onclick="window.location='/logout'">Sign Out</button>
+    <span class="nav-name">gotunnel</span>
   </div>
-</header>
 
-<div class="dashboard">
-  <!-- Status Cards -->
-  <div class="cards">
-    <div class="card token-card">
-      <div class="card-label">Auth Token</div>
-      <div class="token-row">
-        <div class="token-value masked" id="tokenValue">••••••••••••••••••••••••••••••••</div>
-        <button class="token-btn" id="toggleToken" title="Reveal token" onclick="toggleMask()">👁</button>
-        <button class="token-btn" id="copyToken" title="Copy token" onclick="copyToken()">📋</button>
+  <div class="nav-sep"></div>
+
+  <div class="nav-tabs">
+    <span class="nav-tab active">Traffic Inspector</span>
+  </div>
+
+  <div class="nav-right">
+    <div class="live-badge">
+      <div class="live-dot"></div>
+      Live
+    </div>
+    <span class="nav-uptime" id="uptime">—</span>
+    <button class="btn-ghost" onclick="location.href='/logout'">Sign out</button>
+  </div>
+</nav>
+
+<!-- ── Body ──────────────────────────────────── -->
+<div class="layout">
+
+  <!-- ── Sidebar ─────────────────────────────── -->
+  <aside class="sidebar">
+
+    <!-- Stats -->
+    <div class="sidebar-section">
+      <div class="sidebar-label">Overview</div>
+      <div class="stat-item">
+        <span class="stat-label">Total requests</span>
+        <span class="stat-value blue" id="s-total">0</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Active conns</span>
+        <span class="stat-value green" id="s-conns">0</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">HTTP proxy</span>
+        <span class="stat-value" id="s-http" style="font-size:11px">—</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">Tunnel port</span>
+        <span class="stat-value" id="s-tun" style="font-size:11px">—</span>
       </div>
     </div>
-    <div class="card">
-      <div class="card-icon">🌐</div>
-      <div class="card-label">HTTP Proxy</div>
-      <div class="card-value" id="httpAddr">—</div>
-    </div>
-    <div class="card">
-      <div class="card-icon">🔗</div>
-      <div class="card-label">Tunnel Port</div>
-      <div class="card-value" id="tunAddr">—</div>
-    </div>
-    <div class="card">
-      <div class="card-icon">⚡</div>
-      <div class="card-label">Active Connections</div>
-      <div class="card-value" id="activeConns" style="font-size:22px;font-weight:700;color:var(--green)">0</div>
-    </div>
-    <div class="card">
-      <div class="card-icon">📊</div>
-      <div class="card-label">Total Requests</div>
-      <div class="card-value" id="totalReqs" style="font-size:22px;font-weight:700;color:var(--accent)">0</div>
-    </div>
-  </div>
 
-  <!-- Active Tunnels Section -->
-  <div class="section-header">
-    <div class="section-title">
-      Active Tunnels
-      <span class="count" id="tunnelCount">0</span>
-    </div>
-  </div>
-  <div id="tunnelsGrid" class="tunnels-grid">
-    <span class="tunnel-empty">Waiting for tunnel connections…</span>
-  </div>
-
-  <!-- Inspector Section -->
-  <div class="section-header">
-    <div class="section-title">
-      Traffic Inspector
-      <span class="count" id="liveCount">0</span>
-    </div>
-    <div style="display:flex;gap:10px;align-items:center">
-      <span id="filterLabel" style="font-size:11px;color:var(--accent);display:none;font-weight:600;background:var(--accent-dim);padding:3px 8px;border-radius:10px;">Filtered</span>
-      <button class="clear-btn" onclick="clearRequests()">Clear</button>
-    </div>
-  </div>
-
-  <div class="inspector">
-    <div class="table-header">
-      <span>Time</span><span>Method</span><span>Path</span><span>Status</span><span>Duration</span><span></span>
-    </div>
-    <div class="req-scroll">
-      <div id="empty" class="empty-state">
-        <div class="empty-icon">📡</div>
-        <div class="empty-text">Waiting for requests…</div>
-        <div class="empty-hint">Send HTTP requests through the tunnel to see them here</div>
+    <!-- Tunnels -->
+    <div class="sidebar-section">
+      <div class="sidebar-label">Tunnels</div>
+      <div id="tunnel-list">
+        <div class="tunnel-empty-msg">No active tunnels</div>
       </div>
-      <div id="requests" class="req-table"></div>
     </div>
+
+    <!-- Token -->
+    <div class="sidebar-section">
+      <div class="sidebar-label">Auth Token</div>
+      <div class="token-box">
+        <div class="token-header">
+          <span class="token-header-label">Shared secret</span>
+          <div class="token-actions">
+            <button class="token-btn" id="tok-reveal" title="Reveal" onclick="tokenReveal()">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+            <button class="token-btn" id="tok-copy" title="Copy" onclick="tokenCopy()">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="token-value masked" id="tok-val">••••••••••••••••••••••••••••••••</div>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ── Main ─────────────────────────────────── -->
+  <div class="main">
+
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <span class="req-count"><strong id="t-count">0</strong> requests</span>
+      <div class="filter-chip" id="filter-chip">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+        <span id="filter-label">all</span>
+        <button onclick="clearFilter()" title="Clear filter">×</button>
+      </div>
+      <div class="ml-auto"></div>
+      <button class="btn-clear" onclick="clearReqs()">Clear</button>
+    </div>
+
+    <!-- Table -->
+    <div class="table-wrap">
+      <div class="table-head">
+        <span class="th">Time</span>
+        <span class="th">Method</span>
+        <span class="th">Path</span>
+        <span class="th">Status</span>
+        <span class="th">Duration</span>
+        <span class="th" style="text-align:right">Actions</span>
+      </div>
+      <div class="table-body" id="table-body">
+        <div class="empty" id="empty-state">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.42 2 2 0 0 1 3.58 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.53a16 16 0 0 0 6 6l.92-.92a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 21.5 16l.42.92z"/></svg>
+          <p>Waiting for requests</p>
+          <span>Requests will appear here in real time</span>
+        </div>
+        <div id="req-list"></div>
+      </div>
+    </div>
+
   </div>
 </div>
 
 <script>
-const $requests = document.getElementById('requests');
-const $empty = document.getElementById('empty');
-const $totalReqs = document.getElementById('totalReqs');
-const $liveCount = document.getElementById('liveCount');
-const $uptime = document.getElementById('uptime');
-const $httpAddr = document.getElementById('httpAddr');
-const $tunAddr = document.getElementById('tunAddr');
-const $activeConns = document.getElementById('activeConns');
-const $tokenValue = document.getElementById('tokenValue');
+'use strict';
 
-let totalCount = 0;
-let tokenRevealed = false;
-let rawToken = '';
-let selectedTunnel = null;
-let allRequests = [];
+// ── State ──────────────────────────────────────
+let allReqs    = [];
+let filteredBy = null;
+let rawToken   = '';
+let revealed   = false;
+let totalEver  = 0;
 
-// ── Formatting ────────────────────────────────
+// ── DOM refs ───────────────────────────────────
+const $list     = document.getElementById('req-list');
+const $empty    = document.getElementById('empty-state');
+const $tCount   = document.getElementById('t-count');
+const $sTotal   = document.getElementById('s-total');
+const $sConns   = document.getElementById('s-conns');
+const $sHttp    = document.getElementById('s-http');
+const $sTun     = document.getElementById('s-tun');
+const $uptime   = document.getElementById('uptime');
+const $tunList  = document.getElementById('tunnel-list');
+const $tokVal   = document.getElementById('tok-val');
+const $chip     = document.getElementById('filter-chip');
+const $chipLbl  = document.getElementById('filter-label');
+
+// ── Helpers ────────────────────────────────────
 function fmtTime(ts) {
   const d = new Date(ts);
-  return d.toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  return d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 function fmtDur(ms) {
   if (ms < 1000) return ms + 'ms';
-  return (ms / 1000).toFixed(1) + 's';
+  return (ms / 1000).toFixed(2) + 's';
 }
-function fmtUptime(sec) {
-  if (sec < 60) return sec + 's';
-  if (sec < 3600) return Math.floor(sec/60) + 'm ' + (sec%60) + 's';
-  const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60);
+function fmtUptime(s) {
+  if (s < 60)   return s + 's';
+  if (s < 3600) return Math.floor(s/60) + 'm ' + (s%60) + 's';
+  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60);
   return h + 'h ' + m + 'm';
 }
-function statusClass(code) {
+function statusCls(code) {
   if (code < 300) return 's2';
   if (code < 400) return 's3';
   if (code < 500) return 's4';
   return 's5';
 }
 function esc(s) {
-  const el = document.createElement('span');
-  el.textContent = s;
-  return el.innerHTML;
+  const d = document.createElement('div');
+  d.textContent = String(s ?? '');
+  return d.innerHTML;
 }
-function renderHeaders(headers) {
-  if (!headers) return '<span style="opacity:.4">none</span>';
-  return Object.entries(headers).map(([k, vals]) =>
-    vals.map(v => `<span class="hdr-key">${esc(k)}</span>: ${esc(v)}`).join('<br>')
+function hdrsHtml(h) {
+  if (!h || !Object.keys(h).length) return '<span style="opacity:.4">none</span>';
+  return Object.entries(h).map(([k, vs]) =>
+    vs.map(v => `<span class="hdr-k">${esc(k)}</span>: ${esc(v)}`).join('<br>')
   ).join('<br>');
 }
 
-// ── Token controls ────────────────────────────
-function toggleMask() {
-  tokenRevealed = !tokenRevealed;
-  if (tokenRevealed) {
-    $tokenValue.textContent = rawToken;
-    $tokenValue.classList.remove('masked');
-    document.getElementById('toggleToken').title = 'Hide token';
+// ── Token ──────────────────────────────────────
+function tokenReveal() {
+  revealed = !revealed;
+  const btn = document.getElementById('tok-reveal');
+  if (revealed) {
+    $tokVal.textContent = rawToken || '(not loaded)';
+    $tokVal.classList.remove('masked');
+    btn.title = 'Hide';
   } else {
-    $tokenValue.textContent = '••••••••••••••••••••••••••••••••';
-    $tokenValue.classList.add('masked');
-    document.getElementById('toggleToken').title = 'Reveal token';
+    $tokVal.textContent = '••••••••••••••••••••••••••••••••';
+    $tokVal.classList.add('masked');
+    btn.title = 'Reveal';
   }
 }
-
-function copyToken() {
+function tokenCopy() {
+  if (!rawToken) return;
   navigator.clipboard.writeText(rawToken).then(() => {
-    const btn = document.getElementById('copyToken');
-    btn.classList.add('copied');
-    btn.textContent = '✓';
-    setTimeout(() => {
-      btn.classList.remove('copied');
-      btn.textContent = '📋';
-    }, 1500);
+    const btn = document.getElementById('tok-copy');
+    btn.classList.add('ok');
+    setTimeout(() => btn.classList.remove('ok'), 1800);
   });
 }
 
-// ── Request rendering ─────────────────────────
-function renderRequests() {
-  const filtered = selectedTunnel 
-    ? allRequests.filter(r => r.endpoint === selectedTunnel)
-    : allRequests;
+// ── Filter ─────────────────────────────────────
+function filterByTunnel(ep) {
+  if (filteredBy === ep) { clearFilter(); return; }
+  filteredBy = ep;
+  $chip.classList.add('show');
+  $chipLbl.textContent = ep;
+  renderAll();
+  // update sidebar selection
+  document.querySelectorAll('.tunnel-entry').forEach(el => {
+    el.classList.toggle('active', el.dataset.ep === ep);
+  });
+}
+function clearFilter() {
+  filteredBy = null;
+  $chip.classList.remove('show');
+  $chipLbl.textContent = 'all';
+  renderAll();
+  document.querySelectorAll('.tunnel-entry').forEach(el => el.classList.remove('active'));
+}
 
-  $requests.innerHTML = '';
-  $liveCount.textContent = filtered.length;
-  document.getElementById('filterLabel').style.display = selectedTunnel ? 'block' : 'none';
+// ── Request rendering ──────────────────────────
+function renderAll() {
+  const list = filteredBy ? allReqs.filter(r => r.endpoint === filteredBy) : allReqs;
+  $tCount.textContent = list.length;
+  $list.innerHTML = '';
 
-  if (filtered.length === 0) {
+  if (list.length === 0) {
     $empty.style.display = 'flex';
-    if (selectedTunnel) {
-      $empty.querySelector('.empty-text').textContent = 'No requests for this tunnel yet';
-    } else {
-      $empty.querySelector('.empty-text').textContent = 'Waiting for requests…';
-    }
-  } else {
-    $empty.style.display = 'none';
-    // Render in reverse chronological order
-    for (let i = filtered.length - 1; i >= 0; i--) {
-      const r = filtered[i];
-      const row = document.createElement('div');
-      row.className = 'req-row';
-      row.innerHTML = `
-        <span class="req-time">${fmtTime(r.ts)}</span>
-        <span class="req-method ${r.method}">${r.method}</span>
-        <span class="req-path" title="${esc(r.path)}">${esc(r.path)}</span>
-        <span class="req-status ${statusClass(r.status)}">${r.status}</span>
-        <span class="req-dur">${fmtDur(r.duration_ms)}</span>
-        <div class="req-actions">
-          <button class="replay-btn" onclick="replayReq(${r.id}); event.stopPropagation()">Replay</button>
-          <span class="req-expand" id="exp-${r.id}">▸</span>
-        </div>
-      `;
-      const detail = document.createElement('div');
-      detail.className = 'req-detail';
-      detail.id = 'detail-' + r.id;
-      detail.innerHTML = `
-        <div class="detail-cols">
-          <div class="detail-section">
-            <div class="detail-title">Request Headers</div>
-            <div class="detail-headers">${renderHeaders(r.req_headers)}</div>
-          </div>
-          <div class="detail-section">
-            <div class="detail-title">Response Headers</div>
-            <div class="detail-headers">${renderHeaders(r.resp_headers)}</div>
-          </div>
-        </div>
-      `;
-      row.addEventListener('click', () => {
-        detail.classList.toggle('open');
-        document.getElementById('exp-' + r.id).classList.toggle('open');
-      });
-      $requests.appendChild(row);
-      $requests.appendChild(detail);
-    }
+    return;
+  }
+  $empty.style.display = 'none';
+
+  // newest first
+  for (let i = list.length - 1; i >= 0; i--) {
+    appendRow(list[i], false);
   }
 }
 
-function addRequest(r, isNew) {
-  if (!allRequests.find(req => req.id === r.id)) {
-    allRequests.push(r);
-    if (allRequests.length > 500) allRequests.shift();
-    renderRequests();
+function appendRow(r, isNew) {
+  const row = document.createElement('div');
+  row.className = 'req-row' + (isNew ? ' is-new' : '');
+  row.innerHTML = `
+    <span class="r-time">${fmtTime(r.ts)}</span>
+    <span class="r-method ${r.method}">${r.method}</span>
+    <span class="r-path" title="${esc(r.path)}">${esc(r.path)}</span>
+    <span class="r-status ${statusCls(r.status)}">${r.status}</span>
+    <span class="r-dur">${fmtDur(r.duration_ms)}</span>
+    <div class="r-actions">
+      <button class="replay-btn" onclick="replayReq(${r.id});event.stopPropagation()">Replay</button>
+      <svg class="expand-icon" id="exp-${r.id}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+    </div>
+  `;
+
+  // body decode attempt
+  let bodyHtml = '';
+  if (r.req_body && r.req_body.length) {
+    try {
+      const txt = atob(r.req_body);
+      bodyHtml = `<div class="detail-section-title" style="margin-top:12px">Request Body</div><div class="detail-body">${esc(txt)}</div>`;
+    } catch(e) {}
   }
-}
 
-function clearRequests() {
-  allRequests = [];
-  renderRequests();
-}
-
-// ── Load existing requests ────────────────────
-fetch('/api/requests').then(r => r.json()).then(data => {
-  if (data && data.length) {
-    allRequests = data;
-    renderRequests();
-  }
-});
-
-// ── Load status (token, addresses, etc.) ──────
-function loadStatus() {
-  fetch('/api/status').then(r => r.json()).then(s => {
-    $httpAddr.textContent = s.server;
-    $tunAddr.textContent = s.target;
-    $uptime.textContent = fmtUptime(s.uptime_sec);
-    $activeConns.textContent = s.active_conns;
-
-    if (s.total > totalCount) {
-      totalCount = s.total;
-      $totalReqs.textContent = totalCount;
-    }
-
-    if (s.token && !rawToken) {
-      rawToken = s.token;
-      if (!tokenRevealed) {
-        $tokenValue.textContent = '••••••••••••••••••••••••••••••••';
-      } else {
-        $tokenValue.textContent = rawToken;
-      }
-    }
-  }).catch(() => {});
-}
-loadStatus();
-setInterval(loadStatus, 3000);
-
-// ── Load tunnels ──────────────────────────────
-function selectTunnel(endpoint, type) {
-  if (selectedTunnel === endpoint) {
-    selectedTunnel = null; // Toggle off
-  } else {
-    selectedTunnel = endpoint;
-  }
-  loadTunnels(); // re-render grid to update active classes
-  renderRequests();
-}
-
-function loadTunnels() {
-  fetch('/api/tunnels').then(r => r.json()).then(tunnels => {
-    const $grid = document.getElementById('tunnelsGrid');
-    const $count = document.getElementById('tunnelCount');
-    
-    if (!tunnels || tunnels.length === 0) {
-      $grid.innerHTML = '<span class="tunnel-empty">Waiting for tunnel connections…</span>';
-      $count.textContent = '0';
-      return;
-    }
-    
-    $count.textContent = tunnels.length;
-    $grid.innerHTML = tunnels.map(t => `
-      <div class="tunnel-item ${selectedTunnel === t.endpoint ? 'selected' : ''}" onclick="selectTunnel('${t.endpoint}', '${t.type}')">
-        <span class="tunnel-badge ${t.type}">${t.type.toUpperCase()}</span>
-        <span class="tunnel-endpoint" title="${t.endpoint}">${t.endpoint}</span>
-        <span class="tunnel-conns" title="Active worker connections">${t.connections} workers</span>
+  const detail = document.createElement('div');
+  detail.className = 'req-detail';
+  detail.innerHTML = `
+    <div class="detail-grid">
+      <div>
+        <div class="detail-section-title">Request Headers</div>
+        <div class="detail-headers">${hdrsHtml(r.req_headers)}</div>
+        ${bodyHtml}
       </div>
-    `).join('');
-  }).catch(() => {});
+      <div>
+        <div class="detail-section-title">Response Headers</div>
+        <div class="detail-headers">${hdrsHtml(r.resp_headers)}</div>
+      </div>
+    </div>
+  `;
+
+  row.addEventListener('click', () => {
+    detail.classList.toggle('open');
+    document.getElementById('exp-' + r.id)?.classList.toggle('open');
+  });
+
+  $list.appendChild(row);
+  $list.appendChild(detail);
 }
-loadTunnels();
-setInterval(loadTunnels, 3000);
 
-// ── SSE live stream ───────────────────────────
-const evtSource = new EventSource('/api/requests/stream');
-evtSource.onmessage = (e) => {
-  try {
-    const r = JSON.parse(e.data);
-    addRequest(r, true);
-    totalCount++;
-    $totalReqs.textContent = totalCount;
-  } catch(err) {}
-};
-evtSource.onerror = () => {};
+function addReq(r, isNew) {
+  if (allReqs.find(x => x.id === r.id)) return;
+  allReqs.push(r);
+  if (allReqs.length > 500) allReqs.shift();
 
+  totalEver = Math.max(totalEver, r.id);
+  $sTotal.textContent = totalEver;
+
+  if (filteredBy && r.endpoint !== filteredBy) {
+    $tCount.textContent = allReqs.filter(x => x.endpoint === filteredBy).length;
+    return;
+  }
+
+  $empty.style.display = 'none';
+
+  if (isNew) {
+    // Build row + detail and prepend to the top of the list.
+    const row = document.createElement('div');
+    row.className = 'req-row is-new';
+    row.innerHTML = `
+      <span class="r-time">${fmtTime(r.ts)}</span>
+      <span class="r-method ${r.method}">${r.method}</span>
+      <span class="r-path" title="${esc(r.path)}">${esc(r.path)}</span>
+      <span class="r-status ${statusCls(r.status)}">${r.status}</span>
+      <span class="r-dur">${fmtDur(r.duration_ms)}</span>
+      <div class="r-actions">
+        <button class="replay-btn" onclick="replayReq(${r.id});event.stopPropagation()">Replay</button>
+        <svg class="expand-icon" id="exp-${r.id}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+      </div>
+    `;
+
+    let bodyHtml = '';
+    if (r.req_body && r.req_body.length) {
+      try { bodyHtml = `<div class="detail-section-title" style="margin-top:12px">Request Body</div><div class="detail-body">${esc(atob(r.req_body))}</div>`; } catch(_) {}
+    }
+
+    const detail = document.createElement('div');
+    detail.className = 'req-detail';
+    detail.innerHTML = `
+      <div class="detail-grid">
+        <div>
+          <div class="detail-section-title">Request Headers</div>
+          <div class="detail-headers">${hdrsHtml(r.req_headers)}</div>
+          ${bodyHtml}
+        </div>
+        <div>
+          <div class="detail-section-title">Response Headers</div>
+          <div class="detail-headers">${hdrsHtml(r.resp_headers)}</div>
+        </div>
+      </div>
+    `;
+
+    row.addEventListener('click', () => {
+      detail.classList.toggle('open');
+      document.getElementById('exp-' + r.id)?.classList.toggle('open');
+    });
+
+    // Insert at top (newest first).
+    $list.prepend(detail);
+    $list.prepend(row);
+  }
+
+  $tCount.textContent = (filteredBy ? allReqs.filter(x => x.endpoint === filteredBy) : allReqs).length;
+}
+
+
+function clearReqs() {
+  allReqs = [];
+  renderAll();
+}
+
+// ── Replay ─────────────────────────────────────
 function replayReq(id) {
   fetch('/api/replay', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id: id })
-  }).then(r => {
-    if(!r.ok) alert('Replay failed');
+    body: JSON.stringify({ id })
   });
 }
+
+// ── Tunnels ────────────────────────────────────
+function renderTunnels(tunnels) {
+  if (!tunnels || !tunnels.length) {
+    $tunList.innerHTML = '<div class="tunnel-empty-msg">No active tunnels</div>';
+    return;
+  }
+  $tunList.innerHTML = tunnels.map(t => `
+    <div class="tunnel-entry${filteredBy === t.endpoint ? ' active' : ''}"
+         data-ep="${esc(t.endpoint)}"
+         onclick="filterByTunnel('${t.endpoint.replace(/'/g,"\\'")}')">
+      <div class="t-dot ${t.type}"></div>
+      <span class="t-name" title="${esc(t.endpoint)}">${esc(t.endpoint)}</span>
+      <span class="t-workers">${t.connections}</span>
+    </div>
+  `).join('');
+}
+
+
+// ── Boot ───────────────────────────────────────
+// 1. Load existing requests
+fetch('/api/requests').then(r => r.json()).then(data => {
+  if (data && data.length) {
+    allReqs = data;
+    totalEver = Math.max(...data.map(r => r.id), 0);
+    $sTotal.textContent = totalEver;
+    renderAll();
+  }
+}).catch(() => {});
+
+// 2. Real-time SSE for new requests
+const sse = new EventSource('/api/requests/stream');
+sse.onmessage = e => {
+  try { addReq(JSON.parse(e.data), true); } catch(_) {}
+};
+sse.onerror = () => {};
+
+// 3. Real-time SSE for status + tunnels (server pushes every ~1s)
+const statusSse = new EventSource('/api/status/stream');
+statusSse.onmessage = e => {
+  try {
+    const s = JSON.parse(e.data);
+    $sHttp.textContent  = s.server  || '—';
+    $sTun.textContent   = s.target  || '—';
+    $sConns.textContent = s.active_conns ?? 0;
+    $uptime.textContent = fmtUptime(s.uptime_sec);
+    if (s.token && !rawToken) {
+      rawToken = s.token;
+      if (revealed) $tokVal.textContent = rawToken;
+    }
+    if (s.total > totalEver) {
+      totalEver = s.total;
+      $sTotal.textContent = totalEver;
+    }
+    renderTunnels(s.tunnels || []);
+  } catch(_) {}
+};
+statusSse.onerror = () => {};
 </script>
 </body>
 </html>

@@ -68,7 +68,7 @@ type Inspector struct {
 	sessionsMu sync.Mutex
 	sessions   map[string]time.Time
 
-	// Reference to server for tunnels API
+	// Reference to server for tunnels API and replay.
 	srv *Server
 }
 
@@ -159,7 +159,11 @@ func cloneHeaders(h http.Header) http.Header {
 	if h == nil {
 		return nil
 	}
-	return h.Clone()
+	// Strip sensitive auth headers from the inspector view.
+	clone := h.Clone()
+	clone.Del("Authorization")
+	clone.Del("X-API-Key")
+	return clone
 }
 
 func (ins *Inspector) subscribe() (chan CapturedRequest, func()) {
@@ -229,6 +233,8 @@ func (ins *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ins.handleTunnels(w, r)
 	case "/api/requests/stream":
 		ins.handleSSE(w, r)
+	case "/api/status/stream":
+		ins.handleStatusSSE(w, r)
 	case "/api/replay":
 		ins.handleReplay(w, r)
 	default:
@@ -340,6 +346,68 @@ func (ins *Inspector) handleSSE(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleStatusSSE streams combined status + tunnel list every second.
+// The dashboard subscribes to this instead of polling /api/status and /api/tunnels.
+func (ins *Inspector) handleStatusSSE(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "SSE not supported", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	flusher.Flush()
+
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			ins.mu.RLock()
+			total := ins.nextID
+			ins.mu.RUnlock()
+
+			var active int64
+			if ins.ActiveConns != nil {
+				active = ins.ActiveConns.Load()
+			}
+
+			tunnels := []TunnelEntry{}
+			if ins.srv != nil {
+				ins.srv.mu.Lock()
+				if dc := len(ins.srv.pool); dc > 0 {
+					tunnels = append(tunnels, TunnelEntry{Type: "http", Endpoint: "(default)", Connections: dc})
+				}
+				for sub, pool := range ins.srv.httpPools {
+					tunnels = append(tunnels, TunnelEntry{Type: "http", Endpoint: sub, Connections: len(pool)})
+				}
+				for port, pool := range ins.srv.tcpPools {
+					tunnels = append(tunnels, TunnelEntry{Type: "tcp", Endpoint: port, Connections: len(pool)})
+				}
+				ins.srv.mu.Unlock()
+			}
+
+			payload := map[string]any{
+				"server":       ins.ServerAddr,
+				"target":       ins.TargetAddr,
+				"uptime_sec":   int(time.Since(ins.StartTime).Seconds()),
+				"total":        total,
+				"token":        ins.Token,
+				"active_conns": active,
+				"tunnels":      tunnels,
+			}
+			data, _ := json.Marshal(payload)
+			fmt.Fprintf(w, "data: %s\n\n", data)
+			flusher.Flush()
+
+		case <-r.Context().Done():
+			return
+		}
+	}
+}
+
 func (ins *Inspector) handleReplay(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -355,8 +423,9 @@ func (ins *Inspector) handleReplay(w http.ResponseWriter, r *http.Request) {
 
 	ins.mu.RLock()
 	var targetReq *CapturedRequest
-	for _, cr := range ins.requests {
-		if cr.ID == req.ID {
+	for i := range ins.requests {
+		if ins.requests[i].ID == req.ID {
+			cr := ins.requests[i] // copy to avoid holding lock
 			targetReq = &cr
 			break
 		}
@@ -380,15 +449,26 @@ func (ins *Inspector) handleReplay(w http.ResponseWriter, r *http.Request) {
 	}
 
 	newReq.Host = targetReq.Host
+
+	// Copy original request headers (auth headers were already stripped when recording).
 	for k, vv := range targetReq.ReqHeaders {
 		for _, v := range vv {
 			newReq.Header.Add(k, v)
 		}
 	}
 
+	// Re-apply gateway auth so the replayed request passes the server's auth check.
+	if ins.srv != nil {
+		if ins.srv.apiKey != "" {
+			newReq.Header.Set("X-API-Key", ins.srv.apiKey)
+		} else if ins.srv.basicAuth != "" {
+			newReq.Header.Set("Authorization", "Basic "+ins.srv.basicAuth)
+		}
+	}
+
 	go func() {
 		client := &http.Client{Timeout: 30 * time.Second}
-		client.Do(newReq)
+		client.Do(newReq) //nolint:errcheck
 	}()
 
 	w.WriteHeader(http.StatusOK)

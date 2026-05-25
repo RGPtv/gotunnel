@@ -1,6 +1,6 @@
 {
-  "server": "https://refactored-lamp-r4ppx497wgg9h49j-4444.app.github.dev/",
-  "token": "0273069d16447d7c1fbe8dd49c0e915925b36d4f09927e92ab9b800d0e2f233d",
+  "server": "localhost:4444",
+  "token": "044f685623061148e8dc74382f4022aa581d9378d7f5143ede5f4b6ea4321aa9",
   "tunnels": {
     "web": {
       "target": "192.168.0.146:51821",

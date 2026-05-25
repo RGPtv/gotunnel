@@ -97,15 +97,15 @@ func normalizeServerAddr(raw string) string {
 
 func runClient(args []string) {
 	fs := flag.NewFlagSet("client", flag.ExitOnError)
-	server := fs.String("server", "", "Tunnel server — host:port or https://host[:port] (required)")
-	token := fs.String("token", "", "Auth token — must match server's -token (required)")
-	target := fs.String("target", "localhost:8080", "Local service to tunnel, e.g. localhost:3000")
-	typeFlag := fs.String("type", "http", "Tunnel type: 'http' (or websocket) or 'tcp'")
-	subdomain := fs.String("subdomain", "", "Request a specific subdomain (requires server to use -domain)")
-	remote := fs.String("remote", "", "Remote address/port to listen on for TCP tunnels, e.g. ':22222'")
-	workers := fs.Int("workers", 10, "Number of parallel tunnel connections")
-	insecure := fs.Bool("k", false, "Skip TLS cert verification (for self-signed certs)")
-	noTLS := fs.Bool("notls", false, "Use plain TCP (when server runs -notls behind a TLS proxy)")
+	server    := fs.String("server",    "",             "Tunnel server — host:port or https://host[:port] (required)")
+	token     := fs.String("token",     "",             "Auth token — must match server's -token (required)")
+	target    := fs.String("target",    "localhost:8080","Local service to tunnel, e.g. localhost:3000")
+	typeFlag  := fs.String("type",      "http",         "Tunnel type: 'http' (or websocket) or 'tcp'")
+	subdomain := fs.String("subdomain", "",             "Request a specific subdomain (requires server to use -domain)")
+	remote    := fs.String("remote",    "",             "Remote address/port to listen on for TCP tunnels, e.g. ':22222'")
+	workers   := fs.Int("workers",      10,             "Number of parallel tunnel connections")
+	insecure  := fs.Bool("k",           false,          "Skip TLS cert verification (for self-signed certs)")
+	noTLS     := fs.Bool("notls",       false,          "Use plain TCP (when server runs -notls behind a TLS proxy)")
 	fs.Parse(args)
 
 	if *server == "" {
@@ -243,11 +243,9 @@ func (c *Client) connectAndServe(id int) error {
 	}
 	defer conn.Close()
 
-	// Ensure the connection is closed immediately when shutting down
-	ctx, cancel := context.WithCancel(c.ctx)
-	defer cancel()
+	// Ensure the connection is closed immediately when shutting down.
 	go func() {
-		<-ctx.Done()
+		<-c.ctx.Done()
 		conn.Close()
 	}()
 
@@ -285,7 +283,7 @@ func (c *Client) connectAndServe(id int) error {
 	}
 	line = strings.TrimSpace(line)
 	if line != "OK" {
-		return fmt.Errorf("auth rejected")
+		return fmt.Errorf("auth rejected: %s", line)
 	}
 
 	c.uiWorkers.Add(1)
@@ -401,8 +399,8 @@ func (c *Client) handleWebSocket(id int, tunnelConn net.Conn, tunnelReader *bufi
 		io.Copy(dst, src)
 		done <- struct{}{}
 	}
-	go cp(targetConn, tunnelReader) // server → local target
-	go cp(tunnelConn, targetReader) // local target → server
+	go cp(targetConn, tunnelReader)  // server → local target
+	go cp(tunnelConn, targetReader)  // local target → server
 	<-done
 	targetConn.Close()
 	tunnelConn.Close()
@@ -452,6 +450,9 @@ func (c *Client) startUI() {
 		log.SetOutput(io.Discard)
 	}
 
+	// Clear the screen once on startup before the ticker starts.
+	fmt.Print("\033[2J")
+
 	ticker := time.NewTicker(200 * time.Millisecond)
 	go func() {
 		for range ticker.C {
@@ -465,7 +466,7 @@ func (c *Client) drawUI() {
 	defer uiMu.Unlock()
 
 	var b strings.Builder
-	// Move cursor to top left
+	// Move cursor to top-left (screen was cleared once at startup).
 	b.WriteString("\033[H")
 
 	b.WriteString("gotunnel by @RGPtv                                      (Ctrl+C to quit)\n\n")
@@ -474,7 +475,7 @@ func (c *Client) drawUI() {
 		statusColor = "\033[33m" // yellow
 	}
 	b.WriteString(fmt.Sprintf("Session Status                %s%s\033[0m\033[K\n", statusColor, c.uiStatus))
-	
+
 	if c.tunnelType == "tcp" {
 		b.WriteString(fmt.Sprintf("Forwarding                    tcp://%s -> %s\033[K\n", c.serverAddr+c.remoteAddr, c.targetAddr))
 	} else {
@@ -501,18 +502,18 @@ func (c *Client) drawUI() {
 				} else if r.status >= 300 {
 					color = "\033[36m" // cyan
 				}
-				
+
 				path := r.path
 				if len(path) > 40 {
 					path = path[:37] + "..."
 				}
-				
+
 				b.WriteString(fmt.Sprintf("%-6s %-42s %s%3d\033[0m  %s\033[K\n", r.method, path, color, r.status, r.dur.Round(time.Millisecond)))
 			}
 		}
 	}
-	
-	// Clear any remaining lines from previous longer outputs
+
+	// Clear any remaining lines from previous longer outputs.
 	b.WriteString("\033[J")
 	fmt.Print(b.String())
 }

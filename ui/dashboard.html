@@ -62,8 +62,8 @@ body {
 
 /* ── Top Nav ─────────────────────────────────── */
 nav {
-  height: 52px;
-  min-height: 52px;
+  height: 60px;
+  min-height: 60px;
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
@@ -73,12 +73,48 @@ nav {
   z-index: 50;
 }
 
+
 .nav-brand {
   display: flex;
   align-items: center;
   gap: 10px;
   margin-right: 24px;
+  cursor: pointer;
+  position: relative;
+  user-select: none;
 }
+.nav-brand:hover .nav-name { color: var(--text); }
+.brand-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 6px;
+  display: none;
+  flex-direction: column;
+  min-width: 150px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  z-index: 100;
+  cursor: default;
+}
+.brand-menu.open { display: flex; }
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text-2);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all .15s;
+  text-decoration: none;
+}
+.menu-item:hover { color: var(--text); background: var(--surface); }
+
 
 .nav-icon {
   display: flex;
@@ -106,11 +142,14 @@ nav {
   margin: 0 16px;
 }
 
-.nav-tabs {
+.sub-nav {
   display: flex;
   align-items: center;
-  gap: 2px;
-  flex: 1;
+  gap: 8px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  flex-shrink: 0;
 }
 
 .nav-tab {
@@ -134,6 +173,29 @@ nav {
   gap: 12px;
   margin-left: auto;
 }
+
+.token-chip {
+  display: flex; align-items: center; gap: 6px; font-size: 12px;
+  font-family: 'Geist Mono', monospace; color: var(--text-2);
+  background: var(--surface-2); border: 1px solid var(--border);
+  padding: 5px 12px; border-radius: 99px; cursor: pointer; transition: all .15s;
+}
+#nav-token-val {
+  display: inline-block;
+  max-width: 70px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+  transition: max-width 0.3s ease;
+}
+.token-chip:hover #nav-token-val {
+  max-width: 400px;
+  color: var(--text);
+}
+.token-chip:hover { border-color: var(--border-2); color: var(--text); }
+.token-chip.ok { color: var(--green); border-color: rgba(34,197,94,.4); background: rgba(34,197,94,.1); }
+
 
 .live-badge {
   display: flex;
@@ -180,6 +242,22 @@ nav {
 }
 .btn-ghost:hover { color: var(--text); border-color: var(--border-2); background: var(--surface); }
 
+
+.status-footer {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 50;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  padding: 6px 12px 6px 6px;
+  border-radius: 99px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+}
+
 /* ── Layout ──────────────────────────────────── */
 .layout {
   display: flex;
@@ -200,13 +278,6 @@ nav {
 }
 
 .sidebar-section { }
-.sidebar-nav { display: flex; flex-direction: column; gap: 4px; }
-.sidebar-nav-item {
-  padding: 8px 12px; font-size: 13px; font-weight: 500; color: var(--text-3);
-  border-radius: var(--r); cursor: pointer; transition: all .15s;
-}
-.sidebar-nav-item:hover { background: var(--surface); color: var(--text-2); }
-.sidebar-nav-item.active { background: var(--surface-2); color: var(--text); }
 .sidebar-label {
   font-size: 11px;
   font-weight: 600;
@@ -412,7 +483,7 @@ nav {
 
 .table-head {
   display: grid;
-  grid-template-columns: 80px 72px 1fr 64px 90px 88px;
+  grid-template-columns: 80px 100px 72px 1fr 64px 90px 88px;
   padding: 0 20px;
   height: 36px;
   align-items: center;
@@ -453,7 +524,7 @@ nav {
 /* Request rows */
 .req-row {
   display: grid;
-  grid-template-columns: 80px 72px 1fr 64px 90px 88px;
+  grid-template-columns: 80px 100px 72px 1fr 64px 90px 88px;
   align-items: center;
   padding: 0 20px;
   height: 42px;
@@ -611,7 +682,7 @@ nav {
   .sidebar { display: none; }
   .table-head,
   .req-row {
-    grid-template-columns: 70px 60px 1fr 52px 72px 72px;
+    grid-template-columns: 70px 80px 60px 1fr 52px 72px 72px;
     padding: 0 14px;
   }
 }
@@ -621,7 +692,7 @@ nav {
 
 <!-- ── Nav ─────────────────────────────────── -->
 <nav>
-  <div class="nav-brand">
+  <div class="nav-brand" onclick="document.getElementById('brand-menu').classList.toggle('open'); event.stopPropagation();">
     <div class="nav-icon">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" color="#ededed">
         <path d="M12 2L2 7l10 5 10-5-10-5z"/>
@@ -630,21 +701,24 @@ nav {
       </svg>
     </div>
     <span class="nav-name">gotunnel</span>
-  </div>
-
-  <div class="nav-sep"></div>
-
-  <div class="nav-tabs">
-    <span class="nav-tab active" id="top-nav-title">Overview</span>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-3); margin-left:4px;"><polyline points="6 9 12 15 18 9"/></svg>
+    
+    <div class="brand-menu" id="brand-menu" onclick="event.stopPropagation()">
+      <div class="menu-item" onclick="selectTunnel(null); document.getElementById('brand-menu').classList.remove('open')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        Home
+      </div>
+      <a class="menu-item" href="/logout">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        Logout
+      </a>
+    </div>
   </div>
 
   <div class="nav-right">
-    <div class="live-badge">
-      <div class="live-dot"></div>
-      Live
+    <div class="token-chip" id="nav-token-chip" onclick="tokenCopy()" title="Copy Token" style="display:none">
+      Token: <span id="nav-token-val">...</span>
     </div>
-    <span class="nav-uptime" id="uptime">—</span>
-    <button class="btn-ghost" onclick="location.href='/logout'">Sign out</button>
   </div>
 </nav>
 
@@ -653,16 +727,6 @@ nav {
 
   <!-- ── Sidebar ─────────────────────────────── -->
   <aside class="sidebar">
-
-    <!-- Navigation -->
-    <div class="sidebar-section">
-      <div class="sidebar-label">Navigation</div>
-      <div class="sidebar-nav">
-        <div class="sidebar-nav-item active" onclick="switchView('overview')" id="nav-overview">Overview</div>
-        <div class="sidebar-nav-item" onclick="switchView('inspector')" id="nav-inspector">Traffic Inspector</div>
-      </div>
-    </div>
-
     <!-- Tunnels -->
     <div class="sidebar-section">
       <div class="sidebar-label">Tunnels</div>
@@ -670,55 +734,46 @@ nav {
         <div class="tunnel-empty-msg">No active tunnels</div>
       </div>
     </div>
-
   </aside>
 
   <!-- ── Main ─────────────────────────────────── -->
   <div class="main">
 
+    <div class="sub-nav" id="nav-tabs" style="display:none;">
+      <button class="nav-tab active" id="tab-overview" onclick="switchTab('overview')">Overview</button>
+      <button class="nav-tab" id="tab-inspector" onclick="switchTab('inspector')">Traffic Inspector</button>
+    </div>
+
+    <!-- Empty View -->
+    <div id="view-empty" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-3);">
+       <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity:0.4;margin-bottom:12px"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+       <p style="font-size:14px">Select a tunnel from the sidebar</p>
+    </div>
+
     <!-- Overview View -->
-    <div id="view-overview" style="display: flex; flex-direction: column; overflow-y: auto; width: 100%; height: 100%;">
+    <div id="view-overview" style="display: none; flex-direction: column; overflow-y: auto; width: 100%; height: 100%;">
       <div style="padding: 32px 40px; display: grid; gap: 32px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); align-content: start;">
         
         <!-- Stats -->
         <div class="sidebar-section">
-          <div class="sidebar-label" style="font-size: 13px; margin-bottom:12px;">Stats</div>
+          <div class="sidebar-label" style="font-size: 13px; margin-bottom:12px;">Tunnel Info</div>
           <div style="background:var(--surface-2); border:1px solid var(--border); border-radius:var(--r); padding:12px">
             <div class="stat-item">
-              <span class="stat-label">Total requests</span>
-              <span class="stat-value blue" id="s-total">0</span>
+              <span class="stat-label">Public URL</span>
+              <span class="stat-value blue" id="tun-proxyurl">—</span>
             </div>
             <div class="stat-item">
-              <span class="stat-label">Active conns</span>
-              <span class="stat-value green" id="s-conns">0</span>
+              <span class="stat-label">Client IP</span>
+              <span class="stat-value" id="tun-clientip">—</span>
             </div>
             <div class="stat-item">
-              <span class="stat-label">HTTP proxy</span>
-              <span class="stat-value" id="s-http" style="font-size:11px">—</span>
+              <span class="stat-label">Type</span>
+              <span class="stat-value" id="tun-type" style="text-transform:uppercase">—</span>
             </div>
             <div class="stat-item">
-              <span class="stat-label">Tunnel port</span>
-              <span class="stat-value" id="s-tun" style="font-size:11px">—</span>
+              <span class="stat-label">Active Connections</span>
+              <span class="stat-value green" id="tun-conns">0</span>
             </div>
-          </div>
-        </div>
-
-        <!-- Token -->
-        <div class="sidebar-section">
-          <div class="sidebar-label" style="font-size: 13px; margin-bottom:12px;">Auth Token</div>
-          <div class="token-box">
-            <div class="token-header">
-              <span class="token-header-label">Shared secret</span>
-              <div class="token-actions">
-                <button class="token-btn" id="tok-reveal" title="Reveal" onclick="tokenReveal()">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                </button>
-                <button class="token-btn" id="tok-copy" title="Copy" onclick="tokenCopy()">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                </button>
-              </div>
-            </div>
-            <div class="token-value masked" id="tok-val">••••••••••••••••••••••••••••••••</div>
           </div>
         </div>
 
@@ -749,10 +804,9 @@ nav {
       <!-- Toolbar -->
       <div class="toolbar">
       <span class="req-count"><strong id="t-count">0</strong> requests</span>
-      <div class="filter-chip" id="filter-chip">
+      <div class="filter-chip show" id="filter-chip">
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
         <span id="filter-label">all</span>
-        <button onclick="clearFilter()" title="Clear filter">×</button>
       </div>
       <div class="ml-auto"></div>
       <button class="btn-clear" onclick="clearReqs()">Clear</button>
@@ -762,6 +816,7 @@ nav {
     <div class="table-wrap">
       <div class="table-head">
         <span class="th">Time</span>
+        <span class="th">Source IP</span>
         <span class="th">Method</span>
         <span class="th">Path</span>
         <span class="th">Status</span>
@@ -782,15 +837,23 @@ nav {
   </div>
 </div>
 
+
+<div class="status-footer">
+  <div class="live-badge">
+    <div class="live-dot"></div>
+    Live
+  </div>
+  <span class="nav-uptime" id="uptime">—</span>
+</div>
 <script>
 'use strict';
 
 // ── State ──────────────────────────────────────
-let currentView = 'overview';
+let activeTunnel = null;
+let currentTab = 'overview';
 let allReqs    = [];
-let filteredBy = null;
+let tunnelsMap = {};
 let rawToken   = '';
-let revealed   = false;
 let rawApiKey  = '';
 let apiRevealed = false;
 let totalEver  = 0;
@@ -799,26 +862,68 @@ let totalEver  = 0;
 const $list     = document.getElementById('req-list');
 const $empty    = document.getElementById('empty-state');
 const $tCount   = document.getElementById('t-count');
-const $sTotal   = document.getElementById('s-total');
-const $sConns   = document.getElementById('s-conns');
-const $sHttp    = document.getElementById('s-http');
-const $sTun     = document.getElementById('s-tun');
+const $tunConns = document.getElementById('tun-conns');
+const $tunType  = document.getElementById('tun-type');
+const $tunProxy = document.getElementById('tun-proxyurl');
 const $uptime   = document.getElementById('uptime');
 const $tunList  = document.getElementById('tunnel-list');
-const $tokVal   = document.getElementById('tok-val');
 const $apiVal   = document.getElementById('api-val');
-const $chip     = document.getElementById('filter-chip');
 const $chipLbl  = document.getElementById('filter-label');
 
 // ── Navigation ─────────────────────────────────
-function switchView(view) {
-  currentView = view;
-  document.getElementById('nav-overview').classList.toggle('active', view === 'overview');
-  document.getElementById('nav-inspector').classList.toggle('active', view === 'inspector');
-  document.getElementById('top-nav-title').textContent = view === 'overview' ? 'Overview' : 'Traffic Inspector';
+function switchTab(tab) {
+  if (!activeTunnel) return;
+  currentTab = tab;
+  document.getElementById('tab-overview').classList.toggle('active', tab === 'overview');
+  document.getElementById('tab-inspector').classList.toggle('active', tab === 'inspector');
   
-  document.getElementById('view-overview').style.display = view === 'overview' ? 'flex' : 'none';
-  document.getElementById('view-inspector').style.display = view === 'inspector' ? 'flex' : 'none';
+  document.getElementById('view-overview').style.display = tab === 'overview' ? 'flex' : 'none';
+  document.getElementById('view-inspector').style.display = tab === 'inspector' ? 'flex' : 'none';
+}
+
+function selectTunnel(ep) {
+  activeTunnel = ep;
+  document.querySelectorAll('.tunnel-entry').forEach(el => {
+    el.classList.toggle('active', el.dataset.ep === ep);
+  });
+  
+  if (!ep) {
+    document.getElementById('nav-tabs').style.display = 'none';
+    document.getElementById('view-empty').style.display = 'flex';
+    document.getElementById('view-overview').style.display = 'none';
+    document.getElementById('view-inspector').style.display = 'none';
+    return;
+  }
+  
+  document.getElementById('nav-tabs').style.display = 'flex';
+  document.getElementById('view-empty').style.display = 'none';
+  switchTab(currentTab);
+  renderTunnelOverview();
+  
+  $chipLbl.textContent = ep;
+  renderAll();
+}
+
+function renderTunnelOverview() {
+  const t = tunnelsMap[activeTunnel];
+  if (!t) return;
+  $tunProxy.textContent = t.proxy_url || '—';
+  $tunType.textContent = t.type || '—';
+  $tunConns.textContent = t.connections;
+  document.getElementById('tun-clientip').textContent = (t.client_ip || '—').replace(/(:\d+)$/, '').replace(/^\[|\]$/g, '');
+  
+  if (t.apikey) {
+    document.getElementById('apikey-section').style.display = 'block';
+    rawApiKey = t.apikey;
+    if (apiRevealed) {
+      $apiVal.textContent = rawApiKey;
+    } else {
+      $apiVal.textContent = '••••••••••••••••••••••••••••••••';
+    }
+  } else {
+    document.getElementById('apikey-section').style.display = 'none';
+    rawApiKey = '';
+  }
 }
 
 // ── Helpers ────────────────────────────────────
@@ -855,30 +960,15 @@ function hdrsHtml(h) {
 }
 
 // ── Token ──────────────────────────────────────
-function tokenReveal() {
-  revealed = !revealed;
-  const btn = document.getElementById('tok-reveal');
-  if (revealed) {
-    $tokVal.textContent = rawToken || '(not loaded)';
-    $tokVal.classList.remove('masked');
-    btn.title = 'Hide';
-  } else {
-    $tokVal.textContent = '••••••••••••••••••••••••••••••••';
-    $tokVal.classList.add('masked');
-    btn.title = 'Reveal';
-  }
-}
 function tokenCopy() {
   if (!rawToken) return;
-  
   const finishCopy = () => {
-    const btn = document.getElementById('tok-copy');
+    const btn = document.getElementById('nav-token-chip');
     if (btn) {
       btn.classList.add('ok');
       setTimeout(() => btn.classList.remove('ok'), 1800);
     }
   };
-
   if (navigator.clipboard && window.isSecureContext) {
     navigator.clipboard.writeText(rawToken).then(finishCopy).catch(() => fallbackCopy());
   } else {
@@ -951,29 +1041,9 @@ function apiCopy() {
   }
 }
 
-// ── Filter ─────────────────────────────────────
-function filterByTunnel(ep) {
-  if (filteredBy === ep) { clearFilter(); return; }
-  filteredBy = ep;
-  $chip.classList.add('show');
-  $chipLbl.textContent = ep;
-  renderAll();
-  // update sidebar selection
-  document.querySelectorAll('.tunnel-entry').forEach(el => {
-    el.classList.toggle('active', el.dataset.ep === ep);
-  });
-}
-function clearFilter() {
-  filteredBy = null;
-  $chip.classList.remove('show');
-  $chipLbl.textContent = 'all';
-  renderAll();
-  document.querySelectorAll('.tunnel-entry').forEach(el => el.classList.remove('active'));
-}
-
 // ── Request rendering ──────────────────────────
 function renderAll() {
-  const list = filteredBy ? allReqs.filter(r => r.endpoint === filteredBy) : allReqs;
+  const list = activeTunnel ? allReqs.filter(r => r.endpoint === activeTunnel) : [];
   $tCount.textContent = list.length;
   $list.innerHTML = '';
 
@@ -994,6 +1064,7 @@ function appendRow(r, isNew) {
   row.className = 'req-row' + (isNew ? ' is-new' : '');
   row.innerHTML = `
     <span class="r-time">${fmtTime(r.ts)}</span>
+    <span class="r-clientip" style="font-family:'Geist Mono', monospace; font-size:12px; color:var(--text-3);">${esc(r.client_ip || '—')}</span>
     <span class="r-method ${r.method}">${r.method}</span>
     <span class="r-path" title="${esc(r.path)}">${esc(r.path)}</span>
     <span class="r-status ${statusCls(r.status)}">${r.status}</span>
@@ -1044,10 +1115,9 @@ function addReq(r, isNew) {
   if (allReqs.length > 500) allReqs.shift();
 
   totalEver = Math.max(totalEver, r.id);
-  $sTotal.textContent = totalEver;
 
-  if (filteredBy && r.endpoint !== filteredBy) {
-    $tCount.textContent = allReqs.filter(x => x.endpoint === filteredBy).length;
+  if (activeTunnel && r.endpoint !== activeTunnel) {
+    $tCount.textContent = allReqs.filter(x => x.endpoint === activeTunnel).length;
     return;
   }
 
@@ -1059,6 +1129,7 @@ function addReq(r, isNew) {
     row.className = 'req-row is-new';
     row.innerHTML = `
       <span class="r-time">${fmtTime(r.ts)}</span>
+      <span class="r-clientip" style="font-family:'Geist Mono', monospace; font-size:12px; color:var(--text-3);">${esc(r.client_ip || '—')}</span>
       <span class="r-method ${r.method}">${r.method}</span>
       <span class="r-path" title="${esc(r.path)}">${esc(r.path)}</span>
       <span class="r-status ${statusCls(r.status)}">${r.status}</span>
@@ -1100,12 +1171,12 @@ function addReq(r, isNew) {
     $list.prepend(row);
   }
 
-  $tCount.textContent = (filteredBy ? allReqs.filter(x => x.endpoint === filteredBy) : allReqs).length;
+  $tCount.textContent = (activeTunnel ? allReqs.filter(x => x.endpoint === activeTunnel) : []).length;
 }
 
 
 function clearReqs() {
-  allReqs = [];
+  allReqs = allReqs.filter(r => r.endpoint !== activeTunnel);
   renderAll();
 }
 
@@ -1120,30 +1191,47 @@ function replayReq(id) {
 
 // ── Tunnels ────────────────────────────────────
 function renderTunnels(tunnels) {
+  tunnelsMap = {};
+  tunnels.forEach(t => tunnelsMap[t.endpoint] = t);
+
   if (!tunnels || !tunnels.length) {
     $tunList.innerHTML = '<div class="tunnel-empty-msg">No active tunnels</div>';
+    if (activeTunnel) selectTunnel(null);
     return;
   }
-  $tunList.innerHTML = tunnels.map(t => `
-    <div class="tunnel-entry${filteredBy === t.endpoint ? ' active' : ''}"
+  
+  let found = false;
+  $tunList.innerHTML = tunnels.map(t => {
+    if (t.endpoint === activeTunnel) found = true;
+    return `
+    <div class="tunnel-entry${activeTunnel === t.endpoint ? ' active' : ''}"
          data-ep="${esc(t.endpoint)}"
-         onclick="filterByTunnel('${t.endpoint.replace(/'/g,"\\'")}')">
+         onclick="selectTunnel('${t.endpoint.replace(/'/g,"\\'")}')">
       <div class="t-dot ${t.type}"></div>
       <span class="t-name" title="${esc(t.endpoint)}">${esc(t.endpoint)}</span>
       <span class="t-workers">${t.connections}</span>
     </div>
-  `).join('');
+  `}).join('');
+  
+  if (activeTunnel && !found) {
+    selectTunnel(null);
+  } else if (activeTunnel) {
+    renderTunnelOverview();
+  }
 }
 
-
 // ── Boot ───────────────────────────────────────
+document.addEventListener('click', (e) => {
+  const menu = document.getElementById('brand-menu');
+  if (menu && menu.classList.contains('open')) {
+    menu.classList.remove('open');
+  }
+});
 // 1. Load existing requests
 fetch('/api/requests').then(r => r.json()).then(data => {
   if (data && data.length) {
     allReqs = data;
     totalEver = Math.max(...data.map(r => r.id), 0);
-    $sTotal.textContent = totalEver;
-    renderAll();
   }
 }).catch(() => {});
 
@@ -1159,24 +1247,11 @@ const statusSse = new EventSource('/api/status/stream');
 statusSse.onmessage = e => {
   try {
     const s = JSON.parse(e.data);
-    $sHttp.textContent  = s.server  || '—';
-    $sTun.textContent   = s.target  || '—';
-    $sConns.textContent = s.active_conns ?? 0;
     $uptime.textContent = fmtUptime(s.uptime_sec);
     if (s.token && !rawToken) {
       rawToken = s.token;
-      if (revealed) $tokVal.textContent = rawToken;
-    }
-    if (s.apikey) {
-      document.getElementById('apikey-section').style.display = 'block';
-      if (!rawApiKey) {
-        rawApiKey = s.apikey;
-        if (apiRevealed) $apiVal.textContent = rawApiKey;
-      }
-    }
-    if (s.total > totalEver) {
-      totalEver = s.total;
-      $sTotal.textContent = totalEver;
+      document.getElementById('nav-token-val').textContent = rawToken;
+      document.getElementById('nav-token-chip').style.display = 'flex';
     }
     renderTunnels(s.tunnels || []);
   } catch(_) {}

@@ -38,13 +38,24 @@ type poolConn struct {
 	closed int32          // atomic flag for idempotent close
 }
 
+// TunnelMeta stores per-tunnel metadata surfaced in the dashboard.
+type TunnelMeta struct {
+	APIKey      string
+	Type        string
+	Endpoint    string
+	ProxyURL    string
+	ConnectedAt time.Time
+	ClientIP    string
+}
+
 // Server accepts tunnel client connections and proxies incoming HTTP requests
 // through them to the target service on the other end.
 type Server struct {
 	token        string
-	apiKey       string
 	basicAuth    string
 	domain       string
+	httpAddr     string
+	httpsAddr    string
 	poolSize     int
 	pool         chan *poolConn
 	httpPools    map[string]chan *poolConn
@@ -53,6 +64,8 @@ type Server struct {
 	mu           sync.RWMutex
 	count        atomic.Int64 // active tunnel connections
 	inspector    *Inspector
+	tunnelMeta   map[string]TunnelMeta
+	tunnelMetaMu sync.RWMutex
 }
 
 // hopByHopHeaders are headers that must not be forwarded through a proxy.
@@ -68,7 +81,6 @@ func runServer(args []string) {
 	token := fs.String("token", "", "Shared auth token — must match client's -token (required)")
 	certFile := fs.String("cert", "", "TLS cert PEM file (auto-generated if empty)")
 	keyFile := fs.String("key", "", "TLS key PEM file (auto-generated if empty)")
-	apiKey := fs.String("apikey", "", "Optional API key required on all HTTP requests (use 'auto' to auto-generate)")
 	auth := fs.String("auth", "", "Optional HTTP Basic Auth (format: user:pass)")
 	domain := fs.String("domain", "", "Base domain for subdomain routing (e.g., example.com)")
 	noTLS := fs.Bool("notls", false, "Disable TLS on tunnel port (use when behind a TLS-terminating proxy)")
@@ -87,15 +99,6 @@ func runServer(args []string) {
 		*token = hex.EncodeToString(b)
 		log.Printf("▶  Auto-generated token (give this to your clients)")
 		log.Printf("   %s...", (*token)[:8])
-	}
-
-	if *apiKey == "auto" {
-		b := make([]byte, 16)
-		if _, err := rand.Read(b); err != nil {
-			log.Fatalf("failed to generate apikey: %v", err)
-		}
-		*apiKey = hex.EncodeToString(b)
-		log.Printf("▶  Auto-generated API key: %s", *apiKey)
 	}
 
 	if *inspect != "" && *inspectPass == "" {
@@ -121,14 +124,16 @@ func runServer(args []string) {
 
 	srv := &Server{
 		token:        *token,
-		apiKey:       *apiKey,
 		basicAuth:    basicAuthEnc,
 		domain:       *domain,
+		httpAddr:     *httpAddr,
+		httpsAddr:    *httpsAddr,
 		poolSize:     *poolSize,
 		pool:         make(chan *poolConn, *poolSize),
 		httpPools:    make(map[string]chan *poolConn),
 		tcpPools:     make(map[string]chan *poolConn),
 		tcpListeners: make(map[string]net.Listener),
+		tunnelMeta:   make(map[string]TunnelMeta),
 	}
 
 	var tunLn net.Listener
@@ -158,9 +163,6 @@ func runServer(args []string) {
 	log.Printf("▶  HTTP proxy      : %s", *httpAddr)
 	if *httpsAddr != "" {
 		log.Printf("▶  HTTPS proxy     : %s", *httpsAddr)
-	}
-	if *apiKey != "" {
-		log.Printf("▶  API key auth    : enabled")
 	}
 
 	// Start inspector web UI.
@@ -317,8 +319,12 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 		tunnelType = parts[2]
 	}
 	remoteAddr := ""
-	if len(parts) > 3 {
+	if len(parts) > 3 && parts[3] != "-" {
 		remoteAddr = parts[3]
+	}
+	apiKey := ""
+	if len(parts) > 4 && parts[4] != "-" {
+		apiKey = parts[4]
 	}
 
 	mac := hmac.New(sha256.New, []byte(s.token))
@@ -369,6 +375,19 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 		n := s.count.Add(1)
 		log.Printf("tunnel+ %s  (tcp: %s) (active: %d)", conn.RemoteAddr(), remoteAddr, n)
 
+		s.tunnelMetaMu.Lock()
+		if _, exists := s.tunnelMeta[remoteAddr]; !exists {
+			s.tunnelMeta[remoteAddr] = TunnelMeta{
+				APIKey:      apiKey,
+				Type:        "tcp",
+				Endpoint:    remoteAddr,
+				ProxyURL:    "tcp://" + remoteAddr,
+				ConnectedAt: time.Now(),
+				ClientIP:    conn.RemoteAddr().String(),
+			}
+		}
+		s.tunnelMetaMu.Unlock()
+
 		pc := &poolConn{conn: conn, r: r, pool: pool}
 		select {
 		case pool <- pc:
@@ -394,6 +413,19 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 		n := s.count.Add(1)
 		log.Printf("tunnel+ %s  (http: %s) (active: %d)", conn.RemoteAddr(), remoteAddr, n)
 
+		s.tunnelMetaMu.Lock()
+		if _, exists := s.tunnelMeta[remoteAddr]; !exists {
+			s.tunnelMeta[remoteAddr] = TunnelMeta{
+				APIKey:      apiKey,
+				Type:        "http",
+				Endpoint:    remoteAddr,
+				ProxyURL:    s.buildProxyURL("http", remoteAddr),
+				ConnectedAt: time.Now(),
+				ClientIP:    conn.RemoteAddr().String(),
+			}
+		}
+		s.tunnelMetaMu.Unlock()
+
 		pc := &poolConn{conn: conn, r: r, pool: pool}
 		select {
 		case pool <- pc:
@@ -409,6 +441,19 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 	fmt.Fprintf(conn, "OK\n")
 	n := s.count.Add(1)
 	log.Printf("tunnel+ %s  (active: %d)", conn.RemoteAddr(), n)
+
+	s.tunnelMetaMu.Lock()
+	if _, exists := s.tunnelMeta["(default)"]; !exists {
+		s.tunnelMeta["(default)"] = TunnelMeta{
+			APIKey:      apiKey,
+			Type:        "http",
+			Endpoint:    "(default)",
+			ProxyURL:    s.buildProxyURL("http", "(default)"),
+			ConnectedAt: time.Now(),
+			ClientIP:    conn.RemoteAddr().String(),
+		}
+	}
+	s.tunnelMetaMu.Unlock()
 
 	pc := &poolConn{conn: conn, r: r, pool: s.pool}
 	select {
@@ -478,19 +523,26 @@ func (s *Server) handleExternalTCPConn(conn net.Conn, remoteAddr string) {
 
 // ServeHTTP handles incoming HTTP requests from end users.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// ── API key check ────────────────────────────────────────────────────────
-	if s.apiKey != "" {
+	// ── Per-tunnel API key check ─────────────────────────────────────────────
+	endpointKey := s.getEndpointKey(r.Host)
+	s.tunnelMetaMu.RLock()
+	tMeta, hasTMeta := s.tunnelMeta[endpointKey]
+	s.tunnelMetaMu.RUnlock()
+	if hasTMeta && tMeta.APIKey != "" {
 		key := r.Header.Get("X-API-Key")
 		if key == "" {
-			if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
-				key = strings.TrimPrefix(auth, "Bearer ")
+			if authHdr := r.Header.Get("Authorization"); strings.HasPrefix(authHdr, "Bearer ") {
+				key = strings.TrimPrefix(authHdr, "Bearer ")
 			}
 		}
-		if subtle.ConstantTimeCompare([]byte(key), []byte(s.apiKey)) != 1 {
+		if subtle.ConstantTimeCompare([]byte(key), []byte(tMeta.APIKey)) != 1 {
 			w.Header().Set("WWW-Authenticate", `Bearer realm="gotunnel"`)
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
+		// Strip gateway auth headers before forwarding to backend.
+		r.Header.Del("X-API-Key")
+		r.Header.Del("Authorization")
 	}
 
 	// ── Basic Auth check ──────────────────────────────────────────────────────
@@ -553,7 +605,7 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, reqBody *capp
 
 	// Strip gateway-level auth headers — they are not meant for the backend.
 	out.Header.Del("X-API-Key")
-	if s.apiKey != "" || s.basicAuth != "" {
+	if s.basicAuth != "" {
 		out.Header.Del("Authorization")
 	}
 	out.Header.Set("X-Forwarded-For", clientIP(r))
@@ -630,7 +682,7 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, reqBody *capp
 			if ep == "" {
 				ep = "(default)"
 			}
-			s.inspector.Record(ep, r.Method, r.URL.RequestURI(), r.Host, resp.StatusCode, elapsed, r.Header, resp.Header, r.ContentLength, resp.ContentLength, capturedBody)
+			s.inspector.Record(ep, clientIP(r), r.Method, r.URL.RequestURI(), r.Host, resp.StatusCode, elapsed, r.Header, resp.Header, r.ContentLength, resp.ContentLength, capturedBody)
 		}
 		return
 	}
@@ -782,8 +834,8 @@ func (s *Server) getHTTPPool(host string) (chan *poolConn, string) {
 		hostOnly = host
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	if s.domain != "" && strings.HasSuffix(hostOnly, "."+s.domain) {
 		sub := strings.TrimSuffix(hostOnly, "."+s.domain)
@@ -792,6 +844,50 @@ func (s *Server) getHTTPPool(host string) (chan *poolConn, string) {
 		}
 	}
 	return s.pool, ""
+}
+
+// getEndpointKey returns the tunnel endpoint key for a given host (subdomain or "(default)").
+func (s *Server) getEndpointKey(host string) string {
+	hostOnly, _, err := net.SplitHostPort(host)
+	if err != nil {
+		hostOnly = host
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.domain != "" && strings.HasSuffix(hostOnly, "."+s.domain) {
+		sub := strings.TrimSuffix(hostOnly, "."+s.domain)
+		if _, ok := s.httpPools[sub]; ok {
+			return sub
+		}
+	}
+	return "(default)"
+}
+
+// buildProxyURL constructs the public-facing proxy URL for a given tunnel.
+func (s *Server) buildProxyURL(tunnelType, endpoint string) string {
+	if tunnelType == "tcp" {
+		return "tcp://" + endpoint
+	}
+	if endpoint == "(default)" {
+		if s.httpsAddr != "" {
+			if s.domain != "" {
+				return "https://" + s.domain
+			}
+			return "https://" + s.httpsAddr
+		}
+		if s.domain != "" {
+			return "http://" + s.domain
+		}
+		return "http://" + s.httpAddr
+	}
+	// subdomain
+	if s.domain != "" {
+		if s.httpsAddr != "" {
+			return "https://" + endpoint + "." + s.domain
+		}
+		return "http://" + endpoint + "." + s.domain
+	}
+	return "http://" + endpoint + s.httpAddr
 }
 
 func (s *Server) dequeueFrom(pool chan *poolConn) (*poolConn, bool) {
@@ -875,11 +971,13 @@ func (s *Server) startJanitor() {
 	for range ticker.C {
 		s.cleanPool(s.pool)
 
+		var deletedSubs, deletedTCPs []string
 		s.mu.Lock()
 		for sub, p := range s.httpPools {
 			s.cleanPool(p)
 			if len(p) == 0 {
 				delete(s.httpPools, sub)
+				deletedSubs = append(deletedSubs, sub)
 				log.Printf("subdomain pool removed: %s (no active clients)", sub)
 			}
 		}
@@ -887,6 +985,7 @@ func (s *Server) startJanitor() {
 			s.cleanPool(p)
 			if len(p) == 0 {
 				delete(s.tcpPools, addr)
+				deletedTCPs = append(deletedTCPs, addr)
 				if ln, ok := s.tcpListeners[addr]; ok {
 					ln.Close()
 					delete(s.tcpListeners, addr)
@@ -895,6 +994,17 @@ func (s *Server) startJanitor() {
 			}
 		}
 		s.mu.Unlock()
+
+		if len(deletedSubs) > 0 || len(deletedTCPs) > 0 {
+			s.tunnelMetaMu.Lock()
+			for _, sub := range deletedSubs {
+				delete(s.tunnelMeta, sub)
+			}
+			for _, addr := range deletedTCPs {
+				delete(s.tunnelMeta, addr)
+			}
+			s.tunnelMetaMu.Unlock()
+		}
 	}
 }
 

@@ -34,6 +34,7 @@ type CapturedRequest struct {
 	Endpoint    string      `json:"endpoint"`
 	StatusCode  int         `json:"status"`
 	DurationMs  int64       `json:"duration_ms"`
+	ClientIP    string      `json:"client_ip"`
 	ReqHeaders  http.Header `json:"req_headers,omitempty"`
 	RespHeaders http.Header `json:"resp_headers,omitempty"`
 	ReqSize     int64       `json:"req_size"`
@@ -41,11 +42,13 @@ type CapturedRequest struct {
 	ReqBody     []byte      `json:"req_body,omitempty"`
 }
 
-// TunnelEntry describes one active tunnel endpoint.
 type TunnelEntry struct {
 	Type        string `json:"type"`
 	Endpoint    string `json:"endpoint"`
 	Connections int    `json:"connections"`
+	APIKey      string `json:"apikey"`
+	ProxyURL    string `json:"proxy_url"`
+	ClientIP    string `json:"client_ip"`
 }
 
 // Inspector provides a secured web dashboard for live inspection of tunnel traffic.
@@ -122,7 +125,7 @@ func (ins *Inspector) isAuthenticated(r *http.Request) bool {
 }
 
 // Record stores a completed request and fans it out to SSE subscribers.
-func (ins *Inspector) Record(endpoint, method, path, host string, statusCode int, dur time.Duration, reqHeaders, respHeaders http.Header, reqSize, respSize int64, reqBody []byte) {
+func (ins *Inspector) Record(endpoint, clientIP, method, path, host string, statusCode int, dur time.Duration, reqHeaders, respHeaders http.Header, reqSize, respSize int64, reqBody []byte) {
 	ins.mu.Lock()
 	ins.nextID++
 	cr := CapturedRequest{
@@ -134,6 +137,7 @@ func (ins *Inspector) Record(endpoint, method, path, host string, statusCode int
 		Endpoint:    endpoint,
 		StatusCode:  statusCode,
 		DurationMs:  dur.Milliseconds(),
+		ClientIP:    clientIP,
 		ReqHeaders:  cloneHeaders(reqHeaders),
 		RespHeaders: cloneHeaders(respHeaders),
 		ReqSize:     reqSize,
@@ -228,7 +232,6 @@ func (ins *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"uptime_sec":   int(time.Since(ins.StartTime).Seconds()),
 			"total":        total,
 			"token":        ins.Token,
-			"apikey":       ins.srv.apiKey,
 			"active_conns": active,
 		})
 	case "/api/tunnels":
@@ -301,21 +304,43 @@ func (ins *Inspector) handleLogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/login", http.StatusFound)
 }
 
-// handleTunnels returns all active tunnel endpoints (HTTP subdomains + TCP ports).
 func (ins *Inspector) handleTunnels(w http.ResponseWriter, r *http.Request) {
 	tunnels := []TunnelEntry{}
 	if ins.srv != nil {
 		ins.srv.mu.RLock()
+		ins.srv.tunnelMetaMu.RLock()
 		// Default (no-subdomain) HTTP pool
 		if dc := len(ins.srv.pool); dc > 0 {
-			tunnels = append(tunnels, TunnelEntry{Type: "http", Endpoint: "(default)", Connections: dc})
+			meta := ins.srv.tunnelMeta["(default)"]
+			tunnels = append(tunnels, TunnelEntry{
+				Type:        "http",
+				Endpoint:    "(default)",
+				Connections: dc,
+				APIKey:      meta.APIKey,
+				ProxyURL:    meta.ProxyURL,
+			})
 		}
 		for sub, pool := range ins.srv.httpPools {
-			tunnels = append(tunnels, TunnelEntry{Type: "http", Endpoint: sub, Connections: len(pool)})
+			meta := ins.srv.tunnelMeta[sub]
+			tunnels = append(tunnels, TunnelEntry{
+				Type:        "http",
+				Endpoint:    sub,
+				Connections: len(pool),
+				APIKey:      meta.APIKey,
+				ProxyURL:    meta.ProxyURL,
+			})
 		}
 		for port, pool := range ins.srv.tcpPools {
-			tunnels = append(tunnels, TunnelEntry{Type: "tcp", Endpoint: port, Connections: len(pool)})
+			meta := ins.srv.tunnelMeta[port]
+			tunnels = append(tunnels, TunnelEntry{
+				Type:        "tcp",
+				Endpoint:    port,
+				Connections: len(pool),
+				APIKey:      meta.APIKey,
+				ProxyURL:    meta.ProxyURL,
+			})
 		}
+		ins.srv.tunnelMetaMu.RUnlock()
 		ins.srv.mu.RUnlock()
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -379,15 +404,41 @@ func (ins *Inspector) handleStatusSSE(w http.ResponseWriter, r *http.Request) {
 			tunnels := []TunnelEntry{}
 			if ins.srv != nil {
 				ins.srv.mu.RLock()
+				ins.srv.tunnelMetaMu.RLock()
 				if dc := len(ins.srv.pool); dc > 0 {
-					tunnels = append(tunnels, TunnelEntry{Type: "http", Endpoint: "(default)", Connections: dc})
+					meta := ins.srv.tunnelMeta["(default)"]
+					tunnels = append(tunnels, TunnelEntry{
+						Type:        "http",
+						Endpoint:    "(default)",
+						Connections: dc,
+						APIKey:      meta.APIKey,
+						ProxyURL:    meta.ProxyURL,
+						ClientIP:    meta.ClientIP,
+					})
 				}
 				for sub, pool := range ins.srv.httpPools {
-					tunnels = append(tunnels, TunnelEntry{Type: "http", Endpoint: sub, Connections: len(pool)})
+					meta := ins.srv.tunnelMeta[sub]
+					tunnels = append(tunnels, TunnelEntry{
+						Type:        "http",
+						Endpoint:    sub,
+						Connections: len(pool),
+						APIKey:      meta.APIKey,
+						ProxyURL:    meta.ProxyURL,
+						ClientIP:    meta.ClientIP,
+					})
 				}
 				for port, pool := range ins.srv.tcpPools {
-					tunnels = append(tunnels, TunnelEntry{Type: "tcp", Endpoint: port, Connections: len(pool)})
+					meta := ins.srv.tunnelMeta[port]
+					tunnels = append(tunnels, TunnelEntry{
+						Type:        "tcp",
+						Endpoint:    port,
+						Connections: len(pool),
+						APIKey:      meta.APIKey,
+						ProxyURL:    meta.ProxyURL,
+						ClientIP:    meta.ClientIP,
+					})
 				}
+				ins.srv.tunnelMetaMu.RUnlock()
 				ins.srv.mu.RUnlock()
 			}
 
@@ -397,7 +448,6 @@ func (ins *Inspector) handleStatusSSE(w http.ResponseWriter, r *http.Request) {
 				"uptime_sec":   int(time.Since(ins.StartTime).Seconds()),
 				"total":        total,
 				"token":        ins.Token,
-				"apikey":       ins.srv.apiKey,
 				"active_conns": active,
 				"tunnels":      tunnels,
 			}
@@ -462,8 +512,13 @@ func (ins *Inspector) handleReplay(w http.ResponseWriter, r *http.Request) {
 
 	// Re-apply gateway auth so the replayed request passes the server's auth check.
 	if ins.srv != nil {
-		if ins.srv.apiKey != "" {
-			newReq.Header.Set("X-API-Key", ins.srv.apiKey)
+		ins.srv.tunnelMetaMu.RLock()
+		endpointKey := ins.srv.getEndpointKey(targetReq.Host)
+		tMeta, ok := ins.srv.tunnelMeta[endpointKey]
+		ins.srv.tunnelMetaMu.RUnlock()
+
+		if ok && tMeta.APIKey != "" {
+			newReq.Header.Set("X-API-Key", tMeta.APIKey)
 		} else if ins.srv.basicAuth != "" {
 			newReq.Header.Set("Authorization", "Basic "+ins.srv.basicAuth)
 		}

@@ -31,6 +31,7 @@ type Client struct {
 	token      string
 	tunnelType string
 	remoteAddr string
+	apiKey     string
 	targetAddr string
 	noTLS      bool
 	tlsConfig  *tls.Config
@@ -120,6 +121,7 @@ func runClient(args []string) {
 	typeFlag  := fs.String("type",      "http",         "Tunnel type: 'http' (or websocket) or 'tcp'")
 	subdomain := fs.String("subdomain", "",             "Request a specific subdomain (requires server to use -domain)")
 	remote    := fs.String("remote",    "",             "Remote address/port to listen on for TCP tunnels, e.g. ':22222'")
+	apiKey    := fs.String("apikey",    "",             "Optional API key for this tunnel (use 'auto' to auto-generate)")
 	workers   := fs.Int("workers",      10,             "Number of parallel tunnel connections")
 	insecure  := fs.Bool("k",           false,          "Skip TLS cert verification (for self-signed certs)")
 	noTLS     := fs.Bool("notls",       false,          "Use plain TCP (when server runs -notls behind a TLS proxy)")
@@ -148,6 +150,14 @@ func runClient(args []string) {
 		log.Fatal("ERROR: -subdomain can only be used with -type http")
 	}
 
+	if *apiKey == "auto" {
+		b := make([]byte, 16)
+		if _, err := rand.Read(b); err != nil {
+			log.Fatalf("failed to generate apikey: %v", err)
+		}
+		*apiKey = hex.EncodeToString(b)
+	}
+
 	remoteVal := *remote
 	if *typeFlag == "http" && *subdomain != "" {
 		remoteVal = *subdomain
@@ -162,6 +172,7 @@ func runClient(args []string) {
 		token:      *token,
 		tunnelType: *typeFlag,
 		remoteAddr: remoteVal,
+		apiKey:     *apiKey,
 		targetAddr: normalizeTargetAddr(*target),
 		noTLS:      *noTLS,
 		httpClient: &http.Client{
@@ -198,6 +209,9 @@ func runClient(args []string) {
 	}
 	if *typeFlag == "http" && *subdomain != "" {
 		fmt.Fprintf(os.Stderr, "  %-14s %s\n", "Subdomain", *subdomain)
+	}
+	if *apiKey != "" {
+		fmt.Fprintf(os.Stderr, "  %-14s %s\n", "API Key", *apiKey)
 	}
 	fmt.Fprintf(os.Stderr, "  %-14s %s\n", "Forwarding", *target)
 	fmt.Fprintf(os.Stderr, "  %-14s %d\n", "Workers", *workers)
@@ -260,9 +274,8 @@ func (c *Client) runWorker(id int) {
 			}
 			backoff += jitter
 		} else {
-			continue
+			backoff = time.Second
 		}
-		return
 	}
 }
 
@@ -331,11 +344,15 @@ func (c *Client) connectAndServe(id int) error {
 	mac.Write([]byte(nonceHex))
 	clientHmac := hex.EncodeToString(mac.Sum(nil))
 
-	if c.tunnelType == "tcp" || (c.tunnelType == "http" && c.remoteAddr != "") {
-		fmt.Fprintf(conn, "AUTH %s %s %s\n", clientHmac, c.tunnelType, c.remoteAddr)
-	} else {
-		fmt.Fprintf(conn, "AUTH %s\n", clientHmac)
+	remote := c.remoteAddr
+	if remote == "" {
+		remote = "-"
 	}
+	key := c.apiKey
+	if key == "" {
+		key = "-"
+	}
+	fmt.Fprintf(conn, "AUTH %s %s %s %s\n", clientHmac, c.tunnelType, remote, key)
 
 	line, err := reader.ReadString('\n')
 	if err != nil {

@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -57,7 +58,7 @@ type Inspector struct {
 	subs   []chan CapturedRequest
 
 	ServerAddr  string
-	TargetAddr  string
+	TunAddr     string
 	StartTime   time.Time
 	Token       string
 	ActiveConns *atomic.Int64
@@ -73,11 +74,11 @@ type Inspector struct {
 }
 
 // NewInspector creates a new request inspector.
-func NewInspector(serverAddr, targetAddr, token, username, password string, activeConns *atomic.Int64, srv *Server) *Inspector {
+func NewInspector(serverAddr, tunAddr, token, username, password string, activeConns *atomic.Int64, srv *Server) *Inspector {
 	ins := &Inspector{
 		requests:    make([]CapturedRequest, 0, maxCapturedRequests),
 		ServerAddr:  serverAddr,
-		TargetAddr:  targetAddr,
+		TunAddr:     tunAddr,
 		StartTime:   time.Now(),
 		Token:       token,
 		ActiveConns: activeConns,
@@ -108,7 +109,7 @@ func (ins *Inspector) cleanSessions() {
 // isAuthenticated returns true if the request carries a valid session cookie.
 func (ins *Inspector) isAuthenticated(r *http.Request) bool {
 	if ins.Password == "" {
-		return true // no password set — open access
+		return false
 	}
 	cookie, err := r.Cookie("gotunnel_session")
 	if err != nil {
@@ -223,7 +224,7 @@ func (ins *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
 			"server":       ins.ServerAddr,
-			"target":       ins.TargetAddr,
+			"tun_addr":     ins.TunAddr,
 			"uptime_sec":   int(time.Since(ins.StartTime).Seconds()),
 			"total":        total,
 			"token":        ins.Token,
@@ -303,7 +304,7 @@ func (ins *Inspector) handleLogout(w http.ResponseWriter, r *http.Request) {
 func (ins *Inspector) handleTunnels(w http.ResponseWriter, r *http.Request) {
 	tunnels := []TunnelEntry{}
 	if ins.srv != nil {
-		ins.srv.mu.Lock()
+		ins.srv.mu.RLock()
 		// Default (no-subdomain) HTTP pool
 		if dc := len(ins.srv.pool); dc > 0 {
 			tunnels = append(tunnels, TunnelEntry{Type: "http", Endpoint: "(default)", Connections: dc})
@@ -314,7 +315,7 @@ func (ins *Inspector) handleTunnels(w http.ResponseWriter, r *http.Request) {
 		for port, pool := range ins.srv.tcpPools {
 			tunnels = append(tunnels, TunnelEntry{Type: "tcp", Endpoint: port, Connections: len(pool)})
 		}
-		ins.srv.mu.Unlock()
+		ins.srv.mu.RUnlock()
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(tunnels)
@@ -386,12 +387,12 @@ func (ins *Inspector) handleStatusSSE(w http.ResponseWriter, r *http.Request) {
 				for port, pool := range ins.srv.tcpPools {
 					tunnels = append(tunnels, TunnelEntry{Type: "tcp", Endpoint: port, Connections: len(pool)})
 				}
-				ins.srv.mu.Unlock()
+				ins.srv.mu.RUnlock()
 			}
 
 			payload := map[string]any{
 				"server":       ins.ServerAddr,
-				"target":       ins.TargetAddr,
+				"tun_addr":     ins.TunAddr,
 				"uptime_sec":   int(time.Since(ins.StartTime).Seconds()),
 				"total":        total,
 				"token":        ins.Token,
@@ -468,7 +469,9 @@ func (ins *Inspector) handleReplay(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		client := &http.Client{Timeout: 30 * time.Second}
-		client.Do(newReq) //nolint:errcheck
+		if _, err := client.Do(newReq); err != nil {
+			log.Printf("replay error: %v", err)
+		}
 	}()
 
 	w.WriteHeader(http.StatusOK)

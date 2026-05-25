@@ -94,6 +94,7 @@ func main() {
 		runGenKey()
 	case "-h", "--help", "help":
 		fmt.Print(usage)
+		os.Exit(0)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n\n", os.Args[1])
 		fmt.Print(usage)

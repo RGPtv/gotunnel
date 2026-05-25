@@ -1,9 +1,10 @@
 {
-  "server": "localhost:4444",
-  "token": "044f685623061148e8dc74382f4022aa581d9378d7f5143ede5f4b6ea4321aa9",
+  "server": "your-server:2222",
+  "token": "YOUR_TOKEN_HERE",
   "tunnels": {
-    "web": {
-      "target": "192.168.0.146:51821",
+    "ollama": {
+      "target": "localhost:11434",
+      "subdomain": "test",
       "type": "http"
     }
   }

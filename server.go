@@ -4,12 +4,15 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha1"
+	"crypto/sha256"
 	"crypto/subtle"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -29,9 +32,10 @@ import (
 // pool holds the channel this connection belongs to so enqueue can return it
 // to the correct pool (default, subdomain, or TCP).
 type poolConn struct {
-	conn net.Conn
-	r    *bufio.Reader
-	pool chan *poolConn // owning pool — never nil after construction
+	conn   net.Conn
+	r      *bufio.Reader
+	pool   chan *poolConn // owning pool — never nil after construction
+	closed int32          // atomic flag for idempotent close
 }
 
 // Server accepts tunnel client connections and proxies incoming HTTP requests
@@ -41,11 +45,12 @@ type Server struct {
 	apiKey       string
 	basicAuth    string
 	domain       string
+	poolSize     int
 	pool         chan *poolConn
 	httpPools    map[string]chan *poolConn
 	tcpPools     map[string]chan *poolConn
 	tcpListeners map[string]net.Listener
-	mu           sync.Mutex
+	mu           sync.RWMutex
 	count        atomic.Int64 // active tunnel connections
 	inspector    *Inspector
 }
@@ -71,6 +76,7 @@ func runServer(args []string) {
 	inspect := fs.String("inspect", ":4040", "Inspector web UI address (empty to disable)")
 	inspectUser := fs.String("inspect-user", "admin", "Dashboard login username")
 	inspectPass := fs.String("inspect-pass", "", "Dashboard login password (auto-generated if empty)")
+	poolSize := fs.Int("poolsize", 512, "Maximum capacity per connection pool")
 	fs.Parse(args)
 
 	if *token == "" {
@@ -80,7 +86,7 @@ func runServer(args []string) {
 		}
 		*token = hex.EncodeToString(b)
 		log.Printf("▶  Auto-generated token (give this to your clients)")
-		log.Printf("   %s", *token)
+		log.Printf("   %s...", (*token)[:8])
 	}
 
 	if *inspect != "" && *inspectPass == "" {
@@ -89,11 +95,18 @@ func runServer(args []string) {
 			log.Fatalf("failed to generate inspect password: %v", err)
 		}
 		*inspectPass = hex.EncodeToString(b)
-		log.Printf("▶  Dashboard login : user= %s  pass= %s", *inspectUser, *inspectPass)
+		if err := os.WriteFile(".gotunnel-admin", []byte(fmt.Sprintf("username: %s\npassword: %s\n", *inspectUser, *inspectPass)), 0600); err != nil {
+			log.Printf("▶  Dashboard login : user= %s  pass= %s", *inspectUser, *inspectPass)
+		} else {
+			log.Printf("▶  Dashboard credentials saved to .gotunnel-admin")
+		}
 	}
 
 	basicAuthEnc := ""
 	if *auth != "" {
+		if strings.Count(*auth, ":") != 1 {
+			log.Fatal("ERROR: -auth must be exactly in 'user:pass' format")
+		}
 		basicAuthEnc = base64.StdEncoding.EncodeToString([]byte(*auth))
 	}
 
@@ -102,7 +115,8 @@ func runServer(args []string) {
 		apiKey:       *apiKey,
 		basicAuth:    basicAuthEnc,
 		domain:       *domain,
-		pool:         make(chan *poolConn, 512),
+		poolSize:     *poolSize,
+		pool:         make(chan *poolConn, *poolSize),
 		httpPools:    make(map[string]chan *poolConn),
 		tcpPools:     make(map[string]chan *poolConn),
 		tcpListeners: make(map[string]net.Listener),
@@ -159,6 +173,7 @@ func runServer(args []string) {
 		Addr:              *httpAddr,
 		Handler:           srv,
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       60 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
 
@@ -208,7 +223,7 @@ func (s *Server) acceptTunnelConns(l net.Listener) {
 	for {
 		conn, err := l.Accept()
 		if err != nil {
-			if strings.Contains(err.Error(), "use of closed network connection") {
+			if errors.Is(err, net.ErrClosed) {
 				return // listener closed during shutdown
 			}
 			log.Printf("tunnel accept: %v", err)
@@ -238,7 +253,7 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 	// ── Detect WebSocket Upgrade vs direct AUTH ───────────────────────────────
 	peek, err := r.Peek(4)
 	if err != nil {
-		log.Printf("auth peek %s: %v", conn.RemoteAddr(), err)
+		log.Printf("auth peek: %v", err)
 		conn.Close()
 		return
 	}
@@ -263,25 +278,31 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 		)
 	}
 
+	// ── CHALLENGE ──────────────────────────────────────────────────────────────
+	nonce := make([]byte, 32)
+	rand.Read(nonce)
+	nonceHex := hex.EncodeToString(nonce)
+	fmt.Fprintf(conn, "CHALLENGE %s\n", nonceHex)
+
 	// ── AUTH ──────────────────────────────────────────────────────────────────
 	line, err := r.ReadString('\n')
 	if err != nil {
-		log.Printf("auth read %s: %v", conn.RemoteAddr(), err)
+		log.Printf("auth read: %v", err)
 		conn.Close()
 		return
 	}
 	conn.SetDeadline(time.Time{})
 
 	line = strings.TrimSpace(line)
-	parts := strings.SplitN(line, " ", 4) // at most 4 fields: AUTH token type remote
+	parts := strings.Fields(line) // correctly handle spaces
 	if len(parts) < 2 || parts[0] != "AUTH" {
 		fmt.Fprintf(conn, "ERROR unauthorized\n")
 		conn.Close()
-		log.Printf("auth fail %s", conn.RemoteAddr())
+		log.Printf("auth format fail")
 		return
 	}
 
-	token := parts[1]
+	clientHmac := parts[1]
 	tunnelType := "http"
 	if len(parts) > 2 {
 		tunnelType = parts[2]
@@ -291,10 +312,14 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 		remoteAddr = parts[3]
 	}
 
-	if subtle.ConstantTimeCompare([]byte(token), []byte(s.token)) != 1 {
+	mac := hmac.New(sha256.New, []byte(s.token))
+	mac.Write([]byte(nonceHex))
+	expectedHmac := hex.EncodeToString(mac.Sum(nil))
+
+	if subtle.ConstantTimeCompare([]byte(clientHmac), []byte(expectedHmac)) != 1 {
 		fmt.Fprintf(conn, "ERROR unauthorized\n")
 		conn.Close()
-		log.Printf("auth fail %s", conn.RemoteAddr())
+		log.Printf("auth hmac mismatch")
 		return
 	}
 
@@ -304,23 +329,32 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 			conn.Close()
 			return
 		}
+
+		// Probe the map without holding the lock across a blocking syscall.
 		s.mu.Lock()
 		pool, exists := s.tcpPools[remoteAddr]
+		s.mu.Unlock()
+
 		if !exists {
-			pool = make(chan *poolConn, 512)
-			s.tcpPools[remoteAddr] = pool
 			ln, err := net.Listen("tcp", remoteAddr)
 			if err != nil {
-				s.mu.Unlock()
 				fmt.Fprintf(conn, "ERROR %v\n", err)
 				conn.Close()
 				return
 			}
-			s.tcpListeners[remoteAddr] = ln
-			go s.acceptTCPConns(ln, remoteAddr)
-			log.Printf("▶  TCP listener    : %s (requested by client)", remoteAddr)
+			// Re-lock and double-check; another goroutine may have won the race.
+			s.mu.Lock()
+			if pool, exists = s.tcpPools[remoteAddr]; !exists {
+				pool = make(chan *poolConn, s.poolSize)
+				s.tcpPools[remoteAddr] = pool
+				s.tcpListeners[remoteAddr] = ln
+				go s.acceptTCPConns(ln, remoteAddr)
+				log.Printf("▶  TCP listener    : %s (requested by client)", remoteAddr)
+			} else {
+				ln.Close() // lost race — discard the listener we just bound
+			}
+			s.mu.Unlock()
 		}
-		s.mu.Unlock()
 
 		fmt.Fprintf(conn, "OK\n")
 		n := s.count.Add(1)
@@ -341,7 +375,7 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 		s.mu.Lock()
 		pool, exists := s.httpPools[remoteAddr]
 		if !exists {
-			pool = make(chan *poolConn, 512)
+			pool = make(chan *poolConn, s.poolSize)
 			s.httpPools[remoteAddr] = pool
 			log.Printf("▶  HTTP subdomain  : %s (requested by client)", remoteAddr)
 		}
@@ -382,7 +416,12 @@ func (s *Server) acceptTCPConns(l net.Listener, remoteAddr string) {
 	for {
 		conn, err := l.Accept()
 		if err != nil {
-			return
+			if errors.Is(err, net.ErrClosed) {
+				return
+			}
+			log.Printf("tcp accept %s: %v", remoteAddr, err)
+			time.Sleep(time.Second)
+			continue
 		}
 		if tc, ok := conn.(*net.TCPConn); ok {
 			tc.SetKeepAlive(true)
@@ -409,7 +448,10 @@ func (s *Server) handleExternalTCPConn(conn net.Conn, remoteAddr string) {
 		return // No available tunnel connections
 	}
 
-	fmt.Fprintf(pc.conn, "START\n")
+	if _, err := fmt.Fprintf(pc.conn, "START\n"); err != nil {
+		s.closeConn(pc, "tcp start write failed")
+		return
+	}
 
 	done := make(chan struct{}, 2)
 	cp := func(dst io.Writer, src io.Reader) {
@@ -454,9 +496,19 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// ── Health endpoint ──────────────────────────────────────────────────────
 	if r.URL.Path == "/_tunnel/health" {
+		s.mu.RLock()
+		totalCapacity := len(s.pool)
+		for _, p := range s.httpPools {
+			totalCapacity += len(p)
+		}
+		for _, p := range s.tcpPools {
+			totalCapacity += len(p)
+		}
+		s.mu.RUnlock()
+
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintf(w, `{"status":"ok","tunnel_clients":%d,"pool_ready":%d}`,
-			s.count.Load(), len(s.pool))
+			s.count.Load(), totalCapacity)
 		return
 	}
 
@@ -484,7 +536,11 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, reqBody *capp
 	out := r.Clone(r.Context())
 	out.RequestURI = ""
 	out.URL.Scheme = "http"
-	out.URL.Host = r.Host
+	if r.Host == "" {
+		out.URL.Host = "localhost"
+	} else {
+		out.URL.Host = r.Host
+	}
 
 	// Strip gateway-level auth headers — they are not meant for the backend.
 	out.Header.Del("X-API-Key")
@@ -504,8 +560,13 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, reqBody *capp
 	var bodyBuf []byte
 	if out.Body != nil {
 		const maxBodyBuf = 10 * 1024 * 1024 // 10 MB
-		bodyBuf, _ = io.ReadAll(io.LimitReader(out.Body, maxBodyBuf))
+		var rerr error
+		bodyBuf, rerr = io.ReadAll(io.LimitReader(out.Body, maxBodyBuf))
 		out.Body.Close()
+		if rerr != nil {
+			http.Error(w, "failed to read request body", http.StatusBadRequest)
+			return
+		}
 		out.ContentLength = int64(len(bodyBuf))
 	}
 
@@ -547,7 +608,7 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, reqBody *capp
 		// Success — stream the response.
 		s.streamResponse(w, resp, pc)
 		elapsed := time.Since(start)
-		log.Printf("%s %s → %d (%s)", r.Method, r.URL.RequestURI(), resp.StatusCode, elapsed.Round(time.Millisecond))
+		log.Printf("%s %s → %d (%s)", r.Method, r.URL.Path, resp.StatusCode, elapsed.Round(time.Millisecond))
 		if s.inspector != nil {
 			var capturedBody []byte
 			if reqBody != nil {
@@ -634,7 +695,11 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request) {
 	out := r.Clone(r.Context())
 	out.RequestURI = ""
 	out.URL.Scheme = "http"
-	out.URL.Host = r.Host
+	if r.Host == "" {
+		out.URL.Host = "localhost"
+	} else {
+		out.URL.Host = r.Host
+	}
 	out.Header.Set("X-Forwarded-For", clientIP(r))
 	out.Header.Set("X-Forwarded-Host", r.Host)
 	out.Header.Set("X-Forwarded-Proto", scheme(r))
@@ -761,33 +826,35 @@ func (s *Server) enqueue(pc *poolConn) {
 }
 
 func (s *Server) closeConn(pc *poolConn, reason string) {
-	pc.conn.Close()
-	n := s.count.Add(-1)
-	log.Printf("tunnel- (%s)  (active: %d)", reason, n)
+	if atomic.CompareAndSwapInt32(&pc.closed, 0, 1) {
+		pc.conn.Close()
+		n := s.count.Add(-1)
+		log.Printf("tunnel- (%s)  (active: %d)", reason, n)
+	}
 }
 
 // drainPool closes all idle connections in all pools.
 func (s *Server) drainPool() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	drain := func(pool chan *poolConn) {
 		for {
 			select {
 			case pc := <-pool:
-				pc.conn.Close()
-				s.count.Add(-1)
+				s.closeConn(pc, "draining")
 			default:
 				return
 			}
 		}
 	}
 	drain(s.pool)
-	s.mu.Lock()
 	for _, p := range s.httpPools {
 		drain(p)
 	}
 	for _, p := range s.tcpPools {
 		drain(p)
 	}
-	s.mu.Unlock()
 }
 
 // startJanitor periodically scans all pools and removes dead connections.

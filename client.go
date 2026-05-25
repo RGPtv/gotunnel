@@ -3,8 +3,12 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"encoding/base64"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"io"
@@ -34,8 +38,9 @@ type Client struct {
 	ctx        context.Context
 	cancel     context.CancelFunc
 
-	uiStatus  string
-	uiWorkers atomic.Int32
+	uiStatusMu sync.RWMutex
+	uiStatus   string
+	uiWorkers  atomic.Int32
 }
 
 type uiRequest struct {
@@ -51,7 +56,9 @@ var (
 )
 
 func (c *Client) setStatus(s string) {
+	c.uiStatusMu.Lock()
 	c.uiStatus = s
+	c.uiStatusMu.Unlock()
 }
 
 func addUIReq(method, path string, status int, dur time.Duration) {
@@ -93,6 +100,16 @@ func normalizeServerAddr(raw string) string {
 		}
 	}
 	return net.JoinHostPort(host, port)
+}
+
+func normalizeTargetAddr(addr string) string {
+	if strings.HasPrefix(addr, "http://") || strings.HasPrefix(addr, "https://") {
+		return addr
+	}
+	if strings.HasPrefix(addr, ":") {
+		return "localhost" + addr
+	}
+	return addr
 }
 
 func runClient(args []string) {
@@ -145,7 +162,7 @@ func runClient(args []string) {
 		token:      *token,
 		tunnelType: *typeFlag,
 		remoteAddr: remoteVal,
-		targetAddr: *target,
+		targetAddr: normalizeTargetAddr(*target),
 		noTLS:      *noTLS,
 		httpClient: &http.Client{
 			Transport: &http.Transport{
@@ -156,7 +173,7 @@ func runClient(args []string) {
 				MaxIdleConns:          200,
 				MaxIdleConnsPerHost:   50,
 				IdleConnTimeout:       90 * time.Second,
-				ResponseHeaderTimeout: 0, // no timeout — target may be slow
+				ResponseHeaderTimeout: 0, 
 			},
 			CheckRedirect: func(*http.Request, []*http.Request) error {
 				return http.ErrUseLastResponse
@@ -217,12 +234,32 @@ func (c *Client) runWorker(id int) {
 			return
 		}
 		c.setStatus("reconnecting")
-		err := c.connectAndServe(id)
-		if err != nil && c.ctx.Err() == nil {
-			time.Sleep(backoff)
-			if backoff < 10*time.Second {
-				backoff *= 2
+		if err := c.connectAndServe(id); err != nil {
+			c.setStatus(fmt.Sprintf("connecting... (retrying in %v)", backoff))
+			select {
+			case <-time.After(backoff):
+			case <-c.ctx.Done():
+				return
 			}
+			jitter := time.Duration(0)
+			if backoff > 0 {
+				mRaw := make([]byte, 8)
+				rand.Read(mRaw)
+				var randInt int64
+				for i := 0; i < 8; i++ {
+					randInt = (randInt << 8) | int64(mRaw[i])
+				}
+				if randInt < 0 {
+					randInt = -randInt
+				}
+				jitter = time.Duration(randInt % int64(backoff/2+1))
+			}
+			backoff *= 2
+			if backoff > 10*time.Second {
+				backoff = 10 * time.Second
+			}
+			backoff += jitter
+		} else {
 			continue
 		}
 		return
@@ -241,7 +278,12 @@ func (c *Client) connectAndServe(id int) error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	hijacked := false
+	defer func() {
+		if !hijacked {
+			conn.Close()
+		}
+	}()
 
 	// Ensure the connection is closed immediately when shutting down.
 	go func() {
@@ -251,7 +293,11 @@ func (c *Client) connectAndServe(id int) error {
 
 	reader := bufio.NewReaderSize(conn, 64*1024)
 
-	wsKey := base64.StdEncoding.EncodeToString([]byte("gotunnel-key"))
+	wsRaw := make([]byte, 16)
+	if _, err := rand.Read(wsRaw); err != nil {
+		return fmt.Errorf("ws key: %w", err)
+	}
+	wsKey := base64.StdEncoding.EncodeToString(wsRaw)
 	fmt.Fprintf(conn,
 		"GET /_tunnel/connect HTTP/1.1\r\n"+
 			"Host: %s\r\n"+
@@ -268,13 +314,27 @@ func (c *Client) connectAndServe(id int) error {
 	}
 	upgradeResp.Body.Close()
 	if upgradeResp.StatusCode != http.StatusSwitchingProtocols {
-		return fmt.Errorf("upgrade rejected")
+		return fmt.Errorf("upgrade rejected: %v", upgradeResp.Status)
 	}
 
+	chalLine, err := reader.ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("read challenge: %w", err)
+	}
+	chalLine = strings.TrimSpace(chalLine)
+	if !strings.HasPrefix(chalLine, "CHALLENGE ") {
+		return fmt.Errorf("expected CHALLENGE, got %q", chalLine)
+	}
+	nonceHex := strings.TrimPrefix(chalLine, "CHALLENGE ")
+
+	mac := hmac.New(sha256.New, []byte(c.token))
+	mac.Write([]byte(nonceHex))
+	clientHmac := hex.EncodeToString(mac.Sum(nil))
+
 	if c.tunnelType == "tcp" || (c.tunnelType == "http" && c.remoteAddr != "") {
-		fmt.Fprintf(conn, "AUTH %s %s %s\n", c.token, c.tunnelType, c.remoteAddr)
+		fmt.Fprintf(conn, "AUTH %s %s %s\n", clientHmac, c.tunnelType, c.remoteAddr)
 	} else {
-		fmt.Fprintf(conn, "AUTH %s\n", c.token)
+		fmt.Fprintf(conn, "AUTH %s\n", clientHmac)
 	}
 
 	line, err := reader.ReadString('\n')
@@ -286,12 +346,17 @@ func (c *Client) connectAndServe(id int) error {
 		return fmt.Errorf("auth rejected: %s", line)
 	}
 
-	c.uiWorkers.Add(1)
 	c.setStatus("online")
+	c.uiWorkers.Add(1)
 	defer c.uiWorkers.Add(-1)
 
 	if c.tunnelType == "tcp" {
-		return c.handleTCPWorker(id, conn, reader)
+		hijacked = true
+		go func() {
+			c.handleTCPWorker(id, conn, reader)
+			conn.Close()
+		}()
+		return nil
 	}
 
 	for {
@@ -301,7 +366,11 @@ func (c *Client) connectAndServe(id int) error {
 		}
 
 		if strings.ToLower(req.Header.Get("Upgrade")) == "websocket" {
-			c.handleWebSocket(id, conn, reader, req)
+			hijacked = true
+			go func() {
+				c.handleWebSocket(id, conn, reader, req)
+				conn.Close()
+			}()
 			return nil
 		}
 
@@ -331,8 +400,7 @@ func (c *Client) handleTCPWorker(id int, tunnelConn net.Conn, tunnelReader *bufi
 		return fmt.Errorf("unexpected command: %s", line)
 	}
 
-	// Dial the local target directly (raw TCP).
-	targetConn, err := net.DialTimeout("tcp", c.targetAddr, 10*time.Second)
+	targetConn, err := net.DialTimeout("tcp", strings.TrimPrefix(strings.TrimPrefix(c.targetAddr, "http://"), "https://"), 10*time.Second)
 	if err != nil {
 		return fmt.Errorf("dial target for tcp: %w", err)
 	}
@@ -345,9 +413,8 @@ func (c *Client) handleTCPWorker(id int, tunnelConn net.Conn, tunnelReader *bufi
 		io.Copy(dst, src)
 		done <- struct{}{}
 	}
-	// Splice: tunnel ↔ target, bidirectionally.
-	go cp(targetConn, tunnelReader) // server → local target
-	go cp(tunnelConn, targetConn)   // local target → server
+	go cp(targetConn, tunnelReader) 
+	go cp(tunnelConn, targetConn)   
 	<-done
 	tunnelConn.Close()
 	targetConn.Close()
@@ -357,21 +424,17 @@ func (c *Client) handleTCPWorker(id int, tunnelConn net.Conn, tunnelReader *bufi
 	return nil
 }
 
-// handleWebSocket dials the local target, completes the WebSocket handshake,
-// then pipes both directions until either side closes.
 func (c *Client) handleWebSocket(id int, tunnelConn net.Conn, tunnelReader *bufio.Reader, req *http.Request) error {
-	// Dial the local target directly (raw TCP so we can splice).
-	targetConn, err := net.DialTimeout("tcp", c.targetAddr, 10*time.Second)
+	targetConn, err := net.DialTimeout("tcp", strings.TrimPrefix(strings.TrimPrefix(c.targetAddr, "http://"), "https://"), 10*time.Second)
 	if err != nil {
 		writeErrorResponse(tunnelConn, 502, err.Error())
 		return fmt.Errorf("dial target for ws: %w", err)
 	}
 	defer targetConn.Close()
 
-	// Rewrite and forward the upgrade request to the local service.
 	req.URL.Scheme = "http"
-	req.URL.Host = c.targetAddr
-	req.Host = c.targetAddr
+	req.URL.Host = strings.TrimPrefix(strings.TrimPrefix(c.targetAddr, "http://"), "https://")
+	req.Host = req.URL.Host
 	req.RequestURI = ""
 	req.Header.Del("X-Forwarded-For")
 	req.Header.Del("X-Forwarded-Proto")
@@ -380,7 +443,6 @@ func (c *Client) handleWebSocket(id int, tunnelConn net.Conn, tunnelReader *bufi
 		return fmt.Errorf("ws write to target: %w", err)
 	}
 
-	// Read the 101 from the local service and relay it back through the tunnel.
 	targetReader := bufio.NewReaderSize(targetConn, 64*1024)
 	resp, err := http.ReadResponse(targetReader, req)
 	if err != nil {
@@ -393,14 +455,13 @@ func (c *Client) handleWebSocket(id int, tunnelConn net.Conn, tunnelReader *bufi
 
 	log.Printf("[w%d] ws open: %s", id, req.URL.Path)
 
-	// Splice: tunnel ↔ target, bidirectionally.
 	done := make(chan struct{}, 2)
 	cp := func(dst io.Writer, src io.Reader) {
 		io.Copy(dst, src)
 		done <- struct{}{}
 	}
-	go cp(targetConn, tunnelReader)  // server → local target
-	go cp(tunnelConn, targetReader)  // local target → server
+	go cp(targetConn, tunnelReader)  
+	go cp(tunnelConn, targetReader)  
 	<-done
 	targetConn.Close()
 	tunnelConn.Close()
@@ -410,15 +471,18 @@ func (c *Client) handleWebSocket(id int, tunnelConn net.Conn, tunnelReader *bufi
 	return nil
 }
 
-// forwardToTarget rewrites the request URL to point at the local target service.
 func (c *Client) forwardToTarget(req *http.Request) (*http.Response, error) {
-	req.URL.Scheme = "http"
-	req.URL.Host = c.targetAddr
-	// Preserve the original Host header — many apps depend on it for routing.
-	if req.Host == "" {
-		req.Host = c.targetAddr
+	if strings.HasPrefix(c.targetAddr, "https://") {
+		req.URL.Scheme = "https"
+		req.URL.Host = strings.TrimPrefix(c.targetAddr, "https://")
+	} else {
+		req.URL.Scheme = "http"
+		req.URL.Host = strings.TrimPrefix(c.targetAddr, "http://")
 	}
-	req.RequestURI = "" // must be empty when using http.Client
+	if req.Host == "" {
+		req.Host = req.URL.Host
+	}
+	req.RequestURI = "" 
 
 	req.Header.Del("X-Forwarded-For")
 	req.Header.Del("X-Forwarded-Proto")
@@ -447,6 +511,7 @@ func (c *Client) startUI() {
 	if err == nil {
 		log.SetOutput(f)
 	} else {
+		fmt.Fprintf(os.Stderr, "warning: cannot open gotunnel.log: %v — logging disabled\n", err)
 		log.SetOutput(io.Discard)
 	}
 
@@ -470,11 +535,14 @@ func (c *Client) drawUI() {
 	b.WriteString("\033[H")
 
 	b.WriteString("gotunnel by @RGPtv                                      (Ctrl+C to quit)\n\n")
+	c.uiStatusMu.RLock()
+	uiStatus := c.uiStatus
+	c.uiStatusMu.RUnlock()
 	statusColor := "\033[32m" // green
-	if c.uiStatus != "online" {
+	if uiStatus != "online" {
 		statusColor = "\033[33m" // yellow
 	}
-	b.WriteString(fmt.Sprintf("Session Status                %s%s\033[0m\033[K\n", statusColor, c.uiStatus))
+	b.WriteString(fmt.Sprintf("Session Status                %s%s\033[0m\033[K\n", statusColor, uiStatus))
 
 	if c.tunnelType == "tcp" {
 		b.WriteString(fmt.Sprintf("Forwarding                    tcp://%s -> %s\033[K\n", c.serverAddr+c.remoteAddr, c.targetAddr))

@@ -377,7 +377,7 @@ func (ins *Inspector) handleStatusSSE(w http.ResponseWriter, r *http.Request) {
 
 			tunnels := []TunnelEntry{}
 			if ins.srv != nil {
-				ins.srv.mu.Lock()
+				ins.srv.mu.RLock()
 				if dc := len(ins.srv.pool); dc > 0 {
 					tunnels = append(tunnels, TunnelEntry{Type: "http", Endpoint: "(default)", Connections: dc})
 				}

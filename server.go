@@ -479,7 +479,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // proxyHTTP forwards a regular HTTP request through a pooled tunnel connection.
 func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, reqBody *cappedBuffer) {
 	start := time.Now()
-	pool, _ := s.getHTTPPool(r.Host)
+	pool, sub := s.getHTTPPool(r.Host)
 	// Prepare the outbound request once (can be written multiple times).
 	out := r.Clone(r.Context())
 	out.RequestURI = ""
@@ -536,7 +536,11 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, reqBody *capp
 				bodyBytes = reqBody.buf
 				reqBody.mu.Unlock()
 			}
-			s.inspector.Record(r.Method, r.URL.RequestURI(), r.Host, resp.StatusCode, elapsed, r.Header, resp.Header, r.ContentLength, resp.ContentLength, bodyBytes)
+			ep := sub
+			if ep == "" {
+				ep = "(default)"
+			}
+			s.inspector.Record(ep, r.Method, r.URL.RequestURI(), r.Host, resp.StatusCode, elapsed, r.Header, resp.Header, r.ContentLength, resp.ContentLength, bodyBytes)
 		}
 		return
 	}

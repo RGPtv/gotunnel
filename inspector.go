@@ -30,6 +30,7 @@ type CapturedRequest struct {
 	Method      string      `json:"method"`
 	Path        string      `json:"path"`
 	Host        string      `json:"host"`
+	Endpoint    string      `json:"endpoint"`
 	StatusCode  int         `json:"status"`
 	DurationMs  int64       `json:"duration_ms"`
 	ReqHeaders  http.Header `json:"req_headers,omitempty"`
@@ -120,7 +121,7 @@ func (ins *Inspector) isAuthenticated(r *http.Request) bool {
 }
 
 // Record stores a completed request and fans it out to SSE subscribers.
-func (ins *Inspector) Record(method, path, host string, statusCode int, dur time.Duration, reqHeaders, respHeaders http.Header, reqSize, respSize int64, reqBody []byte) {
+func (ins *Inspector) Record(endpoint, method, path, host string, statusCode int, dur time.Duration, reqHeaders, respHeaders http.Header, reqSize, respSize int64, reqBody []byte) {
 	ins.mu.Lock()
 	ins.nextID++
 	cr := CapturedRequest{
@@ -129,6 +130,7 @@ func (ins *Inspector) Record(method, path, host string, statusCode int, dur time
 		Method:      method,
 		Path:        path,
 		Host:        host,
+		Endpoint:    endpoint,
 		StatusCode:  statusCode,
 		DurationMs:  dur.Milliseconds(),
 		ReqHeaders:  cloneHeaders(reqHeaders),

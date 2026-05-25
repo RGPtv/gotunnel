@@ -205,9 +205,14 @@ header{
 .tunnel-item{
   background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);
   padding:12px 16px;display:flex;align-items:center;gap:12px;
-  transition:border-color .2s,transform .15s;
+  transition:border-color .2s,transform .15s,box-shadow .2s;
+  cursor:pointer;
 }
-.tunnel-item:hover{border-color:rgba(56,189,248,.15);transform:translateY(-1px)}
+.tunnel-item:hover{border-color:rgba(56,189,248,.3);transform:translateY(-1px)}
+.tunnel-item.selected{
+  border-color:var(--accent);
+  box-shadow:0 0 0 1px var(--accent-glow), inset 0 0 12px rgba(56,189,248,.05);
+}
 .tunnel-badge{
   font-size:10px;font-weight:700;padding:3px 8px;border-radius:5px;flex-shrink:0;
   font-family:'JetBrains Mono',monospace;
@@ -310,7 +315,10 @@ header{
       Traffic Inspector
       <span class="count" id="liveCount">0</span>
     </div>
-    <button class="clear-btn" onclick="clearRequests()">Clear</button>
+    <div style="display:flex;gap:10px;align-items:center">
+      <span id="filterLabel" style="font-size:11px;color:var(--accent);display:none;font-weight:600;background:var(--accent-dim);padding:3px 8px;border-radius:10px;">Filtered</span>
+      <button class="clear-btn" onclick="clearRequests()">Clear</button>
+    </div>
   </div>
 
   <div class="inspector">
@@ -340,9 +348,10 @@ const $activeConns = document.getElementById('activeConns');
 const $tokenValue = document.getElementById('tokenValue');
 
 let totalCount = 0;
-let displayedCount = 0;
 let tokenRevealed = false;
 let rawToken = '';
+let selectedTunnel = null;
+let allRequests = [];
 
 // ── Formatting ────────────────────────────────
 function fmtTime(ts) {
@@ -404,64 +413,83 @@ function copyToken() {
 }
 
 // ── Request rendering ─────────────────────────
+function renderRequests() {
+  const filtered = selectedTunnel 
+    ? allRequests.filter(r => r.endpoint === selectedTunnel)
+    : allRequests;
+
+  $requests.innerHTML = '';
+  $liveCount.textContent = filtered.length;
+  document.getElementById('filterLabel').style.display = selectedTunnel ? 'block' : 'none';
+
+  if (filtered.length === 0) {
+    $empty.style.display = 'flex';
+    if (selectedTunnel) {
+      $empty.querySelector('.empty-text').textContent = 'No requests for this tunnel yet';
+    } else {
+      $empty.querySelector('.empty-text').textContent = 'Waiting for requests…';
+    }
+  } else {
+    $empty.style.display = 'none';
+    // Render in reverse chronological order
+    for (let i = filtered.length - 1; i >= 0; i--) {
+      const r = filtered[i];
+      const row = document.createElement('div');
+      row.className = 'req-row';
+      row.innerHTML = `
+        <span class="req-time">${fmtTime(r.ts)}</span>
+        <span class="req-method ${r.method}">${r.method}</span>
+        <span class="req-path" title="${esc(r.path)}">${esc(r.path)}</span>
+        <span class="req-status ${statusClass(r.status)}">${r.status}</span>
+        <span class="req-dur">${fmtDur(r.duration_ms)}</span>
+        <div class="req-actions">
+          <button class="replay-btn" onclick="replayReq(${r.id}); event.stopPropagation()">Replay</button>
+          <span class="req-expand" id="exp-${r.id}">▸</span>
+        </div>
+      `;
+      const detail = document.createElement('div');
+      detail.className = 'req-detail';
+      detail.id = 'detail-' + r.id;
+      detail.innerHTML = `
+        <div class="detail-cols">
+          <div class="detail-section">
+            <div class="detail-title">Request Headers</div>
+            <div class="detail-headers">${renderHeaders(r.req_headers)}</div>
+          </div>
+          <div class="detail-section">
+            <div class="detail-title">Response Headers</div>
+            <div class="detail-headers">${renderHeaders(r.resp_headers)}</div>
+          </div>
+        </div>
+      `;
+      row.addEventListener('click', () => {
+        detail.classList.toggle('open');
+        document.getElementById('exp-' + r.id).classList.toggle('open');
+      });
+      $requests.appendChild(row);
+      $requests.appendChild(detail);
+    }
+  }
+}
+
 function addRequest(r, isNew) {
-  $empty.style.display = 'none';
-  displayedCount++;
-  $liveCount.textContent = displayedCount;
-
-  const row = document.createElement('div');
-  row.className = 'req-row' + (isNew ? ' new' : '');
-  row.innerHTML = `
-    <span class="req-time">${fmtTime(r.ts)}</span>
-    <span class="req-method ${r.method}">${r.method}</span>
-    <span class="req-path" title="${esc(r.path)}">${esc(r.path)}</span>
-    <span class="req-status ${statusClass(r.status)}">${r.status}</span>
-    <span class="req-dur">${fmtDur(r.duration_ms)}</span>
-    <div class="req-actions">
-      <button class="replay-btn" onclick="replayReq(${r.id}); event.stopPropagation()">Replay</button>
-      <span class="req-expand" id="exp-${r.id}">▸</span>
-    </div>
-  `;
-
-  const detail = document.createElement('div');
-  detail.className = 'req-detail';
-  detail.id = 'detail-' + r.id;
-  detail.innerHTML = `
-    <div class="detail-cols">
-      <div class="detail-section">
-        <div class="detail-title">Request Headers</div>
-        <div class="detail-headers">${renderHeaders(r.req_headers)}</div>
-      </div>
-      <div class="detail-section">
-        <div class="detail-title">Response Headers</div>
-        <div class="detail-headers">${renderHeaders(r.resp_headers)}</div>
-      </div>
-    </div>
-  `;
-
-  row.addEventListener('click', () => {
-    const exp = document.getElementById('exp-' + r.id);
-    detail.classList.toggle('open');
-    exp.classList.toggle('open');
-  });
-
-  $requests.prepend(detail);
-  $requests.prepend(row);
+  if (!allRequests.find(req => req.id === r.id)) {
+    allRequests.push(r);
+    if (allRequests.length > 500) allRequests.shift();
+    renderRequests();
+  }
 }
 
 function clearRequests() {
-  $requests.innerHTML = '';
-  displayedCount = 0;
-  $liveCount.textContent = '0';
-  $empty.style.display = 'flex';
+  allRequests = [];
+  renderRequests();
 }
 
 // ── Load existing requests ────────────────────
 fetch('/api/requests').then(r => r.json()).then(data => {
   if (data && data.length) {
-    data.forEach(r => addRequest(r, false));
-    displayedCount = data.length;
-    $liveCount.textContent = displayedCount;
+    allRequests = data;
+    renderRequests();
   }
 });
 
@@ -492,6 +520,16 @@ loadStatus();
 setInterval(loadStatus, 3000);
 
 // ── Load tunnels ──────────────────────────────
+function selectTunnel(endpoint, type) {
+  if (selectedTunnel === endpoint) {
+    selectedTunnel = null; // Toggle off
+  } else {
+    selectedTunnel = endpoint;
+  }
+  loadTunnels(); // re-render grid to update active classes
+  renderRequests();
+}
+
 function loadTunnels() {
   fetch('/api/tunnels').then(r => r.json()).then(tunnels => {
     const $grid = document.getElementById('tunnelsGrid');
@@ -505,7 +543,7 @@ function loadTunnels() {
     
     $count.textContent = tunnels.length;
     $grid.innerHTML = tunnels.map(t => `
-      <div class="tunnel-item">
+      <div class="tunnel-item ${selectedTunnel === t.endpoint ? 'selected' : ''}" onclick="selectTunnel('${t.endpoint}', '${t.type}')">
         <span class="tunnel-badge ${t.type}">${t.type.toUpperCase()}</span>
         <span class="tunnel-endpoint" title="${t.endpoint}">${t.endpoint}</span>
         <span class="tunnel-conns" title="Active worker connections">${t.connections} workers</span>

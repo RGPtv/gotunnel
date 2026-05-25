@@ -104,9 +104,11 @@ Now, simply start your tunnel using its name:
 The server includes a beautiful ngrok-style web dashboard.
 
 Open **http://127.0.0.1:4040** in your browser while the server is running to see:
-- **Server Status**: Uptime, active tunnel connections, and proxy endpoints
-- **Auth Token**: Easily view and copy your auto-generated token
-- **Live Traffic Inspector**: Every HTTP request flowing through the tunnel in real time
+- **Secured Login**: Protected dashboard access with auto-generated or custom credentials.
+- **Auth Token**: Easily view and copy your auto-generated shared secret token.
+- **Active Tunnels**: View all active HTTP/TCP tunnel endpoints and their worker connections.
+  - *Click any tunnel* to filter the traffic inspector to show only requests for that tunnel!
+- **Live Traffic Inspector**: Every HTTP request flowing through the selected tunnel in real time.
   - Method, path, status code, and response time
   - Expandable request/response headers
   - **Replay Button**: Instantly re-trigger any captured request with a single click!
@@ -226,6 +228,9 @@ Now, your clients can connect securely through NGINX. Because NGINX provides a r
 | `-apikey` | *(none)* | Optional HTTP API key |
 | `-auth` | *(none)* | Optional HTTP Basic Auth (`user:pass`) |
 | `-domain` | *(none)* | Base domain for subdomain routing |
+| `-inspect` | `:4040` | Inspector web UI address (empty to disable) |
+| `-inspect-user` | `admin` | Dashboard login username |
+| `-inspect-pass` | *(auto)* | Dashboard login password |
 | `-notls` | `false` | Disable TLS on tunnel port |
 
 ### `client`

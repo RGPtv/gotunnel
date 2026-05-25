@@ -1,6 +1,6 @@
 {
-  "server": "https://fictional-waddle-pjpp6jv79pg4f6qx9-4444.app.github.dev/",
-  "token": "9fa7117d2078cc44a496899c1408b2184da186a61158df1583068a240f4d5c17",
+  "server": "https://refactored-lamp-r4ppx497wgg9h49j-4444.app.github.dev/",
+  "token": "0273069d16447d7c1fbe8dd49c0e915925b36d4f09927e92ab9b800d0e2f233d",
   "tunnels": {
     "web": {
       "target": "192.168.0.146:51821",

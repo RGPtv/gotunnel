@@ -1,6 +1,6 @@
 {
   "server": "localhost:4444",
-  "token": "5c692d5291cc02b391f6463466f20bdcd4e587e9255c5c98e0cc683d2fc94dd9",
+  "token": "TOKEN",
   "tunnels": {
     "ollama": {
       "target": "localhost:11434",

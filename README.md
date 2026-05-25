@@ -29,7 +29,7 @@ Clone the repository and build the binary:
 ```bash
 git clone https://github.com/RGPtv/gotunnel.git
 cd gotunnel
-go build -o gotunnel .
+go build -o gotunnel ./cmd/gotunnel
 ```
 
 ## Usage
@@ -43,11 +43,10 @@ Run the server on your remote machine (e.g., a public VPS). By default, it liste
   -http :8080 \
   -tun :2222 \
   -domain example.com \  # Optional: enable subdomain routing
-  -auth admin:secret \   # Optional: HTTP basic authentication
-  -apikey auto           # Optional: enable API key auth & auto-generate a secure key
+  -auth admin:secret     # Optional: HTTP basic authentication
 ```
 
-The server generates a secure 256-bit client token on startup (required for clients). If `-apikey auto` is set, a secure 256-bit API key is also auto-generated and logged. Ensure ports `8080` and `2222` are open in your firewall.
+The server generates a secure 256-bit client token on startup (required for clients). Ensure ports `8080` and `2222` are open in your firewall.
 
 ### 2. Start the Client
 
@@ -58,6 +57,7 @@ Run the client on your local machine, pointing it to the server's address and pr
   -server vps.example.com:2222 \
   -token <YOUR_TOKEN> \
   -target localhost:3000 \
+  -apikey auto \ # Optional: require API key to access this tunnel (auto-generates one)
   -k  # Required if the server is using an auto-generated self-signed certificate
 ```
 
@@ -102,7 +102,7 @@ When the server is running, navigate to `http://127.0.0.1:4040` (or your configu
 The default landing view, offering:
 - **Server Metrics**: Real-time tracking of total requests, active connections, proxy endpoints, and tunnel ports.
 - **Client Auth Token**: View, reveal, and quickly copy the shared client authentication token.
-- **API Key**: If API key authentication is enabled (e.g., via `-apikey auto`), this section displays the current API key, with fully integrated reveal and copy actions.
+- **API Key**: If a tunnel client connects with an API key, this section displays the key with fully integrated reveal and copy actions.
 
 ### 2. Traffic Inspector
 An advanced request/response monitoring suite that provides:
@@ -203,6 +203,13 @@ Connect the client using `wss://` (HTTPS):
 
 ## Command Line Reference
 
+| Command | Description |
+|---------|-------------|
+| `server` | Run the tunnel server on your VPS / public host |
+| `client` | Run the tunnel client on your local machine |
+| `start` | Run a named tunnel from config.json |
+| `genkey` | Generate a random 256-bit auth token |
+
 ### `server`
 
 | Flag | Default | Description |
@@ -213,7 +220,6 @@ Connect the client using `wss://` (HTTPS):
 | `-token` | *(auto)* | Shared client authentication token |
 | `-cert` | *(auto)* | TLS certificate PEM file |
 | `-key` | *(auto)* | TLS key PEM file |
-| `-apikey` | | Optional HTTP API key required on all client requests (pass `auto` to auto-generate) |
 | `-auth` | | Optional HTTP Basic Auth (`user:pass`) |
 | `-domain` | | Base domain for subdomain routing |
 | `-inspect` | `:4040` | Inspector web UI address (empty to disable) |
@@ -232,6 +238,7 @@ Connect the client using `wss://` (HTTPS):
 | `-type` | `http` | Tunnel type (`http` or `tcp`) |
 | `-subdomain`| | Request a specific subdomain |
 | `-remote` | | Remote address/port for TCP tunnels |
+| `-apikey` | | Optional API key for this tunnel (use `auto` to auto-generate) |
 | `-workers` | `10` | Parallel tunnel connections |
 | `-k` | `false` | Skip TLS certificate verification |
 | `-notls` | `false` | Use plain TCP (for TLS proxies) |

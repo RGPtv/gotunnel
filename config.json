@@ -1,10 +1,9 @@
 {
-  "server": "localhost:2222",
-  "token": "secret",
+  "server": "https://fictional-waddle-pjpp6jv79pg4f6qx9-4444.app.github.dev/",
+  "token": "9fa7117d2078cc44a496899c1408b2184da186a61158df1583068a240f4d5c17",
   "tunnels": {
     "web": {
-      "target": "localhost:3000",
-      "subdomain": "test",
+      "target": "192.168.0.146:51821",
       "type": "http"
     }
   }

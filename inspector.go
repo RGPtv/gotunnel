@@ -2,7 +2,10 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
+	"crypto/subtle"
 	_ "embed"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -14,6 +17,9 @@ import (
 
 //go:embed inspector_ui.html
 var inspectorHTML string
+
+//go:embed login_ui.html
+var loginHTML string
 
 const maxCapturedRequests = 500
 
@@ -33,7 +39,14 @@ type CapturedRequest struct {
 	ReqBody     []byte      `json:"req_body,omitempty"`
 }
 
-// Inspector provides a web UI for live inspection of tunnel traffic.
+// TunnelEntry describes one active tunnel endpoint.
+type TunnelEntry struct {
+	Type        string `json:"type"`
+	Endpoint    string `json:"endpoint"`
+	Connections int    `json:"connections"`
+}
+
+// Inspector provides a secured web dashboard for live inspection of tunnel traffic.
 type Inspector struct {
 	mu       sync.RWMutex
 	requests []CapturedRequest
@@ -47,21 +60,66 @@ type Inspector struct {
 	StartTime   time.Time
 	Token       string
 	ActiveConns *atomic.Int64
+
+	// Auth
+	Username   string
+	Password   string
+	sessionsMu sync.Mutex
+	sessions   map[string]time.Time
+
+	// Reference to server for tunnels API
+	srv *Server
 }
 
 // NewInspector creates a new request inspector.
-func NewInspector(serverAddr, targetAddr, token string, activeConns *atomic.Int64) *Inspector {
-	return &Inspector{
+func NewInspector(serverAddr, targetAddr, token, username, password string, activeConns *atomic.Int64, srv *Server) *Inspector {
+	ins := &Inspector{
 		requests:    make([]CapturedRequest, 0, maxCapturedRequests),
 		ServerAddr:  serverAddr,
 		TargetAddr:  targetAddr,
 		StartTime:   time.Now(),
 		Token:       token,
 		ActiveConns: activeConns,
+		Username:    username,
+		Password:    password,
+		sessions:    make(map[string]time.Time),
+		srv:         srv,
+	}
+	go ins.cleanSessions()
+	return ins
+}
+
+// cleanSessions periodically purges expired session tokens.
+func (ins *Inspector) cleanSessions() {
+	ticker := time.NewTicker(15 * time.Minute)
+	for range ticker.C {
+		now := time.Now()
+		ins.sessionsMu.Lock()
+		for tok, exp := range ins.sessions {
+			if now.After(exp) {
+				delete(ins.sessions, tok)
+			}
+		}
+		ins.sessionsMu.Unlock()
 	}
 }
 
-// Record stores a completed request and notifies all SSE subscribers.
+// isAuthenticated returns true if the request carries a valid session cookie.
+func (ins *Inspector) isAuthenticated(r *http.Request) bool {
+	if ins.Password == "" {
+		return true // no password set — open access
+	}
+	cookie, err := r.Cookie("gotunnel_session")
+	if err != nil {
+		return false
+	}
+	ins.sessionsMu.Lock()
+	exp, ok := ins.sessions[cookie.Value]
+	ins.sessionsMu.Unlock()
+	return ok && time.Now().Before(exp)
+}
+
+// Record stores a completed request and fans it out to SSE subscribers.
 func (ins *Inspector) Record(method, path, host string, statusCode int, dur time.Duration, reqHeaders, respHeaders http.Header, reqSize, respSize int64, reqBody []byte) {
 	ins.mu.Lock()
 	ins.nextID++
@@ -119,8 +177,24 @@ func (ins *Inspector) subscribe() (chan CapturedRequest, func()) {
 	}
 }
 
-// ServeHTTP routes inspector requests.
+// ServeHTTP routes all dashboard requests.
 func (ins *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Login / logout bypass auth check.
+	switch r.URL.Path {
+	case "/login":
+		ins.handleLogin(w, r)
+		return
+	case "/logout":
+		ins.handleLogout(w, r)
+		return
+	}
+
+	// Every other route requires a valid session.
+	if !ins.isAuthenticated(r) {
+		http.Redirect(w, r, "/login", http.StatusFound)
+		return
+	}
+
 	switch r.URL.Path {
 	case "/":
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -149,6 +223,8 @@ func (ins *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"token":        ins.Token,
 			"active_conns": active,
 		})
+	case "/api/tunnels":
+		ins.handleTunnels(w, r)
 	case "/api/requests/stream":
 		ins.handleSSE(w, r)
 	case "/api/replay":
@@ -156,6 +232,84 @@ func (ins *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+// handleLogin serves the login form (GET) and validates credentials (POST).
+func (ins *Inspector) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		user := r.FormValue("username")
+		pass := r.FormValue("password")
+		userOK := subtle.ConstantTimeCompare([]byte(user), []byte(ins.Username)) == 1
+		passOK := subtle.ConstantTimeCompare([]byte(pass), []byte(ins.Password)) == 1
+		if userOK && passOK {
+			b := make([]byte, 32)
+			if _, err := rand.Read(b); err != nil {
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
+			tok := hex.EncodeToString(b)
+			ins.sessionsMu.Lock()
+			ins.sessions[tok] = time.Now().Add(24 * time.Hour)
+			ins.sessionsMu.Unlock()
+			http.SetCookie(w, &http.Cookie{
+				Name:     "gotunnel_session",
+				Value:    tok,
+				Path:     "/",
+				Expires:  time.Now().Add(24 * time.Hour),
+				HttpOnly: true,
+				SameSite: http.SameSiteLaxMode,
+			})
+			http.Redirect(w, r, "/", http.StatusFound)
+			return
+		}
+		http.Redirect(w, r, "/login?error=1", http.StatusFound)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprint(w, loginHTML)
+}
+
+// handleLogout clears the session and redirects to the login page.
+func (ins *Inspector) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if cookie, err := r.Cookie("gotunnel_session"); err == nil {
+		ins.sessionsMu.Lock()
+		delete(ins.sessions, cookie.Value)
+		ins.sessionsMu.Unlock()
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     "gotunnel_session",
+		Value:    "",
+		Path:     "/",
+		Expires:  time.Unix(0, 0),
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+	http.Redirect(w, r, "/login", http.StatusFound)
+}
+
+// handleTunnels returns all active tunnel endpoints (HTTP subdomains + TCP ports).
+func (ins *Inspector) handleTunnels(w http.ResponseWriter, r *http.Request) {
+	tunnels := []TunnelEntry{}
+	if ins.srv != nil {
+		ins.srv.mu.Lock()
+		// Default (no-subdomain) HTTP pool
+		if dc := len(ins.srv.pool); dc > 0 {
+			tunnels = append(tunnels, TunnelEntry{Type: "http", Endpoint: "(default)", Connections: dc})
+		}
+		for sub, pool := range ins.srv.httpPools {
+			tunnels = append(tunnels, TunnelEntry{Type: "http", Endpoint: sub, Connections: len(pool)})
+		}
+		for port, pool := range ins.srv.tcpPools {
+			tunnels = append(tunnels, TunnelEntry{Type: "tcp", Endpoint: port, Connections: len(pool)})
+		}
+		ins.srv.mu.Unlock()
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(tunnels)
 }
 
 func (ins *Inspector) handleSSE(w http.ResponseWriter, r *http.Request) {

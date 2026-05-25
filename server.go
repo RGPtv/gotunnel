@@ -65,6 +65,8 @@ func runServer(args []string) {
 	noTLS    := fs.Bool("notls", false, "Disable TLS on tunnel port (use when behind a TLS-terminating proxy)")
 	httpsAddr:= fs.String("https", "", "HTTPS listen address (e.g. :443) — requires -cert and -key")
 	inspect  := fs.String("inspect", ":4040", "Inspector web UI address (empty to disable)")
+	inspectUser := fs.String("inspect-user", "admin", "Dashboard login username")
+	inspectPass := fs.String("inspect-pass", "", "Dashboard login password (auto-generated if empty)")
 	fs.Parse(args)
 
 	if *token == "" {
@@ -75,6 +77,15 @@ func runServer(args []string) {
 		*token = hex.EncodeToString(b)
 		log.Printf("▶  Auto-generated token (give this to your clients)")
 		log.Printf("   %s", *token)
+	}
+
+	if *inspect != "" && *inspectPass == "" {
+		b := make([]byte, 10)
+		if _, err := rand.Read(b); err != nil {
+			log.Fatalf("failed to generate inspect password: %v", err)
+		}
+		*inspectPass = hex.EncodeToString(b)
+		log.Printf("▶  Dashboard login : user=%s  pass=%s", *inspectUser, *inspectPass)
 	}
 
 	basicAuthEnc := ""
@@ -127,7 +138,7 @@ func runServer(args []string) {
 
 	// Start inspector web UI.
 	if *inspect != "" {
-		srv.inspector = NewInspector(*httpAddr, *tunAddr, *token, &srv.count)
+		srv.inspector = NewInspector(*httpAddr, *tunAddr, *token, *inspectUser, *inspectPass, &srv.count, srv)
 		go func() {
 			isrv := &http.Server{Addr: *inspect, Handler: srv.inspector}
 			log.Printf("▶  Inspector       : http://%s", *inspect)
@@ -138,6 +149,7 @@ func runServer(args []string) {
 	}
 
 	go srv.acceptTunnelConns(tunLn)
+	go srv.startJanitor()
 
 	httpSrv := &http.Server{
 		Addr:              *httpAddr,
@@ -732,6 +744,48 @@ func (s *Server) drainPool() {
 		case pc := <-s.pool:
 			pc.conn.Close()
 			s.count.Add(-1)
+		default:
+			return
+		}
+	}
+}
+
+// startJanitor periodically scans all pools and removes dead connections.
+func (s *Server) startJanitor() {
+	ticker := time.NewTicker(5 * time.Second)
+	for range ticker.C {
+		s.cleanPool(s.pool)
+
+		s.mu.Lock()
+		for _, p := range s.httpPools {
+			s.cleanPool(p)
+		}
+		for _, p := range s.tcpPools {
+			s.cleanPool(p)
+		}
+		s.mu.Unlock()
+	}
+}
+
+// cleanPool pops all items, checks their liveness, and pushes back the healthy ones.
+func (s *Server) cleanPool(pool chan *poolConn) {
+	n := len(pool)
+	for i := 0; i < n; i++ {
+		select {
+		case pc := <-pool:
+			// A 1ms future deadline: healthy idle conn → timeout error; dead conn → EOF/reset.
+			pc.conn.SetReadDeadline(time.Now().Add(time.Millisecond))
+			_, err := pc.r.Peek(1)
+			pc.conn.SetReadDeadline(time.Time{})
+			if err != nil && !isTimeout(err) {
+				s.closeConn(pc, "client disconnected")
+			} else {
+				select {
+				case pool <- pc:
+				default:
+					s.closeConn(pc, "pool full in janitor")
+				}
+			}
 		default:
 			return
 		}

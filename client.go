@@ -243,6 +243,14 @@ func (c *Client) connectAndServe(id int) error {
 	}
 	defer conn.Close()
 
+	// Ensure the connection is closed immediately when shutting down
+	ctx, cancel := context.WithCancel(c.ctx)
+	defer cancel()
+	go func() {
+		<-ctx.Done()
+		conn.Close()
+	}()
+
 	reader := bufio.NewReaderSize(conn, 64*1024)
 
 	wsKey := base64.StdEncoding.EncodeToString([]byte("gotunnel-key"))
@@ -456,34 +464,33 @@ func (c *Client) drawUI() {
 	uiMu.Lock()
 	defer uiMu.Unlock()
 
-	// Clear screen and reset cursor (ANSI escapes)
-	fmt.Print("\033[H\033[2J")
+	var b strings.Builder
+	// Move cursor to top left
+	b.WriteString("\033[H")
 
-	fmt.Println("gotunnel by @RGPtv                                      (Ctrl+C to quit)")
-	fmt.Println()
+	b.WriteString("gotunnel by @RGPtv                                      (Ctrl+C to quit)\n\n")
 	statusColor := "\033[32m" // green
 	if c.uiStatus != "online" {
 		statusColor = "\033[33m" // yellow
 	}
-	fmt.Printf("Session Status                %s%s\033[0m\n", statusColor, c.uiStatus)
+	b.WriteString(fmt.Sprintf("Session Status                %s%s\033[0m\033[K\n", statusColor, c.uiStatus))
 	
 	if c.tunnelType == "tcp" {
-		fmt.Printf("Forwarding                    tcp://%s -> %s\n", c.serverAddr+c.remoteAddr, c.targetAddr)
+		b.WriteString(fmt.Sprintf("Forwarding                    tcp://%s -> %s\033[K\n", c.serverAddr+c.remoteAddr, c.targetAddr))
 	} else {
 		if c.remoteAddr != "" {
-			fmt.Printf("Forwarding                    https://%s.%s -> %s\n", c.remoteAddr, c.serverAddr, c.targetAddr)
+			b.WriteString(fmt.Sprintf("Forwarding                    https://%s.%s -> %s\033[K\n", c.remoteAddr, c.serverAddr, c.targetAddr))
 		} else {
-			fmt.Printf("Forwarding                    https://%s -> %s\n", c.serverAddr, c.targetAddr)
+			b.WriteString(fmt.Sprintf("Forwarding                    https://%s -> %s\033[K\n", c.serverAddr, c.targetAddr))
 		}
 	}
-	fmt.Printf("Active Workers                %d\n", c.uiWorkers.Load())
-	fmt.Println()
+	b.WriteString(fmt.Sprintf("Active Workers                %d\033[K\n\n", c.uiWorkers.Load()))
 
 	if c.tunnelType == "http" {
-		fmt.Println("HTTP Requests")
-		fmt.Println("-------------")
+		b.WriteString("HTTP Requests\033[K\n")
+		b.WriteString("-------------\033[K\n")
 		if len(uiReqs) == 0 {
-			fmt.Println("(No requests yet)")
+			b.WriteString("(No requests yet)\033[K\n")
 		} else {
 			for _, r := range uiReqs {
 				color := "\033[32m" // green
@@ -500,8 +507,12 @@ func (c *Client) drawUI() {
 					path = path[:37] + "..."
 				}
 				
-				fmt.Printf("%-6s %-42s %s%3d\033[0m  %s\n", r.method, path, color, r.status, r.dur.Round(time.Millisecond))
+				b.WriteString(fmt.Sprintf("%-6s %-42s %s%3d\033[0m  %s\033[K\n", r.method, path, color, r.status, r.dur.Round(time.Millisecond)))
 			}
 		}
 	}
+	
+	// Clear any remaining lines from previous longer outputs
+	b.WriteString("\033[J")
+	fmt.Print(b.String())
 }

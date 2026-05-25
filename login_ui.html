@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>gotunnel — Sign In</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#06090f;--card:#151b27;--border:#1e2a3a;
+  --text:#e2e8f0;--text-secondary:#94a3b8;--muted:#475569;
+  --accent:#38bdf8;--accent-dim:rgba(56,189,248,.1);--accent-glow:rgba(56,189,248,.2);
+  --red:#ef4444;--red-dim:rgba(239,68,68,.08);
+}
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;overflow:hidden}
+.glow{position:fixed;width:700px;height:500px;border-radius:50%;background:radial-gradient(circle,rgba(56,189,248,.055) 0%,rgba(129,140,248,.03) 40%,transparent 70%);top:-180px;left:50%;transform:translateX(-50%);pointer-events:none}
+.glow2{position:fixed;width:400px;height:300px;border-radius:50%;background:radial-gradient(circle,rgba(167,139,250,.04) 0%,transparent 70%);bottom:-100px;right:-50px;pointer-events:none}
+.card{
+  background:var(--card);border:1px solid var(--border);border-radius:20px;
+  padding:44px 40px;width:100%;max-width:390px;position:relative;z-index:1;
+  box-shadow:0 32px 80px rgba(0,0,0,.5),0 0 0 1px rgba(56,189,248,.03);
+  animation:appear .4s ease;
+}
+@keyframes appear{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+.card::before{
+  content:'';position:absolute;top:0;left:12%;right:12%;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(56,189,248,.4),rgba(129,140,248,.3),transparent);
+}
+.brand{text-align:center;margin-bottom:36px}
+.logo{
+  font-size:28px;font-weight:800;letter-spacing:-.6px;
+  background:linear-gradient(135deg,#38bdf8 0%,#818cf8 55%,#a78bfa 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;display:inline-block;
+}
+.sub{font-size:13px;color:var(--muted);margin-top:8px;letter-spacing:.1px}
+.error{
+  display:none;background:var(--red-dim);border:1px solid rgba(239,68,68,.2);
+  border-radius:9px;padding:10px 14px;font-size:13px;color:var(--red);
+  margin-bottom:20px;text-align:center;animation:shake .3s ease;
+}
+.error.show{display:block}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}
+.field{margin-bottom:18px}
+label{display:block;font-size:11px;font-weight:700;color:var(--text-secondary);margin-bottom:7px;letter-spacing:.4px;text-transform:uppercase}
+input{
+  width:100%;background:rgba(6,9,15,.75);border:1px solid var(--border);border-radius:10px;
+  padding:11px 16px;color:var(--text);font-size:14px;font-family:'Inter',sans-serif;
+  outline:none;transition:border-color .18s,box-shadow .18s;
+}
+input::placeholder{color:var(--muted)}
+input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-dim)}
+.submit{
+  width:100%;margin-top:8px;padding:13px;border:none;border-radius:10px;
+  background:linear-gradient(135deg,#38bdf8 0%,#818cf8 100%);
+  color:#06090f;font-size:14px;font-weight:700;font-family:'Inter',sans-serif;
+  cursor:pointer;transition:opacity .18s,transform .15s,box-shadow .18s;
+  letter-spacing:.2px;box-shadow:0 4px 20px rgba(56,189,248,.2);
+}
+.submit:hover{opacity:.92;transform:translateY(-1px);box-shadow:0 6px 28px rgba(56,189,248,.3)}
+.submit:active{transform:translateY(0);opacity:1}
+.footer{text-align:center;margin-top:20px;font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="glow"></div>
+<div class="glow2"></div>
+<div class="card">
+  <div class="brand">
+    <div class="logo">gotunnel</div>
+    <div class="sub">Sign in to access the dashboard</div>
+  </div>
+  <div id="error" class="error">Invalid username or password. Try again.</div>
+  <form method="POST" action="/login">
+    <div class="field">
+      <label for="username">Username</label>
+      <input type="text" name="username" id="username" autocomplete="username" placeholder="admin" autofocus>
+    </div>
+    <div class="field">
+      <label for="password">Password</label>
+      <input type="password" name="password" id="password" autocomplete="current-password" placeholder="••••••••">
+    </div>
+    <button type="submit" class="submit">Sign In →</button>
+  </form>
+  <div class="footer">gotunnel dashboard · secured</div>
+</div>
+<script>
+if (new URLSearchParams(window.location.search).has('error'))
+  document.getElementById('error').classList.add('show');
+</script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 # gotunnel
 
-A lightweight, zero-dependency reverse tunnel written in pure Go. Securely expose any local HTTP service — websites, web apps, APIs, Ollama, Jupyter, anything — through a public VPS.
+A lightweight, zero-dependency reverse tunnel written in pure Go. Securely expose any local HTTP service — websites, web apps, APIs, Ollama, Jupyter, anything — through a public VPS. Now featuring a beautiful **Live Terminal Dashboard** and an **Inspector UI** with 1-click replay functionality!
 
 ```
 Local machine                       Public VPS
@@ -14,17 +14,16 @@ Local machine                       Public VPS
 
 ## Features
 
-- **Pure Go stdlib** — no external dependencies, single binary
-- **Any HTTP service** — websites, SPAs, APIs, Ollama, Jupyter, anything that speaks HTTP
-- **Full WebSocket support** — bidirectional WS connections proxied end-to-end
-- **Correct HTTP proxying** — hop-by-hop header stripping, `Connection: close` handling, `Host` header preservation
-- **`X-Forwarded-*` headers** — apps see the real client IP, host, and scheme
-- **TLS tunnel** — auto-generated self-signed cert or bring your own
-- **Proxy-compatible** — works behind GitHub Codespaces, ngrok, Cloudflare Tunnel via WebSocket upgrade
-- **Optional HTTP API key** — protect the public endpoint
-- **Streaming support** — SSE and chunked transfer work end-to-end
-- **Multi-worker** — parallel connections for concurrent requests (default: 10)
-- **Auto-reconnect** — client reconnects automatically on disconnect
+- **Pure Go stdlib** — no external dependencies, single binary.
+- **Live Terminal Dashboard** — beautiful, flicker-free TUI for monitoring live traffic and tunnel status (just like `ngrok`).
+- **Configuration Files** — easily manage all your tunnels in a `config.json` file.
+- **Request Inspector with Replay** — live web UI at `localhost:4040` showing traffic. Instantly replay requests with one click!
+- **Subdomain Routing** — route multiple client tunnels using custom subdomains on the same server.
+- **HTTP Basic Authentication** — natively password-protect your exposed tunnels natively right from the browser.
+- **Full WebSocket support** — bidirectional WS connections proxied end-to-end.
+- **TLS tunnel** — auto-generated self-signed cert or bring your own.
+- **Proxy-compatible** — works behind GitHub Codespaces, ngrok, Cloudflare Tunnel via WebSocket upgrade.
+- **TCP Tunneling** — native raw TCP streams for exposing SSH, MySQL, Redis, and more.
 
 ---
 
@@ -51,7 +50,9 @@ echo $TOKEN   # save this — both server and client need it
 ./gotunnel server \
   -token $TOKEN \
   -http  :8080 \
-  -tun   :2222
+  -tun   :2222 \
+  -domain example.com \  # Optional: enables subdomain routing
+  -auth  admin:secret    # Optional: basic authentication
 ```
 
 Open ports **8080** (HTTP, for users/apps) and **2222** (TCP, for the tunnel client) in your firewall.
@@ -74,110 +75,123 @@ http://vps.example.com:8080
 
 ---
 
-## Examples
+## Using Configuration Files (New!)
 
-### Static website or web app (React, Vue, Next.js, etc.)
+Tired of typing long terminal commands? You can define your tunnels in a `config.json` file in the same directory:
 
-```bash
-./gotunnel client -server vps.example.com:2222 -token $TOKEN -target localhost:3000 -k
+```json
+{
+  "server": "vps.example.com:2222",
+  "token": "YOUR_SECRET_TOKEN",
+  "tunnels": {
+    "web": {
+      "target": "localhost:3000",
+      "subdomain": "api",
+      "type": "http"
+    },
+    "ssh": {
+      "target": "localhost:22",
+      "type": "tcp",
+      "remote": ":22222"
+    }
+  }
+}
 ```
 
-Supports full-page navigation, static assets (JS/CSS/images), WebSocket hot-reload, and `fetch`/`XHR` calls.
-
-### Ollama
-
+Now, simply start your tunnel using its name:
 ```bash
-./gotunnel client -server vps.example.com:2222 -token $TOKEN -target localhost:11434 -k
-
-curl http://vps.example.com:8080/api/tags
-curl http://vps.example.com:8080/api/generate \
-  -d '{"model":"llama3","prompt":"Hello!","stream":true}'
-```
-
-### Jupyter notebook
-
-```bash
-./gotunnel client -server vps.example.com:2222 -token $TOKEN -target localhost:8888 -k
-# Open http://vps.example.com:8080 in your browser — WebSocket kernel connections work too
-```
-
-### FastAPI / Flask / Django
-
-```bash
-./gotunnel client -server vps.example.com:2222 -token $TOKEN -target localhost:8000 -k
-```
-
-### Any HTTP service
-
-```bash
-./gotunnel client -server vps.example.com:2222 -token $TOKEN -target localhost:5000 -k
+./gotunnel start web -k
 ```
 
 ---
 
-## WebSocket support
+## Request Inspector & Replay
 
-WebSocket connections (used by chat apps, live dashboards, hot-reload dev servers, Jupyter kernels, etc.) are proxied transparently. When the server detects a `Upgrade: websocket` request it hijacks the browser connection and splices it directly to the tunnel, giving full bidirectional streaming with no HTTP overhead.
+The client includes a live web UI for inspecting tunnel traffic, similar to ngrok’s inspector.
+
+Open **http://127.0.0.1:4040** in your browser while the client is running to see:
+- Every HTTP request flowing through the tunnel in real time
+- Method, path, status code, and response time
+- Expandable request/response headers
+- **Replay Button**: Instantly re-trigger any captured request against your local dev server with a single click!
+
+---
+
+## Subdomain Routing
+
+If you run multiple microservices, you can host them concurrently on the same server using subdomains!
+1. Start the server with `-domain yourdomain.com`
+2. Start the client with `-subdomain api`
+3. Your local service is now available securely at `api.yourdomain.com:8080`!
 
 ---
 
 ## Securing the HTTP endpoint
 
-Add an API key so only authorised clients can reach your service:
-
+### HTTP Basic Auth (Browser Prompt)
 ```bash
-# Server
+./gotunnel server -token $TOKEN -auth admin:supersecret -http :8080 -tun :2222
+```
+
+### API Key (Header)
+```bash
 ./gotunnel server -token $TOKEN -apikey $APIKEY -http :8080 -tun :2222
-
-# Clients send either header:
-curl -H "Authorization: Bearer $APIKEY" http://vps.example.com:8080/
-curl -H "X-API-Key: $APIKEY"            http://vps.example.com:8080/
+# Clients send: curl -H "Authorization: Bearer $APIKEY" http://vps.example.com:8080/
 ```
 
 ---
 
-## Using a real TLS cert (Let's Encrypt)
+## TCP Tunneling (SSH, MySQL, etc.)
+
+Expose raw TCP ports (like SSH):
 
 ```bash
-certbot certonly --standalone -d vps.example.com
-
-./gotunnel server \
-  -token $TOKEN \
-  -http  :8080 \
-  -tun   :2222 \
-  -cert  /etc/letsencrypt/live/vps.example.com/fullchain.pem \
-  -key   /etc/letsencrypt/live/vps.example.com/privkey.pem
-
-# Client no longer needs -k
-./gotunnel client -server vps.example.com:2222 -token $TOKEN -target localhost:3000
+./gotunnel client -server vps.example.com:2222 -token $TOKEN -type tcp -target localhost:22 -remote :22222 -k
+```
+Connect to your local machine from anywhere:
+```bash
+ssh user@vps.example.com -p 22222
 ```
 
 ---
 
-## Behind a TLS-terminating proxy
+## Behind a TLS-terminating proxy (e.g. NGINX, Cloudflare)
 
-When running inside **GitHub Codespaces**, **ngrok**, **Cloudflare Tunnel**, or any platform that terminates TLS before your process, use `-notls` on the server. The proxy already handles encryption — without this flag the server wraps the connection in TLS again, causing a handshake failure.
+When running behind NGINX, GitHub Codespaces, or Cloudflare Tunnel, the proxy usually terminates TLS (HTTPS) before the connection reaches your process. 
+
+In this case, you should use the `-notls` flag on the server so it doesn't try to wrap the connection in TLS again (which would cause a handshake failure).
 
 ```bash
-# Server — plain TCP on the tunnel port
-./gotunnel server -token $TOKEN -http :8080 -tun :4444 -notls
-
-# Client — no -k needed, proxy provides a real cert
-./gotunnel client \
-  -server https://your-codespace-4444.app.github.dev/ \
-  -token  $TOKEN \
-  -target localhost:3000
+# Server — run plain TCP on the tunnel port
+./gotunnel server -token $TOKEN -notls -http :8080 -tun :4444
 ```
 
-The client performs a real WebSocket upgrade handshake (`Upgrade: websocket` + `Sec-WebSocket-Accept`) so strict proxies accept the connection before the tunnel protocol takes over.
+Then, configure NGINX to proxy WebSocket traffic to the tunnel port (`:4444` in this example). Here is a sample `nginx.conf` block for the tunnel endpoint:
 
----
+```nginx
+server {
+    listen 443 ssl;
+    server_name tunnel.yourdomain.com;
+    
+    # ... your SSL cert config ...
 
-## Health check
+    location / {
+        proxy_pass http://127.0.0.1:4444;
+        
+        # Crucial for WebSocket upgrade!
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $host;
+    }
+}
+```
+
+Now, your clients can connect securely through NGINX. Because NGINX provides a real SSL certificate, the client no longer needs the `-k` (insecure) flag!
 
 ```bash
-curl http://vps.example.com:8080/_tunnel/health
-# {"status":"ok","tunnel_clients":10,"pool_ready":10}
+# Client connects via wss:// (HTTPS) through NGINX
+./gotunnel client -server https://tunnel.yourdomain.com -token $TOKEN -target localhost:3000
 ```
 
 ---
@@ -194,40 +208,23 @@ curl http://vps.example.com:8080/_tunnel/health
 | `-cert` | *(auto)* | TLS cert PEM file |
 | `-key` | *(auto)* | TLS key PEM file |
 | `-apikey` | *(none)* | Optional HTTP API key |
-| `-notls` | `false` | Disable TLS on tunnel port (use behind a TLS-terminating proxy) |
+| `-auth` | *(none)* | Optional HTTP Basic Auth (`user:pass`) |
+| `-domain` | *(none)* | Base domain for subdomain routing |
+| `-notls` | `false` | Disable TLS on tunnel port |
 
 ### `client`
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-server` | *(required)* | VPS address — `host:port` or `https://host[:port]` |
-| `-token` | *(required)* | Shared auth token |
+| `-server` | *(prompt)* | VPS address — `host:port` or `https://host[:port]` |
+| `-token` | *(prompt)* | Shared auth token |
 | `-target` | `localhost:8080` | Local service to tunnel |
+| `-type` | `http` | Tunnel type (`http` or `tcp`) |
+| `-subdomain`| *(none)* | Request a specific subdomain |
+| `-remote` | *(none)* | Remote address/port for TCP tunnels |
 | `-workers` | `10` | Parallel tunnel connections |
-| `-k` | `false` | Skip TLS cert verification (for self-signed certs) |
-
----
-
-## Running as a systemd service
-
-```ini
-# /etc/systemd/system/gotunnel.service
-[Unit]
-Description=gotunnel Server
-After=network.target
-
-[Service]
-ExecStart=/usr/local/bin/gotunnel server -token YOUR_TOKEN -http :8080 -tun :2222
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-sudo systemctl enable --now gotunnel
-```
+| `-k` | `false` | Skip TLS cert verification |
+| `-notls` | `false` | Use plain TCP (for TLS proxies) |
 
 ---
 

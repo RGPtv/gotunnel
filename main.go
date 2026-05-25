@@ -17,6 +17,7 @@ How it works:
 Commands:
   server   Run the tunnel server on your VPS / public host
   client   Run the tunnel client on your local machine
+  start    Run a named tunnel from config.json
   genkey   Generate a random 256-bit auth token
 
 Run 'gotunnel <command> -help' for all flags.
@@ -41,11 +42,11 @@ Examples:
   # Tunnel a web app
   gotunnel client -server vps.example.com:2222 -token $TOKEN -target localhost:3000 -k
 
-  # Tunnel a Jupyter notebook
-  gotunnel client -server vps.example.com:2222 -token $TOKEN -target localhost:8888 -k
-
   # Tunnel any HTTP service
   gotunnel client -server vps.example.com:2222 -token $TOKEN -target localhost:5000 -k
+
+  # Tunnel SSH over raw TCP
+  gotunnel client -server vps.example.com:2222 -token $TOKEN -target localhost:22 -type tcp -remote :22222 -k
 
 Behind a TLS-terminating proxy (GitHub Codespaces, ngrok, Cloudflare Tunnel):
   # Server (proxy already handles TLS — no double-wrap):
@@ -63,6 +64,7 @@ Notes:
   • Streaming responses (SSE, chunked transfer) work end-to-end.
   • Use -workers on the client to allow more concurrent requests (default 5).
   • Any HTTP service works: web apps, APIs, notebooks, Ollama, etc.
+  • For raw TCP protocols (SSH, MySQL, Redis, etc.), use -type tcp and specify a -remote port.
 `
 
 func main() {
@@ -76,6 +78,8 @@ func main() {
 		runServer(os.Args[2:])
 	case "client":
 		runClient(os.Args[2:])
+	case "start":
+		runStart(os.Args[2:])
 	case "genkey":
 		runGenKey()
 	case "-h", "--help", "help":

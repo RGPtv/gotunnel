@@ -1,0 +1,11 @@
+{
+  "server": "localhost:2222",
+  "token": "secret",
+  "tunnels": {
+    "web": {
+      "target": "localhost:3000",
+      "subdomain": "test",
+      "type": "http"
+    }
+  }
+}

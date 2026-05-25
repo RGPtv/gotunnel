@@ -2,7 +2,9 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"crypto/sha1"
+	"crypto/subtle"
 	"crypto/tls"
 	"encoding/base64"
 	"flag"
@@ -11,7 +13,10 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"os/signal"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -26,10 +31,17 @@ type poolConn struct {
 // Server accepts tunnel client connections and proxies incoming HTTP requests
 // through them to the target service on the other end.
 type Server struct {
-	token  string
-	apiKey string
-	pool   chan *poolConn
-	count  atomic.Int64 // active tunnel connections
+	token        string
+	apiKey       string
+	basicAuth    string
+	domain       string
+	pool         chan *poolConn
+	httpPools    map[string]chan *poolConn
+	tcpPools     map[string]chan *poolConn
+	tcpListeners map[string]net.Listener
+	mu           sync.Mutex
+	count        atomic.Int64 // active tunnel connections
+	inspector    *Inspector
 }
 
 // hopByHopHeaders are headers that must not be forwarded through a proxy.
@@ -46,17 +58,30 @@ func runServer(args []string) {
 	certFile := fs.String("cert",   "", "TLS cert PEM file (auto-generated if empty)")
 	keyFile  := fs.String("key",    "", "TLS key PEM file (auto-generated if empty)")
 	apiKey   := fs.String("apikey", "", "Optional API key required on all HTTP requests")
-	noTLS   := fs.Bool("notls", false, "Disable TLS on tunnel port (use when behind a TLS-terminating proxy)")
+	auth     := fs.String("auth",   "", "Optional HTTP Basic Auth (format: user:pass)")
+	domain   := fs.String("domain", "", "Base domain for subdomain routing (e.g., example.com)")
+	noTLS    := fs.Bool("notls", false, "Disable TLS on tunnel port (use when behind a TLS-terminating proxy)")
+	inspect  := fs.String("inspect", ":4040", "Inspector web UI address (empty to disable)")
 	fs.Parse(args)
 
 	if *token == "" {
 		log.Fatal("ERROR: -token is required. Generate one with: gotunnel genkey")
 	}
 
+	basicAuthEnc := ""
+	if *auth != "" {
+		basicAuthEnc = base64.StdEncoding.EncodeToString([]byte(*auth))
+	}
+
 	srv := &Server{
-		token:  *token,
-		apiKey: *apiKey,
-		pool:   make(chan *poolConn, 512),
+		token:        *token,
+		apiKey:       *apiKey,
+		basicAuth:    basicAuthEnc,
+		domain:       *domain,
+		pool:         make(chan *poolConn, 512),
+		httpPools:    make(map[string]chan *poolConn),
+		tcpPools:     make(map[string]chan *poolConn),
+		tcpListeners: make(map[string]net.Listener),
 	}
 
 	var tunLn net.Listener
@@ -88,15 +113,44 @@ func runServer(args []string) {
 		log.Printf("▶  API key auth    : enabled")
 	}
 
+	// Start inspector web UI.
+	if *inspect != "" {
+		srv.inspector = NewInspector(*httpAddr, *tunAddr)
+		go func() {
+			isrv := &http.Server{Addr: *inspect, Handler: srv.inspector}
+			log.Printf("▶  Inspector       : http://%s", *inspect)
+			if err := isrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Printf("inspector: %v", err)
+			}
+		}()
+	}
+
 	go srv.acceptTunnelConns(tunLn)
 
 	httpSrv := &http.Server{
-		Addr:    *httpAddr,
-		Handler: srv,
+		Addr:              *httpAddr,
+		Handler:           srv,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
-	if err := httpSrv.ListenAndServe(); err != nil {
+
+	// Graceful shutdown on SIGINT / SIGTERM.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt)
+	go func() {
+		sig := <-sigCh
+		log.Printf("received %v — shutting down", sig)
+		tunLn.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		httpSrv.Shutdown(ctx)
+		srv.drainPool()
+	}()
+
+	if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("HTTP server: %v", err)
 	}
+	log.Printf("server stopped")
 }
 
 // acceptTunnelConns loops, accepting connections from tunnel clients.
@@ -104,9 +158,22 @@ func (s *Server) acceptTunnelConns(l net.Listener) {
 	for {
 		conn, err := l.Accept()
 		if err != nil {
+			if strings.Contains(err.Error(), "use of closed network connection") {
+				return // listener closed during shutdown
+			}
 			log.Printf("tunnel accept: %v", err)
 			time.Sleep(time.Second)
 			continue
+		}
+		// Enable TCP keepalive so the OS detects dead peers.
+		if tc, ok := conn.(*net.TCPConn); ok {
+			tc.SetKeepAlive(true)
+			tc.SetKeepAlivePeriod(30 * time.Second)
+		} else if tlsConn, ok := conn.(*tls.Conn); ok {
+			if tc, ok := tlsConn.NetConn().(*net.TCPConn); ok {
+				tc.SetKeepAlive(true)
+				tc.SetKeepAlivePeriod(30 * time.Second)
+			}
 		}
 		go s.handleTunnelConn(conn)
 	}
@@ -156,11 +223,98 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 	conn.SetDeadline(time.Time{})
 
 	line = strings.TrimSpace(line)
-	if !strings.HasPrefix(line, "AUTH ") || strings.TrimPrefix(line, "AUTH ") != s.token {
+	parts := strings.Split(line, " ")
+	if len(parts) == 0 || parts[0] != "AUTH" {
 		fmt.Fprintf(conn, "ERROR unauthorized\n")
 		conn.Close()
 		log.Printf("auth fail %s", conn.RemoteAddr())
 		return
+	}
+
+	token := ""
+	if len(parts) > 1 {
+		token = parts[1]
+	}
+	tunnelType := "http"
+	if len(parts) > 2 {
+		tunnelType = parts[2]
+	}
+	remoteAddr := ""
+	if len(parts) > 3 {
+		remoteAddr = parts[3]
+	}
+
+	if subtle.ConstantTimeCompare([]byte(token), []byte(s.token)) != 1 {
+		fmt.Fprintf(conn, "ERROR unauthorized\n")
+		conn.Close()
+		log.Printf("auth fail %s", conn.RemoteAddr())
+		return
+	}
+
+	if tunnelType == "tcp" {
+		if remoteAddr == "" {
+			fmt.Fprintf(conn, "ERROR remote address required for tcp\n")
+			conn.Close()
+			return
+		}
+		s.mu.Lock()
+		pool, exists := s.tcpPools[remoteAddr]
+		if !exists {
+			pool = make(chan *poolConn, 512)
+			s.tcpPools[remoteAddr] = pool
+			ln, err := net.Listen("tcp", remoteAddr)
+			if err != nil {
+				s.mu.Unlock()
+				fmt.Fprintf(conn, "ERROR %v\n", err)
+				conn.Close()
+				return
+			}
+			s.tcpListeners[remoteAddr] = ln
+			go s.acceptTCPConns(ln, remoteAddr)
+			log.Printf("▶  TCP listener    : %s (requested by client)", remoteAddr)
+		}
+		s.mu.Unlock()
+
+		fmt.Fprintf(conn, "OK\n")
+		n := s.count.Add(1)
+		log.Printf("tunnel+ %s  (tcp: %s) (active: %d)", conn.RemoteAddr(), remoteAddr, n)
+
+		pc := &poolConn{conn: conn, r: r}
+		select {
+		case pool <- pc:
+		default:
+			conn.Close()
+			s.count.Add(-1)
+			log.Printf("pool full, rejected %s", conn.RemoteAddr())
+		}
+		return
+	}
+
+	if tunnelType == "http" {
+		if remoteAddr != "" {
+			s.mu.Lock()
+			pool, exists := s.httpPools[remoteAddr]
+			if !exists {
+				pool = make(chan *poolConn, 512)
+				s.httpPools[remoteAddr] = pool
+				log.Printf("▶  HTTP subdomain  : %s (requested by client)", remoteAddr)
+			}
+			s.mu.Unlock()
+
+			fmt.Fprintf(conn, "OK\n")
+			n := s.count.Add(1)
+			log.Printf("tunnel+ %s  (http: %s) (active: %d)", conn.RemoteAddr(), remoteAddr, n)
+
+			pc := &poolConn{conn: conn, r: r}
+			select {
+			case pool <- pc:
+			default:
+				conn.Close()
+				s.count.Add(-1)
+				log.Printf("pool full, rejected %s", conn.RemoteAddr())
+			}
+			return
+		}
 	}
 
 	fmt.Fprintf(conn, "OK\n")
@@ -177,6 +331,54 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 	}
 }
 
+// acceptTCPConns loops, accepting connections from external TCP clients.
+func (s *Server) acceptTCPConns(l net.Listener, remoteAddr string) {
+	for {
+		conn, err := l.Accept()
+		if err != nil {
+			return
+		}
+		if tc, ok := conn.(*net.TCPConn); ok {
+			tc.SetKeepAlive(true)
+			tc.SetKeepAlivePeriod(30 * time.Second)
+		}
+		go s.handleExternalTCPConn(conn, remoteAddr)
+	}
+}
+
+// handleExternalTCPConn proxies a raw TCP connection through a tcp pool worker.
+func (s *Server) handleExternalTCPConn(conn net.Conn, remoteAddr string) {
+	defer conn.Close()
+
+	s.mu.Lock()
+	pool := s.tcpPools[remoteAddr]
+	s.mu.Unlock()
+
+	if pool == nil {
+		return
+	}
+
+	pc, ok := s.dequeueFrom(pool)
+	if !ok {
+		return // No available tunnel connections
+	}
+
+	fmt.Fprintf(pc.conn, "START\n")
+
+	done := make(chan struct{}, 2)
+	cp := func(dst io.Writer, src io.Reader) {
+		io.Copy(dst, src)
+		done <- struct{}{}
+	}
+	go cp(pc.conn, conn)
+	go cp(conn, pc.r) // Use buffered reader from poolConn!
+	<-done
+	pc.conn.Close()
+	<-done
+
+	s.closeConn(pc, "tcp session closed")
+}
+
 // ServeHTTP handles incoming HTTP requests from end users.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// ── API key check ────────────────────────────────────────────────────────
@@ -187,8 +389,18 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				key = strings.TrimPrefix(auth, "Bearer ")
 			}
 		}
-		if key != s.apiKey {
+		if subtle.ConstantTimeCompare([]byte(key), []byte(s.apiKey)) != 1 {
 			w.Header().Set("WWW-Authenticate", `Bearer realm="gotunnel"`)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+	}
+
+	// ── Basic Auth check ──────────────────────────────────────────────────────
+	if s.basicAuth != "" {
+		auth := r.Header.Get("Authorization")
+		if !strings.HasPrefix(auth, "Basic ") || subtle.ConstantTimeCompare([]byte(strings.TrimPrefix(auth, "Basic ")), []byte(s.basicAuth)) != 1 {
+			w.Header().Set("WWW-Authenticate", `Basic realm="gotunnel"`)
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -209,18 +421,20 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// ── Regular HTTP request ──────────────────────────────────────────────────
-	s.proxyHTTP(w, r)
+	var reqBody *cappedBuffer
+	if s.inspector != nil && r.Body != nil {
+		reqBody = &cappedBuffer{max: 1024 * 1024}
+		r.Body = io.NopCloser(io.TeeReader(r.Body, reqBody))
+	}
+
+	s.proxyHTTP(w, r, reqBody)
 }
 
 // proxyHTTP forwards a regular HTTP request through a pooled tunnel connection.
-func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request) {
-	pc, ok := s.dequeue()
-	if !ok {
-		http.Error(w, "no tunnel clients connected — is the client running?", http.StatusServiceUnavailable)
-		return
-	}
-
-	// Prepare the outbound request.
+func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, reqBody *cappedBuffer) {
+	start := time.Now()
+	pool, _ := s.getHTTPPool(r.Host)
+	// Prepare the outbound request once (can be written multiple times).
 	out := r.Clone(r.Context())
 	out.RequestURI = ""
 	out.URL.Scheme = "http"
@@ -235,24 +449,60 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request) {
 	// Remove hop-by-hop headers before forwarding.
 	removeHopByHop(out.Header)
 
-	if err := out.Write(pc.conn); err != nil {
-		s.closeConn(pc, "write request")
-		http.Error(w, "tunnel write error", http.StatusBadGateway)
-		return
-	}
+	// Try up to 2 tunnel connections — the first may be stale.
+	const maxAttempts = 2
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		pc, ok := s.dequeueFrom(pool)
+		if !ok {
+			http.Error(w, "no tunnel clients connected — is the client running?", http.StatusServiceUnavailable)
+			return
+		}
 
-	resp, err := http.ReadResponse(pc.r, out)
-	if err != nil {
-		s.closeConn(pc, "read response")
-		http.Error(w, "tunnel read error", http.StatusBadGateway)
+		if err := out.Write(pc.conn); err != nil {
+			s.closeConn(pc, "write request")
+			if attempt < maxAttempts {
+				log.Printf("tunnel write failed (attempt %d/%d), retrying", attempt, maxAttempts)
+				continue
+			}
+			http.Error(w, "tunnel write error", http.StatusBadGateway)
+			return
+		}
+
+		resp, err := http.ReadResponse(pc.r, out)
+		if err != nil {
+			s.closeConn(pc, "read response")
+			if attempt < maxAttempts {
+				log.Printf("tunnel read failed (attempt %d/%d), retrying", attempt, maxAttempts)
+				continue
+			}
+			http.Error(w, "tunnel read error", http.StatusBadGateway)
+			return
+		}
+
+		// Success — stream the response.
+		s.streamResponse(w, resp, pc)
+		elapsed := time.Since(start)
+		log.Printf("%s %s → %d (%s)", r.Method, r.URL.RequestURI(), resp.StatusCode, elapsed.Round(time.Millisecond))
+		if s.inspector != nil {
+			var bodyBytes []byte
+			if reqBody != nil {
+				reqBody.mu.Lock()
+				bodyBytes = reqBody.buf
+				reqBody.mu.Unlock()
+			}
+			s.inspector.Record(r.Method, r.URL.RequestURI(), r.Host, resp.StatusCode, elapsed, r.Header, resp.Header, r.ContentLength, resp.ContentLength, bodyBytes)
+		}
 		return
 	}
+}
+
+// streamResponse writes the upstream response to the HTTP client and returns
+// the tunnel connection to the pool when possible.
+func (s *Server) streamResponse(w http.ResponseWriter, resp *http.Response, pc *poolConn) {
 	defer resp.Body.Close()
 
-	// Determine whether the tunnel connection can be reused.
 	reuse := keepAlive(resp)
 
-	// Copy response headers (skip hop-by-hop).
 	for k, vv := range resp.Header {
 		if !isHopByHop(k) {
 			for _, v := range vv {
@@ -262,7 +512,6 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(resp.StatusCode)
 
-	// Stream body with flushing for SSE / chunked responses.
 	flusher, canFlush := w.(http.Flusher)
 	buf := make([]byte, 32*1024)
 	for {
@@ -289,7 +538,8 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request) {
 
 // proxyWebSocket tunnels a browser WebSocket connection bidirectionally.
 func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request) {
-	pc, ok := s.dequeue()
+	pool, _ := s.getHTTPPool(r.Host)
+	pc, ok := s.dequeueFrom(pool)
 	if !ok {
 		http.Error(w, "no tunnel clients connected", http.StatusServiceUnavailable)
 		return
@@ -348,6 +598,9 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request) {
 	go cp(pc.conn, brw)  // browser → tunnel
 	go cp(brw, pc.r)     // tunnel → browser (uses buffered reader)
 	<-done
+	browserConn.Close()
+	pc.conn.Close()
+	<-done
 
 	// WebSocket connections are never returned to the pool.
 	s.closeConn(pc, "ws closed")
@@ -356,13 +609,72 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request) {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-func (s *Server) dequeue() (*poolConn, bool) {
-	select {
-	case pc := <-s.pool:
-		return pc, true
-	case <-time.After(10 * time.Second):
-		return nil, false
+type cappedBuffer struct {
+	mu  sync.Mutex
+	buf []byte
+	max int
+}
+
+func (c *cappedBuffer) Write(p []byte) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.buf) >= c.max {
+		return len(p), nil
 	}
+	rem := c.max - len(c.buf)
+	if len(p) > rem {
+		c.buf = append(c.buf, p[:rem]...)
+	} else {
+		c.buf = append(c.buf, p...)
+	}
+	return len(p), nil
+}
+
+func (s *Server) getHTTPPool(host string) (chan *poolConn, string) {
+	hostOnly, _, err := net.SplitHostPort(host)
+	if err != nil {
+		hostOnly = host
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.domain != "" && strings.HasSuffix(hostOnly, "."+s.domain) {
+		sub := strings.TrimSuffix(hostOnly, "."+s.domain)
+		if pool, ok := s.httpPools[sub]; ok {
+			return pool, sub
+		}
+	}
+	return s.pool, ""
+}
+
+func (s *Server) dequeueFrom(pool chan *poolConn) (*poolConn, bool) {
+	deadline := time.NewTimer(10 * time.Second)
+	defer deadline.Stop()
+	for {
+		select {
+		case pc := <-pool:
+			// Quick liveness probe: a non-blocking read on a healthy idle
+			// connection returns a timeout error; a dead one returns EOF/reset.
+			pc.conn.SetReadDeadline(time.Now().Add(time.Millisecond))
+			_, err := pc.r.Peek(1)
+			pc.conn.SetReadDeadline(time.Time{})
+			if err != nil && !isTimeout(err) {
+				s.closeConn(pc, "dead on dequeue")
+				continue // try next connection
+			}
+			return pc, true
+		case <-deadline.C:
+			return nil, false
+		}
+	}
+}
+
+// isTimeout reports whether err is a net timeout (i.e. the connection is alive
+// but had nothing to read within the deadline).
+func isTimeout(err error) bool {
+	ne, ok := err.(net.Error)
+	return ok && ne.Timeout()
 }
 
 func (s *Server) enqueue(pc *poolConn) {
@@ -377,6 +689,19 @@ func (s *Server) closeConn(pc *poolConn, reason string) {
 	pc.conn.Close()
 	n := s.count.Add(-1)
 	log.Printf("tunnel- (%s)  (active: %d)", reason, n)
+}
+
+// drainPool closes all idle connections in the pool.
+func (s *Server) drainPool() {
+	for {
+		select {
+		case pc := <-s.pool:
+			pc.conn.Close()
+			s.count.Add(-1)
+		default:
+			return
+		}
+	}
 }
 
 // keepAlive reports whether the tunnel connection should be returned to the
@@ -417,10 +742,14 @@ func isHopByHop(k string) bool {
 // clientIP extracts the real client IP, respecting X-Forwarded-For from
 // upstream proxies.
 func clientIP(r *http.Request) string {
-	if prior := r.Header.Get("X-Forwarded-For"); prior != "" {
-		return prior + ", " + r.RemoteAddr
+	host, _, _ := net.SplitHostPort(r.RemoteAddr)
+	if host == "" {
+		host = r.RemoteAddr
 	}
-	return r.RemoteAddr
+	if prior := r.Header.Get("X-Forwarded-For"); prior != "" {
+		return prior + ", " + host
+	}
+	return host
 }
 
 // scheme returns "https" if the request arrived over TLS (or was forwarded

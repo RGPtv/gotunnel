@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"crypto/tls"
 	"encoding/base64"
 	"flag"
@@ -11,7 +12,11 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"os/signal"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -20,9 +25,42 @@ import (
 type Client struct {
 	serverAddr string
 	token      string
+	tunnelType string
+	remoteAddr string
 	targetAddr string
+	noTLS      bool
 	tlsConfig  *tls.Config
-	httpClient *http.Client // reused for all requests to the target service
+	httpClient *http.Client
+	ctx        context.Context
+	cancel     context.CancelFunc
+
+	uiStatus  string
+	uiWorkers atomic.Int32
+}
+
+type uiRequest struct {
+	method string
+	path   string
+	status int
+	dur    time.Duration
+}
+
+var (
+	uiMu   sync.Mutex
+	uiReqs []uiRequest
+)
+
+func (c *Client) setStatus(s string) {
+	c.uiStatus = s
+}
+
+func addUIReq(method, path string, status int, dur time.Duration) {
+	uiMu.Lock()
+	defer uiMu.Unlock()
+	uiReqs = append(uiReqs, uiRequest{method, path, status, dur})
+	if len(uiReqs) > 10 {
+		uiReqs = uiReqs[1:]
+	}
 }
 
 // normalizeServerAddr accepts any of:
@@ -59,27 +97,56 @@ func normalizeServerAddr(raw string) string {
 
 func runClient(args []string) {
 	fs := flag.NewFlagSet("client", flag.ExitOnError)
-	server   := fs.String("server",  "",               "Tunnel server — host:port or https://host[:port] (required)")
-	token    := fs.String("token",   "",               "Auth token — must match server's -token (required)")
-	target   := fs.String("target",  "localhost:8080", "Local service to tunnel, e.g. localhost:3000")
-	workers  := fs.Int("workers",    10,               "Number of parallel tunnel connections")
-	insecure := fs.Bool("k",         false,            "Skip TLS cert verification (for self-signed certs)")
+	server := fs.String("server", "", "Tunnel server — host:port or https://host[:port] (required)")
+	token := fs.String("token", "", "Auth token — must match server's -token (required)")
+	target := fs.String("target", "localhost:8080", "Local service to tunnel, e.g. localhost:3000")
+	typeFlag := fs.String("type", "http", "Tunnel type: 'http' (or websocket) or 'tcp'")
+	subdomain := fs.String("subdomain", "", "Request a specific subdomain (requires server to use -domain)")
+	remote := fs.String("remote", "", "Remote address/port to listen on for TCP tunnels, e.g. ':22222'")
+	workers := fs.Int("workers", 10, "Number of parallel tunnel connections")
+	insecure := fs.Bool("k", false, "Skip TLS cert verification (for self-signed certs)")
+	noTLS := fs.Bool("notls", false, "Use plain TCP (when server runs -notls behind a TLS proxy)")
 	fs.Parse(args)
 
 	if *server == "" {
-		log.Fatal("ERROR: -server is required")
+		fmt.Print("? Enter the tunnel server address (e.g. example.com:2222): ")
+		reader := bufio.NewReader(os.Stdin)
+		input, _ := reader.ReadString('\n')
+		*server = strings.TrimSpace(input)
 	}
 	if *token == "" {
-		log.Fatal("ERROR: -token is required")
+		fmt.Print("? Enter your auth token: ")
+		reader := bufio.NewReader(os.Stdin)
+		input, _ := reader.ReadString('\n')
+		*token = strings.TrimSpace(input)
+	}
+
+	if *server == "" || *token == "" {
+		log.Fatal("ERROR: -server and -token are required")
+	}
+	if *typeFlag == "tcp" && *remote == "" {
+		log.Fatal("ERROR: -remote is required for tcp tunnels (e.g. -remote :22222)")
+	}
+	if *subdomain != "" && *typeFlag != "http" {
+		log.Fatal("ERROR: -subdomain can only be used with -type http")
+	}
+
+	remoteVal := *remote
+	if *typeFlag == "http" && *subdomain != "" {
+		remoteVal = *subdomain
 	}
 
 	serverAddr := normalizeServerAddr(*server)
 
+	ctx, cancel := context.WithCancel(context.Background())
+
 	c := &Client{
 		serverAddr: serverAddr,
 		token:      *token,
+		tunnelType: *typeFlag,
+		remoteAddr: remoteVal,
 		targetAddr: *target,
-		tlsConfig:  &tls.Config{InsecureSkipVerify: *insecure},
+		noTLS:      *noTLS,
 		httpClient: &http.Client{
 			Transport: &http.Transport{
 				DialContext: (&net.Dialer{
@@ -92,23 +159,53 @@ func runClient(args []string) {
 				ResponseHeaderTimeout: 0, // no timeout — target may be slow
 			},
 			CheckRedirect: func(*http.Request, []*http.Request) error {
-				return http.ErrUseLastResponse // pass redirects through unchanged
+				return http.ErrUseLastResponse
 			},
 		},
+		tlsConfig: &tls.Config{InsecureSkipVerify: *insecure},
+		uiStatus:  "connecting...",
+		ctx:       ctx,
+		cancel:    cancel,
 	}
 
-	log.Printf("▶  Server  : %s  (resolved: %s)", *server, serverAddr)
-	log.Printf("▶  Target  : %s", *target)
-	log.Printf("▶  Workers : %d", *workers)
+	c.startUI()
+
+	// ── Startup banner ───────────────────────────────────────────────────────
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintf(os.Stderr, "  \x1b[1;36mgotunnel\x1b[0m client\n")
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintf(os.Stderr, "  %-14s %s\n", "Tunnel", serverAddr)
+	fmt.Fprintf(os.Stderr, "  %-14s %s\n", "Type", *typeFlag)
+	if *typeFlag == "tcp" {
+		fmt.Fprintf(os.Stderr, "  %-14s %s\n", "Remote Port", *remote)
+	}
+	if *typeFlag == "http" && *subdomain != "" {
+		fmt.Fprintf(os.Stderr, "  %-14s %s\n", "Subdomain", *subdomain)
+	}
+	fmt.Fprintf(os.Stderr, "  %-14s %s\n", "Forwarding", *target)
+	fmt.Fprintf(os.Stderr, "  %-14s %d\n", "Workers", *workers)
 	if *insecure {
-		log.Printf("⚠  TLS cert verification disabled (-k)")
+		fmt.Fprintf(os.Stderr, "  %-14s disabled (-k)\n", "TLS Verify")
 	}
+	fmt.Fprintln(os.Stderr)
 
-	done := make(chan struct{})
+	// Graceful shutdown on SIGINT.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt)
+	go func() {
+		<-sigCh
+		cancel()
+	}()
+
+	var wg sync.WaitGroup
 	for i := 0; i < *workers; i++ {
-		go c.runWorker(i + 1)
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			c.runWorker(id)
+		}(i + 1)
 	}
-	<-done
+	wg.Wait()
 }
 
 // runWorker dials the tunnel server and processes requests until an
@@ -116,32 +213,38 @@ func runClient(args []string) {
 func (c *Client) runWorker(id int) {
 	backoff := time.Second
 	for {
-		log.Printf("[w%d] connecting to %s …", id, c.serverAddr)
+		if c.ctx.Err() != nil {
+			return
+		}
+		c.setStatus("reconnecting")
 		err := c.connectAndServe(id)
-		if err != nil {
-			log.Printf("[w%d] disconnected: %v — retrying in %s", id, err, backoff)
+		if err != nil && c.ctx.Err() == nil {
+			time.Sleep(backoff)
+			if backoff < 10*time.Second {
+				backoff *= 2
+			}
+			continue
 		}
-		time.Sleep(backoff)
-		if backoff < 30*time.Second {
-			backoff *= 2
-		}
+		return
 	}
 }
 
-// connectAndServe opens one TLS connection to the server, authenticates, and
-// then processes HTTP/WebSocket requests in a loop until the connection breaks.
 func (c *Client) connectAndServe(id int) error {
-	conn, err := tls.Dial("tcp", c.serverAddr, c.tlsConfig)
+	var conn net.Conn
+	var err error
+	dialer := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
+	if c.noTLS {
+		conn, err = dialer.DialContext(c.ctx, "tcp", c.serverAddr)
+	} else {
+		conn, err = tls.DialWithDialer(dialer, "tcp", c.serverAddr, c.tlsConfig)
+	}
 	if err != nil {
-		return fmt.Errorf("dial: %w", err)
+		return err
 	}
 	defer conn.Close()
 
 	reader := bufio.NewReaderSize(conn, 64*1024)
 
-	// ── WebSocket upgrade handshake ───────────────────────────────────────────
-	// Most HTTP proxies (GitHub Codespaces, ngrok, etc.) only forward
-	// connections that look like valid WebSocket upgrades.
 	wsKey := base64.StdEncoding.EncodeToString([]byte("gotunnel-key"))
 	fmt.Fprintf(conn,
 		"GET /_tunnel/connect HTTP/1.1\r\n"+
@@ -155,62 +258,97 @@ func (c *Client) connectAndServe(id int) error {
 	)
 	upgradeResp, err := http.ReadResponse(reader, nil)
 	if err != nil {
-		return fmt.Errorf("upgrade read: %w", err)
+		return err
 	}
 	upgradeResp.Body.Close()
 	if upgradeResp.StatusCode != http.StatusSwitchingProtocols {
-		return fmt.Errorf("upgrade rejected: %s", upgradeResp.Status)
+		return fmt.Errorf("upgrade rejected")
 	}
 
-	// ── Authenticate ──────────────────────────────────────────────────────────
-	fmt.Fprintf(conn, "AUTH %s\n", c.token)
+	if c.tunnelType == "tcp" || (c.tunnelType == "http" && c.remoteAddr != "") {
+		fmt.Fprintf(conn, "AUTH %s %s %s\n", c.token, c.tunnelType, c.remoteAddr)
+	} else {
+		fmt.Fprintf(conn, "AUTH %s\n", c.token)
+	}
 
 	line, err := reader.ReadString('\n')
 	if err != nil {
-		return fmt.Errorf("auth read: %w", err)
+		return err
 	}
 	line = strings.TrimSpace(line)
 	if line != "OK" {
-		return fmt.Errorf("auth rejected by server: %s", line)
+		return fmt.Errorf("auth rejected")
 	}
 
-	log.Printf("[w%d] ready — waiting for requests", id)
+	c.uiWorkers.Add(1)
+	c.setStatus("online")
+	defer c.uiWorkers.Add(-1)
 
-	// ── Request loop ──────────────────────────────────────────────────────────
+	if c.tunnelType == "tcp" {
+		return c.handleTCPWorker(id, conn, reader)
+	}
+
 	for {
 		req, err := http.ReadRequest(reader)
 		if err != nil {
-			return fmt.Errorf("read request: %w", err)
+			return err
 		}
 
-		log.Printf("[w%d] ← %s %s", id, req.Method, req.URL.RequestURI())
-
-		// WebSocket upgrade from a browser — handle as a raw TCP pipe.
 		if strings.ToLower(req.Header.Get("Upgrade")) == "websocket" {
-			if err := c.handleWebSocket(id, conn, reader, req); err != nil {
-				return fmt.Errorf("websocket: %w", err)
-			}
-			// After a WebSocket session the tunnel connection is spent.
+			c.handleWebSocket(id, conn, reader, req)
 			return nil
 		}
 
-		// Regular HTTP request.
+		start := time.Now()
 		resp, proxyErr := c.forwardToTarget(req)
 		if proxyErr != nil {
-			log.Printf("[w%d] target error: %v", id, proxyErr)
-			if err := writeErrorResponse(conn, 502, proxyErr.Error()); err != nil {
-				return fmt.Errorf("write error response: %w", err)
-			}
+			writeErrorResponse(conn, 502, proxyErr.Error())
 			continue
 		}
 
 		if err := resp.Write(conn); err != nil {
 			resp.Body.Close()
-			return fmt.Errorf("write response: %w", err)
+			return err
 		}
 		resp.Body.Close()
-		log.Printf("[w%d] → %d %s", id, resp.StatusCode, req.URL.RequestURI())
+
+		addUIReq(req.Method, req.URL.RequestURI(), resp.StatusCode, time.Since(start))
 	}
+}
+
+func (c *Client) handleTCPWorker(id int, tunnelConn net.Conn, tunnelReader *bufio.Reader) error {
+	line, err := tunnelReader.ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("read tcp start: %w", err)
+	}
+	if strings.TrimSpace(line) != "START" {
+		return fmt.Errorf("unexpected command: %s", line)
+	}
+
+	// Dial the local target directly (raw TCP).
+	targetConn, err := net.DialTimeout("tcp", c.targetAddr, 10*time.Second)
+	if err != nil {
+		return fmt.Errorf("dial target for tcp: %w", err)
+	}
+	defer targetConn.Close()
+
+	log.Printf("[w%d] tcp session started: %s", id, c.targetAddr)
+
+	done := make(chan struct{}, 2)
+	cp := func(dst io.Writer, src io.Reader) {
+		io.Copy(dst, src)
+		done <- struct{}{}
+	}
+	// Splice: tunnel ↔ target, bidirectionally.
+	go cp(targetConn, tunnelReader) // server → local target
+	go cp(tunnelConn, targetConn)   // local target → server
+	<-done
+	tunnelConn.Close()
+	targetConn.Close()
+	<-done
+
+	log.Printf("[w%d] tcp session closed", id)
+	return nil
 }
 
 // handleWebSocket dials the local target, completes the WebSocket handshake,
@@ -242,6 +380,7 @@ func (c *Client) handleWebSocket(id int, tunnelConn net.Conn, tunnelReader *bufi
 	if err != nil {
 		return fmt.Errorf("ws read from target: %w", err)
 	}
+	defer resp.Body.Close()
 	if err := resp.Write(tunnelConn); err != nil {
 		return fmt.Errorf("ws relay 101: %w", err)
 	}
@@ -256,6 +395,9 @@ func (c *Client) handleWebSocket(id int, tunnelConn net.Conn, tunnelReader *bufi
 	}
 	go cp(targetConn, tunnelReader) // server → local target
 	go cp(tunnelConn, targetReader) // local target → server
+	<-done
+	targetConn.Close()
+	tunnelConn.Close()
 	<-done
 
 	log.Printf("[w%d] ws closed: %s", id, req.URL.Path)
@@ -290,4 +432,76 @@ func writeErrorResponse(w io.Writer, code int, msg string) error {
 		Body:       io.NopCloser(strings.NewReader(msg + "\n")),
 	}
 	return resp.Write(w)
+}
+
+// ── TUI Dashboard ─────────────────────────────────────────────────────────────
+
+func (c *Client) startUI() {
+	f, err := os.OpenFile("gotunnel.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err == nil {
+		log.SetOutput(f)
+	} else {
+		log.SetOutput(io.Discard)
+	}
+
+	ticker := time.NewTicker(200 * time.Millisecond)
+	go func() {
+		for range ticker.C {
+			c.drawUI()
+		}
+	}()
+}
+
+func (c *Client) drawUI() {
+	uiMu.Lock()
+	defer uiMu.Unlock()
+
+	// Clear screen and reset cursor (ANSI escapes)
+	fmt.Print("\033[H\033[2J")
+
+	fmt.Println("gotunnel by @RGPtv                                      (Ctrl+C to quit)")
+	fmt.Println()
+	statusColor := "\033[32m" // green
+	if c.uiStatus != "online" {
+		statusColor = "\033[33m" // yellow
+	}
+	fmt.Printf("Session Status                %s%s\033[0m\n", statusColor, c.uiStatus)
+	
+	if c.tunnelType == "tcp" {
+		fmt.Printf("Forwarding                    tcp://%s -> %s\n", c.serverAddr+c.remoteAddr, c.targetAddr)
+	} else {
+		if c.remoteAddr != "" {
+			fmt.Printf("Forwarding                    https://%s.%s -> %s\n", c.remoteAddr, c.serverAddr, c.targetAddr)
+		} else {
+			fmt.Printf("Forwarding                    https://%s -> %s\n", c.serverAddr, c.targetAddr)
+		}
+	}
+	fmt.Printf("Active Workers                %d\n", c.uiWorkers.Load())
+	fmt.Println()
+
+	if c.tunnelType == "http" {
+		fmt.Println("HTTP Requests")
+		fmt.Println("-------------")
+		if len(uiReqs) == 0 {
+			fmt.Println("(No requests yet)")
+		} else {
+			for _, r := range uiReqs {
+				color := "\033[32m" // green
+				if r.status >= 500 {
+					color = "\033[31m" // red
+				} else if r.status >= 400 {
+					color = "\033[33m" // yellow
+				} else if r.status >= 300 {
+					color = "\033[36m" // cyan
+				}
+				
+				path := r.path
+				if len(path) > 40 {
+					path = path[:37] + "..."
+				}
+				
+				fmt.Printf("%-6s %-42s %s%3d\033[0m  %s\n", r.method, path, color, r.status, r.dur.Round(time.Millisecond))
+			}
+		}
+	}
 }

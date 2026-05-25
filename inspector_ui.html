@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>gotunnel — Inspector</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0a0e14;--surface:#151a23;--card:#1c2230;--border:#2a3040;
+  --text:#e2e8f0;--muted:#6b7a90;--accent:#10b981;--accent-dim:rgba(16,185,129,.12);
+  --get:#10b981;--post:#3b82f6;--put:#f59e0b;--delete:#ef4444;--patch:#8b5cf6;--head:#6b7a90;
+  --s2:#10b981;--s3:#3b82f6;--s4:#f59e0b;--s5:#ef4444;
+}
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+
+/* ── Header ─────────────────────────────────── */
+header{background:var(--surface);border-bottom:1px solid var(--border);padding:16px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;backdrop-filter:blur(12px)}
+.brand{display:flex;align-items:center;gap:10px}
+.logo{font-size:20px;font-weight:700;background:linear-gradient(135deg,#10b981,#3b82f6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:-.5px}
+.badge{font-size:11px;font-weight:600;background:var(--accent-dim);color:var(--accent);padding:3px 8px;border-radius:6px;text-transform:uppercase;letter-spacing:.5px}
+.stats{display:flex;align-items:center;gap:16px;font-size:13px;color:var(--muted)}
+.stats .num{font-weight:600;color:var(--text);font-variant-numeric:tabular-nums}
+.dot{opacity:.3}
+
+/* ── Info Bar ───────────────────────────────── */
+.info-bar{background:var(--surface);border-bottom:1px solid var(--border);padding:12px 24px;display:flex;align-items:center;gap:20px;font-size:13px}
+.info-item{display:flex;align-items:center;gap:8px}
+.info-item .label{color:var(--muted);font-weight:500;min-width:65px}
+.info-item .value{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--accent)}
+.arrow{color:var(--muted);font-size:16px}
+.status-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+
+/* ── Main ───────────────────────────────────── */
+main{padding:0}
+.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 24px;text-align:center}
+.empty-icon{font-size:48px;margin-bottom:16px;opacity:.6}
+.empty-text{font-size:16px;font-weight:600;margin-bottom:8px}
+.empty-hint{font-size:13px;color:var(--muted)}
+
+/* ── Request Table ──────────────────────────── */
+.req-table{width:100%}
+.req-row{display:grid;grid-template-columns:90px 70px 1fr 70px 80px 90px;align-items:center;padding:10px 24px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s;font-size:13px;animation:fadeIn .3s ease}
+.req-row:hover{background:var(--card)}
+.req-row.new{animation:slideIn .4s ease}
+@keyframes slideIn{from{opacity:0;transform:translateY(-8px);background:var(--accent-dim)}to{opacity:1;transform:translateY(0);background:transparent}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+
+.req-time{color:var(--muted);font-family:'JetBrains Mono',monospace;font-size:11px}
+.req-method{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;text-align:center;width:fit-content}
+.req-method.GET{background:rgba(16,185,129,.15);color:var(--get)}
+.req-method.POST{background:rgba(59,130,246,.15);color:var(--post)}
+.req-method.PUT{background:rgba(245,158,11,.15);color:var(--put)}
+.req-method.DELETE{background:rgba(239,68,73,.15);color:var(--delete)}
+.req-method.PATCH{background:rgba(139,92,246,.15);color:var(--patch)}
+.req-method.HEAD{background:rgba(107,122,144,.15);color:var(--head)}
+.req-method.OPTIONS{background:rgba(107,122,144,.15);color:var(--head)}
+
+.req-path{font-family:'JetBrains Mono',monospace;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:16px}
+.req-status{font-family:'JetBrains Mono',monospace;font-weight:600;font-size:12px}
+.req-status.s2{color:var(--s2)}
+.req-status.s3{color:var(--s3)}
+.req-status.s4{color:var(--s4)}
+.req-status.s5{color:var(--s5)}
+.req-dur{color:var(--muted);font-family:'JetBrains Mono',monospace;font-size:11px;text-align:right}
+.req-expand{color:var(--muted);text-align:center;transition:transform .2s;font-size:16px}
+.req-expand.open{transform:rotate(90deg)}
+.replay-btn{background:var(--accent);color:var(--bg);border:none;border-radius:4px;padding:4px 8px;font-size:10px;font-weight:600;cursor:pointer;transition:opacity .2s}
+.replay-btn:hover{opacity:.8}
+
+/* ── Detail Panel ───────────────────────────── */
+.req-detail{display:none;background:var(--card);border-bottom:1px solid var(--border);padding:16px 24px;animation:fadeIn .25s ease}
+.req-detail.open{display:block}
+.detail-section{margin-bottom:16px}
+.detail-section:last-child{margin-bottom:0}
+.detail-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--accent);margin-bottom:8px}
+.detail-headers{font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.8;color:var(--muted)}
+.detail-headers .hdr-key{color:var(--text);font-weight:500}
+.detail-cols{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+
+/* ── Table Header ───────────────────────────── */
+.table-header{display:grid;grid-template-columns:90px 70px 1fr 70px 80px 90px;padding:8px 24px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:57px;z-index:50}
+
+@media(max-width:768px){
+  .req-row,.table-header{grid-template-columns:70px 60px 1fr 50px 60px 70px;padding:8px 12px}
+  .info-bar{flex-wrap:wrap;gap:10px}
+  header{padding:12px 16px}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <span class="logo">gotunnel</span>
+    <span class="badge">inspector</span>
+    <div class="status-dot" title="Connected"></div>
+  </div>
+  <div class="stats">
+    <span><span class="num" id="total">0</span> requests</span>
+    <span class="dot">•</span>
+    <span>uptime <span class="num" id="uptime">0s</span></span>
+  </div>
+</header>
+
+<div class="info-bar">
+  <div class="info-item">
+    <span class="label">Tunnel</span>
+    <span class="value" id="server">—</span>
+  </div>
+  <span class="arrow">→</span>
+  <div class="info-item">
+    <span class="label">Forward</span>
+    <span class="value" id="target">—</span>
+  </div>
+</div>
+
+<div class="table-header">
+  <span>Time</span><span>Method</span><span>Path</span><span>Status</span><span>Duration</span><span></span>
+</div>
+
+<main>
+  <div id="empty" class="empty-state">
+    <div class="empty-icon">📡</div>
+    <div class="empty-text">Waiting for requests…</div>
+    <div class="empty-hint">Send HTTP requests through the tunnel to see them here</div>
+  </div>
+  <div id="requests" class="req-table"></div>
+</main>
+
+<script>
+const $requests = document.getElementById('requests');
+const $empty = document.getElementById('empty');
+const $total = document.getElementById('total');
+const $uptime = document.getElementById('uptime');
+const $server = document.getElementById('server');
+const $target = document.getElementById('target');
+
+let totalCount = 0;
+
+function fmtTime(ts) {
+  const d = new Date(ts);
+  return d.toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+
+function fmtDur(ms) {
+  if (ms < 1000) return ms + 'ms';
+  return (ms / 1000).toFixed(1) + 's';
+}
+
+function fmtUptime(sec) {
+  if (sec < 60) return sec + 's';
+  if (sec < 3600) return Math.floor(sec/60) + 'm ' + (sec%60) + 's';
+  const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60);
+  return h + 'h ' + m + 'm';
+}
+
+function statusClass(code) {
+  if (code < 300) return 's2';
+  if (code < 400) return 's3';
+  if (code < 500) return 's4';
+  return 's5';
+}
+
+function renderHeaders(headers) {
+  if (!headers) return '<span style="opacity:.5">none</span>';
+  return Object.entries(headers).map(([k, vals]) =>
+    vals.map(v => `<span class="hdr-key">${esc(k)}</span>: ${esc(v)}`).join('<br>')
+  ).join('<br>');
+}
+
+function esc(s) {
+  const el = document.createElement('span');
+  el.textContent = s;
+  return el.innerHTML;
+}
+
+function addRequest(r, isNew) {
+  $empty.style.display = 'none';
+  totalCount++;
+  $total.textContent = totalCount;
+
+  const rowId = 'row-' + r.id;
+  const detailId = 'detail-' + r.id;
+
+  const row = document.createElement('div');
+  row.className = 'req-row' + (isNew ? ' new' : '');
+  row.id = rowId;
+  row.innerHTML = `
+    <span class="req-time">${fmtTime(r.ts)}</span>
+    <span class="req-method ${r.method}">${r.method}</span>
+    <span class="req-path" title="${esc(r.path)}">${esc(r.path)}</span>
+    <span class="req-status ${statusClass(r.status)}">${r.status}</span>
+    <span class="req-dur">${fmtDur(r.duration_ms)}</span>
+    <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px">
+      <button class="replay-btn" onclick="replayReq(${r.id}); event.stopPropagation()">Replay</button>
+      <span class="req-expand" id="exp-${r.id}">▸</span>
+    </div>
+  `;
+
+  const detail = document.createElement('div');
+  detail.className = 'req-detail';
+  detail.id = detailId;
+  detail.innerHTML = `
+    <div class="detail-cols">
+      <div class="detail-section">
+        <div class="detail-title">Request Headers</div>
+        <div class="detail-headers">${renderHeaders(r.req_headers)}</div>
+      </div>
+      <div class="detail-section">
+        <div class="detail-title">Response Headers</div>
+        <div class="detail-headers">${renderHeaders(r.resp_headers)}</div>
+      </div>
+    </div>
+  `;
+
+  row.addEventListener('click', () => {
+    const exp = document.getElementById('exp-' + r.id);
+    detail.classList.toggle('open');
+    exp.classList.toggle('open');
+  });
+
+  $requests.prepend(detail);
+  $requests.prepend(row);
+}
+
+// Load existing requests.
+fetch('/api/requests').then(r => r.json()).then(data => {
+  if (data && data.length) {
+    data.forEach(r => addRequest(r, false));
+    totalCount = data.length;
+    $total.textContent = totalCount;
+  }
+});
+
+// Load status.
+function loadStatus() {
+  fetch('/api/status').then(r => r.json()).then(s => {
+    $server.textContent = s.server;
+    $target.textContent = s.target;
+    $uptime.textContent = fmtUptime(s.uptime_sec);
+    if (s.total > totalCount) {
+      totalCount = s.total;
+      $total.textContent = totalCount;
+    }
+  }).catch(() => {});
+}
+loadStatus();
+setInterval(loadStatus, 5000);
+
+// SSE live stream.
+const evtSource = new EventSource('/api/requests/stream');
+evtSource.onmessage = (e) => {
+  try {
+    const r = JSON.parse(e.data);
+    addRequest(r, true);
+  } catch(err) {}
+};
+evtSource.onerror = () => {
+  // Will auto-reconnect.
+};
+
+function replayReq(id) {
+  fetch('/api/replay', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: id })
+  }).then(r => {
+    if(!r.ok) alert('Replay failed');
+  });
+}
+</script>
+</body>
+</html>

@@ -3,90 +3,216 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>gotunnel — Inspector</title>
+<title>gotunnel — Dashboard</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
-  --bg:#0a0e14;--surface:#151a23;--card:#1c2230;--border:#2a3040;
-  --text:#e2e8f0;--muted:#6b7a90;--accent:#10b981;--accent-dim:rgba(16,185,129,.12);
-  --get:#10b981;--post:#3b82f6;--put:#f59e0b;--delete:#ef4444;--patch:#8b5cf6;--head:#6b7a90;
-  --s2:#10b981;--s3:#3b82f6;--s4:#f59e0b;--s5:#ef4444;
+  --bg:#06090f;--surface:#0d1117;--card:#151b27;--card-hover:#1a2233;
+  --border:#1e2a3a;--border-glow:rgba(56,189,248,.08);
+  --text:#e2e8f0;--text-secondary:#94a3b8;--muted:#475569;
+  --accent:#38bdf8;--accent-dim:rgba(56,189,248,.1);--accent-glow:rgba(56,189,248,.25);
+  --green:#22c55e;--green-dim:rgba(34,197,94,.12);--green-glow:rgba(34,197,94,.3);
+  --amber:#f59e0b;--amber-dim:rgba(245,158,11,.12);
+  --red:#ef4444;--red-dim:rgba(239,68,68,.12);
+  --purple:#a78bfa;--purple-dim:rgba(167,139,250,.12);
+  --get:#22c55e;--post:#3b82f6;--put:#f59e0b;--delete:#ef4444;--patch:#a78bfa;--head:#64748b;
+  --s2:#22c55e;--s3:#3b82f6;--s4:#f59e0b;--s5:#ef4444;
+  --radius:12px;--radius-sm:8px;
 }
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
-body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+
+/* ── Scrollbar ─────────────────────────────── */
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--muted)}
 
 /* ── Header ─────────────────────────────────── */
-header{background:var(--surface);border-bottom:1px solid var(--border);padding:16px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;backdrop-filter:blur(12px)}
-.brand{display:flex;align-items:center;gap:10px}
-.logo{font-size:20px;font-weight:700;background:linear-gradient(135deg,#10b981,#3b82f6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:-.5px}
-.badge{font-size:11px;font-weight:600;background:var(--accent-dim);color:var(--accent);padding:3px 8px;border-radius:6px;text-transform:uppercase;letter-spacing:.5px}
-.stats{display:flex;align-items:center;gap:16px;font-size:13px;color:var(--muted)}
-.stats .num{font-weight:600;color:var(--text);font-variant-numeric:tabular-nums}
-.dot{opacity:.3}
+header{
+  background:linear-gradient(180deg,var(--surface) 0%,rgba(13,17,23,.95) 100%);
+  border-bottom:1px solid var(--border);padding:0 24px;height:56px;
+  display:flex;align-items:center;justify-content:space-between;
+  position:sticky;top:0;z-index:100;backdrop-filter:blur(20px);
+}
+.brand{display:flex;align-items:center;gap:12px}
+.logo{
+  font-size:18px;font-weight:800;letter-spacing:-.5px;
+  background:linear-gradient(135deg,#38bdf8 0%,#818cf8 50%,#a78bfa 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+}
+.badge{
+  font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;
+  background:var(--accent-dim);color:var(--accent);
+  padding:3px 10px;border-radius:20px;border:1px solid rgba(56,189,248,.15);
+}
+.header-right{display:flex;align-items:center;gap:16px}
+.status-pill{
+  display:flex;align-items:center;gap:8px;
+  background:var(--green-dim);border:1px solid rgba(34,197,94,.2);
+  padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;color:var(--green);
+}
+.status-dot{
+  width:7px;height:7px;border-radius:50%;background:var(--green);
+  box-shadow:0 0 8px var(--green-glow);animation:pulse 2s ease-in-out infinite;
+}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.6;transform:scale(.85)}}
+.uptime{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
 
-/* ── Info Bar ───────────────────────────────── */
-.info-bar{background:var(--surface);border-bottom:1px solid var(--border);padding:12px 24px;display:flex;align-items:center;gap:20px;font-size:13px}
-.info-item{display:flex;align-items:center;gap:8px}
-.info-item .label{color:var(--muted);font-weight:500;min-width:65px}
-.info-item .value{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--accent)}
-.arrow{color:var(--muted);font-size:16px}
-.status-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent);animation:pulse 2s infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+/* ── Dashboard Grid ─────────────────────────── */
+.dashboard{padding:20px 24px;display:flex;flex-direction:column;gap:16px}
 
-/* ── Main ───────────────────────────────────── */
-main{padding:0}
-.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 24px;text-align:center}
-.empty-icon{font-size:48px;margin-bottom:16px;opacity:.6}
-.empty-text{font-size:16px;font-weight:600;margin-bottom:8px}
-.empty-hint{font-size:13px;color:var(--muted)}
+/* ── Status Cards ───────────────────────────── */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.card{
+  background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  padding:16px 20px;position:relative;overflow:hidden;
+  transition:border-color .2s,box-shadow .2s,transform .15s;
+}
+.card:hover{
+  border-color:rgba(56,189,248,.15);
+  box-shadow:0 4px 24px rgba(0,0,0,.3),0 0 0 1px var(--border-glow);
+  transform:translateY(-1px);
+}
+.card::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(56,189,248,.2),transparent);
+  opacity:0;transition:opacity .2s;
+}
+.card:hover::before{opacity:1}
+.card-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:8px}
+.card-value{font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:500;color:var(--text);word-break:break-all;line-height:1.5}
+.card-icon{position:absolute;top:14px;right:16px;font-size:18px;opacity:.4}
+
+/* ── Token Card (special) ───────────────────── */
+.card.token-card{grid-column:1 / -1}
+.token-row{display:flex;align-items:center;gap:10px}
+.token-value{
+  flex:1;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:500;
+  color:var(--accent);background:var(--accent-dim);
+  padding:8px 14px;border-radius:var(--radius-sm);border:1px solid rgba(56,189,248,.1);
+  letter-spacing:.3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  user-select:all;
+}
+.token-value.masked{color:var(--muted);letter-spacing:2px;user-select:none}
+.token-btn{
+  display:flex;align-items:center;justify-content:center;
+  width:36px;height:36px;border-radius:var(--radius-sm);border:1px solid var(--border);
+  background:var(--card);color:var(--text-secondary);cursor:pointer;
+  transition:all .2s;flex-shrink:0;font-size:15px;
+}
+.token-btn:hover{background:var(--card-hover);border-color:var(--accent);color:var(--accent)}
+.token-btn.copied{background:var(--green-dim);border-color:var(--green);color:var(--green)}
+
+/* ── Section Headers ────────────────────────── */
+.section-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 0 4px 0;
+}
+.section-title{
+  font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;
+  color:var(--text-secondary);display:flex;align-items:center;gap:8px;
+}
+.section-title .count{
+  font-size:11px;font-weight:600;color:var(--accent);
+  background:var(--accent-dim);padding:2px 8px;border-radius:10px;
+  font-variant-numeric:tabular-nums;
+}
+.clear-btn{
+  font-size:11px;font-weight:600;color:var(--muted);background:none;border:1px solid var(--border);
+  padding:4px 12px;border-radius:6px;cursor:pointer;transition:all .2s;
+}
+.clear-btn:hover{color:var(--text);border-color:var(--text-secondary)}
 
 /* ── Request Table ──────────────────────────── */
+.inspector{
+  background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  overflow:hidden;flex:1;min-height:300px;display:flex;flex-direction:column;
+}
+.table-header{
+  display:grid;grid-template-columns:80px 68px 1fr 60px 80px 80px;
+  padding:10px 20px;font-size:10px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.6px;color:var(--muted);background:var(--surface);
+  border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10;
+}
+.req-scroll{overflow-y:auto;flex:1}
 .req-table{width:100%}
-.req-row{display:grid;grid-template-columns:90px 70px 1fr 70px 80px 90px;align-items:center;padding:10px 24px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s;font-size:13px;animation:fadeIn .3s ease}
-.req-row:hover{background:var(--card)}
+.req-row{
+  display:grid;grid-template-columns:80px 68px 1fr 60px 80px 80px;
+  align-items:center;padding:9px 20px;border-bottom:1px solid rgba(30,42,58,.5);
+  cursor:pointer;transition:background .12s;font-size:13px;
+}
+.req-row:hover{background:var(--card-hover)}
 .req-row.new{animation:slideIn .4s ease}
-@keyframes slideIn{from{opacity:0;transform:translateY(-8px);background:var(--accent-dim)}to{opacity:1;transform:translateY(0);background:transparent}}
-@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes slideIn{
+  from{opacity:0;transform:translateY(-6px);background:var(--accent-dim)}
+  to{opacity:1;transform:translateY(0);background:transparent}
+}
 
-.req-time{color:var(--muted);font-family:'JetBrains Mono',monospace;font-size:11px}
-.req-method{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;text-align:center;width:fit-content}
-.req-method.GET{background:rgba(16,185,129,.15);color:var(--get)}
-.req-method.POST{background:rgba(59,130,246,.15);color:var(--post)}
-.req-method.PUT{background:rgba(245,158,11,.15);color:var(--put)}
-.req-method.DELETE{background:rgba(239,68,73,.15);color:var(--delete)}
-.req-method.PATCH{background:rgba(139,92,246,.15);color:var(--patch)}
-.req-method.HEAD{background:rgba(107,122,144,.15);color:var(--head)}
-.req-method.OPTIONS{background:rgba(107,122,144,.15);color:var(--head)}
-
-.req-path{font-family:'JetBrains Mono',monospace;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:16px}
-.req-status{font-family:'JetBrains Mono',monospace;font-weight:600;font-size:12px}
-.req-status.s2{color:var(--s2)}
-.req-status.s3{color:var(--s3)}
-.req-status.s4{color:var(--s4)}
-.req-status.s5{color:var(--s5)}
+.req-time{color:var(--muted);font-family:'JetBrains Mono',monospace;font-size:10px}
+.req-method{
+  font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;
+  padding:3px 0;border-radius:4px;text-align:center;width:54px;
+}
+.req-method.GET{background:rgba(34,197,94,.12);color:var(--get)}
+.req-method.POST{background:rgba(59,130,246,.12);color:var(--post)}
+.req-method.PUT{background:rgba(245,158,11,.12);color:var(--put)}
+.req-method.DELETE{background:rgba(239,68,68,.12);color:var(--delete)}
+.req-method.PATCH{background:rgba(167,139,250,.12);color:var(--patch)}
+.req-method.HEAD,.req-method.OPTIONS{background:rgba(100,116,139,.12);color:var(--head)}
+.req-path{
+  font-family:'JetBrains Mono',monospace;font-size:12px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:12px;
+}
+.req-status{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:12px}
+.req-status.s2{color:var(--s2)}.req-status.s3{color:var(--s3)}
+.req-status.s4{color:var(--s4)}.req-status.s5{color:var(--s5)}
 .req-dur{color:var(--muted);font-family:'JetBrains Mono',monospace;font-size:11px;text-align:right}
-.req-expand{color:var(--muted);text-align:center;transition:transform .2s;font-size:16px}
-.req-expand.open{transform:rotate(90deg)}
-.replay-btn{background:var(--accent);color:var(--bg);border:none;border-radius:4px;padding:4px 8px;font-size:10px;font-weight:600;cursor:pointer;transition:opacity .2s}
-.replay-btn:hover{opacity:.8}
+.req-actions{display:flex;align-items:center;justify-content:flex-end;gap:6px}
+.replay-btn{
+  background:transparent;color:var(--accent);border:1px solid rgba(56,189,248,.2);
+  border-radius:5px;padding:3px 8px;font-size:10px;font-weight:700;
+  cursor:pointer;transition:all .2s;font-family:'Inter',sans-serif;
+}
+.replay-btn:hover{background:var(--accent-dim);border-color:var(--accent)}
+.req-expand{color:var(--muted);transition:transform .2s;font-size:14px;cursor:pointer}
+.req-expand.open{transform:rotate(90deg);color:var(--accent)}
 
 /* ── Detail Panel ───────────────────────────── */
-.req-detail{display:none;background:var(--card);border-bottom:1px solid var(--border);padding:16px 24px;animation:fadeIn .25s ease}
+.req-detail{
+  display:none;background:rgba(13,17,23,.6);border-bottom:1px solid var(--border);
+  padding:16px 20px;animation:fadeIn .2s ease;
+}
 .req-detail.open{display:block}
-.detail-section{margin-bottom:16px}
-.detail-section:last-child{margin-bottom:0}
-.detail-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--accent);margin-bottom:8px}
-.detail-headers{font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.8;color:var(--muted)}
-.detail-headers .hdr-key{color:var(--text);font-weight:500}
-.detail-cols{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.detail-cols{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.detail-section{margin-bottom:0}
+.detail-title{
+  font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;
+  color:var(--accent);margin-bottom:8px;
+}
+.detail-headers{font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.9;color:var(--muted)}
+.detail-headers .hdr-key{color:var(--text-secondary);font-weight:500}
 
-/* ── Table Header ───────────────────────────── */
-.table-header{display:grid;grid-template-columns:90px 70px 1fr 70px 80px 90px;padding:8px 24px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:57px;z-index:50}
+/* ── Empty State ────────────────────────────── */
+.empty-state{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:60px 24px;text-align:center;
+}
+.empty-icon{font-size:40px;margin-bottom:12px;opacity:.5}
+.empty-text{font-size:15px;font-weight:600;margin-bottom:6px;color:var(--text-secondary)}
+.empty-hint{font-size:12px;color:var(--muted)}
 
+/* ── Responsive ─────────────────────────────── */
 @media(max-width:768px){
-  .req-row,.table-header{grid-template-columns:70px 60px 1fr 50px 60px 70px;padding:8px 12px}
-  .info-bar{flex-wrap:wrap;gap:10px}
-  header{padding:12px 16px}
+  .cards{grid-template-columns:1fr 1fr}
+  .card.token-card{grid-column:1 / -1}
+  .req-row,.table-header{grid-template-columns:65px 58px 1fr 45px 65px 65px;padding:8px 12px;font-size:12px}
+  .dashboard{padding:16px}
+  header{padding:0 16px}
+}
+@media(max-width:480px){
+  .cards{grid-template-columns:1fr}
 }
 </style>
 </head>
@@ -95,106 +221,164 @@ main{padding:0}
 <header>
   <div class="brand">
     <span class="logo">gotunnel</span>
-    <span class="badge">inspector</span>
-    <div class="status-dot" title="Connected"></div>
+    <span class="badge">Dashboard</span>
   </div>
-  <div class="stats">
-    <span><span class="num" id="total">0</span> requests</span>
-    <span class="dot">•</span>
-    <span>uptime <span class="num" id="uptime">0s</span></span>
+  <div class="header-right">
+    <span class="uptime" id="uptime">0s</span>
+    <div class="status-pill">
+      <div class="status-dot"></div>
+      <span>Online</span>
+    </div>
   </div>
 </header>
 
-<div class="info-bar">
-  <div class="info-item">
-    <span class="label">Tunnel</span>
-    <span class="value" id="server">—</span>
+<div class="dashboard">
+  <!-- Status Cards -->
+  <div class="cards">
+    <div class="card token-card">
+      <div class="card-label">Auth Token</div>
+      <div class="token-row">
+        <div class="token-value masked" id="tokenValue">••••••••••••••••••••••••••••••••</div>
+        <button class="token-btn" id="toggleToken" title="Reveal token" onclick="toggleMask()">👁</button>
+        <button class="token-btn" id="copyToken" title="Copy token" onclick="copyToken()">📋</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon">🌐</div>
+      <div class="card-label">HTTP Proxy</div>
+      <div class="card-value" id="httpAddr">—</div>
+    </div>
+    <div class="card">
+      <div class="card-icon">🔗</div>
+      <div class="card-label">Tunnel Port</div>
+      <div class="card-value" id="tunAddr">—</div>
+    </div>
+    <div class="card">
+      <div class="card-icon">⚡</div>
+      <div class="card-label">Active Connections</div>
+      <div class="card-value" id="activeConns" style="font-size:22px;font-weight:700;color:var(--green)">0</div>
+    </div>
+    <div class="card">
+      <div class="card-icon">📊</div>
+      <div class="card-label">Total Requests</div>
+      <div class="card-value" id="totalReqs" style="font-size:22px;font-weight:700;color:var(--accent)">0</div>
+    </div>
   </div>
-  <span class="arrow">→</span>
-  <div class="info-item">
-    <span class="label">Forward</span>
-    <span class="value" id="target">—</span>
+
+  <!-- Inspector Section -->
+  <div class="section-header">
+    <div class="section-title">
+      Traffic Inspector
+      <span class="count" id="liveCount">0</span>
+    </div>
+    <button class="clear-btn" onclick="clearRequests()">Clear</button>
+  </div>
+
+  <div class="inspector">
+    <div class="table-header">
+      <span>Time</span><span>Method</span><span>Path</span><span>Status</span><span>Duration</span><span></span>
+    </div>
+    <div class="req-scroll">
+      <div id="empty" class="empty-state">
+        <div class="empty-icon">📡</div>
+        <div class="empty-text">Waiting for requests…</div>
+        <div class="empty-hint">Send HTTP requests through the tunnel to see them here</div>
+      </div>
+      <div id="requests" class="req-table"></div>
+    </div>
   </div>
 </div>
-
-<div class="table-header">
-  <span>Time</span><span>Method</span><span>Path</span><span>Status</span><span>Duration</span><span></span>
-</div>
-
-<main>
-  <div id="empty" class="empty-state">
-    <div class="empty-icon">📡</div>
-    <div class="empty-text">Waiting for requests…</div>
-    <div class="empty-hint">Send HTTP requests through the tunnel to see them here</div>
-  </div>
-  <div id="requests" class="req-table"></div>
-</main>
 
 <script>
 const $requests = document.getElementById('requests');
 const $empty = document.getElementById('empty');
-const $total = document.getElementById('total');
+const $totalReqs = document.getElementById('totalReqs');
+const $liveCount = document.getElementById('liveCount');
 const $uptime = document.getElementById('uptime');
-const $server = document.getElementById('server');
-const $target = document.getElementById('target');
+const $httpAddr = document.getElementById('httpAddr');
+const $tunAddr = document.getElementById('tunAddr');
+const $activeConns = document.getElementById('activeConns');
+const $tokenValue = document.getElementById('tokenValue');
 
 let totalCount = 0;
+let displayedCount = 0;
+let tokenRevealed = false;
+let rawToken = '';
 
+// ── Formatting ────────────────────────────────
 function fmtTime(ts) {
   const d = new Date(ts);
   return d.toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
 }
-
 function fmtDur(ms) {
   if (ms < 1000) return ms + 'ms';
   return (ms / 1000).toFixed(1) + 's';
 }
-
 function fmtUptime(sec) {
   if (sec < 60) return sec + 's';
   if (sec < 3600) return Math.floor(sec/60) + 'm ' + (sec%60) + 's';
   const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60);
   return h + 'h ' + m + 'm';
 }
-
 function statusClass(code) {
   if (code < 300) return 's2';
   if (code < 400) return 's3';
   if (code < 500) return 's4';
   return 's5';
 }
-
-function renderHeaders(headers) {
-  if (!headers) return '<span style="opacity:.5">none</span>';
-  return Object.entries(headers).map(([k, vals]) =>
-    vals.map(v => `<span class="hdr-key">${esc(k)}</span>: ${esc(v)}`).join('<br>')
-  ).join('<br>');
-}
-
 function esc(s) {
   const el = document.createElement('span');
   el.textContent = s;
   return el.innerHTML;
 }
+function renderHeaders(headers) {
+  if (!headers) return '<span style="opacity:.4">none</span>';
+  return Object.entries(headers).map(([k, vals]) =>
+    vals.map(v => `<span class="hdr-key">${esc(k)}</span>: ${esc(v)}`).join('<br>')
+  ).join('<br>');
+}
 
+// ── Token controls ────────────────────────────
+function toggleMask() {
+  tokenRevealed = !tokenRevealed;
+  if (tokenRevealed) {
+    $tokenValue.textContent = rawToken;
+    $tokenValue.classList.remove('masked');
+    document.getElementById('toggleToken').title = 'Hide token';
+  } else {
+    $tokenValue.textContent = '••••••••••••••••••••••••••••••••';
+    $tokenValue.classList.add('masked');
+    document.getElementById('toggleToken').title = 'Reveal token';
+  }
+}
+
+function copyToken() {
+  navigator.clipboard.writeText(rawToken).then(() => {
+    const btn = document.getElementById('copyToken');
+    btn.classList.add('copied');
+    btn.textContent = '✓';
+    setTimeout(() => {
+      btn.classList.remove('copied');
+      btn.textContent = '📋';
+    }, 1500);
+  });
+}
+
+// ── Request rendering ─────────────────────────
 function addRequest(r, isNew) {
   $empty.style.display = 'none';
-  totalCount++;
-  $total.textContent = totalCount;
-
-  const rowId = 'row-' + r.id;
-  const detailId = 'detail-' + r.id;
+  displayedCount++;
+  $liveCount.textContent = displayedCount;
 
   const row = document.createElement('div');
   row.className = 'req-row' + (isNew ? ' new' : '');
-  row.id = rowId;
   row.innerHTML = `
     <span class="req-time">${fmtTime(r.ts)}</span>
     <span class="req-method ${r.method}">${r.method}</span>
     <span class="req-path" title="${esc(r.path)}">${esc(r.path)}</span>
     <span class="req-status ${statusClass(r.status)}">${r.status}</span>
     <span class="req-dur">${fmtDur(r.duration_ms)}</span>
-    <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px">
+    <div class="req-actions">
       <button class="replay-btn" onclick="replayReq(${r.id}); event.stopPropagation()">Replay</button>
       <span class="req-expand" id="exp-${r.id}">▸</span>
     </div>
@@ -202,7 +386,7 @@ function addRequest(r, isNew) {
 
   const detail = document.createElement('div');
   detail.className = 'req-detail';
-  detail.id = detailId;
+  detail.id = 'detail-' + r.id;
   detail.innerHTML = `
     <div class="detail-cols">
       <div class="detail-section">
@@ -226,41 +410,59 @@ function addRequest(r, isNew) {
   $requests.prepend(row);
 }
 
-// Load existing requests.
+function clearRequests() {
+  $requests.innerHTML = '';
+  displayedCount = 0;
+  $liveCount.textContent = '0';
+  $empty.style.display = 'flex';
+}
+
+// ── Load existing requests ────────────────────
 fetch('/api/requests').then(r => r.json()).then(data => {
   if (data && data.length) {
     data.forEach(r => addRequest(r, false));
-    totalCount = data.length;
-    $total.textContent = totalCount;
+    displayedCount = data.length;
+    $liveCount.textContent = displayedCount;
   }
 });
 
-// Load status.
+// ── Load status (token, addresses, etc.) ──────
 function loadStatus() {
   fetch('/api/status').then(r => r.json()).then(s => {
-    $server.textContent = s.server;
-    $target.textContent = s.target;
+    $httpAddr.textContent = s.server;
+    $tunAddr.textContent = s.target;
     $uptime.textContent = fmtUptime(s.uptime_sec);
+    $activeConns.textContent = s.active_conns;
+
     if (s.total > totalCount) {
       totalCount = s.total;
-      $total.textContent = totalCount;
+      $totalReqs.textContent = totalCount;
+    }
+
+    if (s.token && !rawToken) {
+      rawToken = s.token;
+      if (!tokenRevealed) {
+        $tokenValue.textContent = '••••••••••••••••••••••••••••••••';
+      } else {
+        $tokenValue.textContent = rawToken;
+      }
     }
   }).catch(() => {});
 }
 loadStatus();
-setInterval(loadStatus, 5000);
+setInterval(loadStatus, 3000);
 
-// SSE live stream.
+// ── SSE live stream ───────────────────────────
 const evtSource = new EventSource('/api/requests/stream');
 evtSource.onmessage = (e) => {
   try {
     const r = JSON.parse(e.data);
     addRequest(r, true);
+    totalCount++;
+    $totalReqs.textContent = totalCount;
   } catch(err) {}
 };
-evtSource.onerror = () => {
-  // Will auto-reconnect.
-};
+evtSource.onerror = () => {};
 
 function replayReq(id) {
   fetch('/api/replay', {

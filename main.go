@@ -23,17 +23,20 @@ Commands:
 Run 'gotunnel <command> -help' for all flags.
 
 Quick start:
-  # 1. Generate a token
-  TOKEN=$(gotunnel genkey)
+  # 1. On your VPS (token is auto-generated, shown in console + dashboard):
+  gotunnel server -http :8080 -tun :2222
 
-  # 2. On your VPS:
-  gotunnel server -token $TOKEN -http :8080 -tun :2222
+  # 2. Copy the token from the dashboard at http://localhost:4040
+  #    or from the server console output.
 
   # 3. On your local machine (where your service is running):
-  gotunnel client -server vps.example.com:2222 -token $TOKEN -target localhost:3000 -k
+  gotunnel client -server vps.example.com:2222 -token <TOKEN> -target localhost:3000 -k
 
   # 4. Use your service through the tunnel:
   curl http://vps.example.com:8080/
+
+  # Or provide your own token:
+  gotunnel server -token $TOKEN -http :8080 -tun :2222
 
 Examples:
   # Tunnel Ollama
@@ -59,13 +62,20 @@ Optional: secure HTTP access with an API key
   Server: gotunnel server -token $TOKEN -apikey $APIKEY ...
   Client: curl -H "Authorization: Bearer $APIKEY" http://vps.example.com:8080/
 
+Dashboard:
+  The server starts a web dashboard at http://localhost:4040 by default.
+  It shows your auth token, active connections, and a live traffic inspector.
+  Change the address with -inspect :4040 or disable with -inspect "".
+
 Notes:
   • The tunnel uses TLS (auto-generated self-signed cert unless -cert/-key given).
+  • If -token is omitted, a random token is generated and displayed on startup.
   • Streaming responses (SSE, chunked transfer) work end-to-end.
   • Use -workers on the client to allow more concurrent requests (default 5).
   • Any HTTP service works: web apps, APIs, notebooks, Ollama, etc.
   • For raw TCP protocols (SSH, MySQL, Redis, etc.), use -type tcp and specify a -remote port.
 `
+
 
 func main() {
 	if len(os.Args) < 2 {

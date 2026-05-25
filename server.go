@@ -3,10 +3,12 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
 	"crypto/sha1"
 	"crypto/subtle"
 	"crypto/tls"
 	"encoding/base64"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"io"
@@ -61,11 +63,18 @@ func runServer(args []string) {
 	auth     := fs.String("auth",   "", "Optional HTTP Basic Auth (format: user:pass)")
 	domain   := fs.String("domain", "", "Base domain for subdomain routing (e.g., example.com)")
 	noTLS    := fs.Bool("notls", false, "Disable TLS on tunnel port (use when behind a TLS-terminating proxy)")
+	httpsAddr:= fs.String("https", "", "HTTPS listen address (e.g. :443) — requires -cert and -key")
 	inspect  := fs.String("inspect", ":4040", "Inspector web UI address (empty to disable)")
 	fs.Parse(args)
 
 	if *token == "" {
-		log.Fatal("ERROR: -token is required. Generate one with: gotunnel genkey")
+		b := make([]byte, 32)
+		if _, err := rand.Read(b); err != nil {
+			log.Fatalf("failed to generate token: %v", err)
+		}
+		*token = hex.EncodeToString(b)
+		log.Printf("▶  Auto-generated token (give this to your clients)")
+		log.Printf("   %s", *token)
 	}
 
 	basicAuthEnc := ""
@@ -109,13 +118,16 @@ func runServer(args []string) {
 	}
 
 	log.Printf("▶  HTTP proxy      : %s", *httpAddr)
+	if *httpsAddr != "" {
+		log.Printf("▶  HTTPS proxy     : %s", *httpsAddr)
+	}
 	if *apiKey != "" {
 		log.Printf("▶  API key auth    : enabled")
 	}
 
 	// Start inspector web UI.
 	if *inspect != "" {
-		srv.inspector = NewInspector(*httpAddr, *tunAddr)
+		srv.inspector = NewInspector(*httpAddr, *tunAddr, *token, &srv.count)
 		go func() {
 			isrv := &http.Server{Addr: *inspect, Handler: srv.inspector}
 			log.Printf("▶  Inspector       : http://%s", *inspect)
@@ -134,6 +146,25 @@ func runServer(args []string) {
 		IdleTimeout:       120 * time.Second,
 	}
 
+	// Start native HTTPS server if -https flag is provided.
+	var httpsSrv *http.Server
+	if *httpsAddr != "" {
+		if *certFile == "" || *keyFile == "" {
+			log.Fatal("ERROR: -https requires -cert and -key flags")
+		}
+		httpsSrv = &http.Server{
+			Addr:              *httpsAddr,
+			Handler:           srv,
+			ReadHeaderTimeout: 10 * time.Second,
+			IdleTimeout:       120 * time.Second,
+		}
+		go func() {
+			if err := httpsSrv.ListenAndServeTLS(*certFile, *keyFile); err != nil && err != http.ErrServerClosed {
+				log.Fatalf("HTTPS server: %v", err)
+			}
+		}()
+	}
+
 	// Graceful shutdown on SIGINT / SIGTERM.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt)
@@ -144,6 +175,9 @@ func runServer(args []string) {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		httpSrv.Shutdown(ctx)
+		if httpsSrv != nil {
+			httpsSrv.Shutdown(ctx)
+		}
 		srv.drainPool()
 	}()
 

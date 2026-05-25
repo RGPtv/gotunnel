@@ -37,37 +37,31 @@ cd gotunnel
 go build -o gotunnel .
 ```
 
-### 2. Generate a shared secret
-
-```bash
-TOKEN=$(./gotunnel genkey)
-echo $TOKEN   # save this — both server and client need it
-```
-
-### 3. Run the server (on your VPS)
+### 2. Run the server (on your VPS)
 
 ```bash
 ./gotunnel server \
-  -token $TOKEN \
   -http  :8080 \
   -tun   :2222 \
   -domain example.com \  # Optional: enables subdomain routing
   -auth  admin:secret    # Optional: basic authentication
 ```
 
+The server will **auto-generate** a secure 256-bit token. You can copy it from the terminal output or the Web Dashboard (`http://localhost:4040`).
+
 Open ports **8080** (HTTP, for users/apps) and **2222** (TCP, for the tunnel client) in your firewall.
 
-### 4. Run the client (on your local machine)
+### 3. Run the client (on your local machine)
 
 ```bash
 ./gotunnel client \
   -server vps.example.com:2222 \
-  -token  $TOKEN \
+  -token  <YOUR_AUTO_GENERATED_TOKEN> \
   -target localhost:3000 \
   -k                        # only needed with the auto-generated self-signed cert
 ```
 
-### 5. Open in your browser
+### 4. Open in your browser
 
 ```
 http://vps.example.com:8080
@@ -105,15 +99,17 @@ Now, simply start your tunnel using its name:
 
 ---
 
-## Request Inspector & Replay
+## Web Dashboard & Inspector
 
-The client includes a live web UI for inspecting tunnel traffic, similar to ngrok’s inspector.
+The server includes a beautiful ngrok-style web dashboard.
 
-Open **http://127.0.0.1:4040** in your browser while the client is running to see:
-- Every HTTP request flowing through the tunnel in real time
-- Method, path, status code, and response time
-- Expandable request/response headers
-- **Replay Button**: Instantly re-trigger any captured request against your local dev server with a single click!
+Open **http://127.0.0.1:4040** in your browser while the server is running to see:
+- **Server Status**: Uptime, active tunnel connections, and proxy endpoints
+- **Auth Token**: Easily view and copy your auto-generated token
+- **Live Traffic Inspector**: Every HTTP request flowing through the tunnel in real time
+  - Method, path, status code, and response time
+  - Expandable request/response headers
+  - **Replay Button**: Instantly re-trigger any captured request with a single click!
 
 ---
 
@@ -152,6 +148,25 @@ Connect to your local machine from anywhere:
 ```bash
 ssh user@vps.example.com -p 22222
 ```
+
+---
+
+## Native HTTPS (No NGINX Required)
+
+If you don't want to use NGINX or any reverse proxy, `gotunnel` can serve HTTPS natively using your own TLS certificates (e.g. from Let's Encrypt):
+
+```bash
+sudo ./gotunnel server \
+  -token $TOKEN \
+  -http  :80 \
+  -https :443 \
+  -tun   :2222 \
+  -domain yourdomain.com \
+  -cert  /etc/letsencrypt/live/yourdomain.com/fullchain.pem \
+  -key   /etc/letsencrypt/live/yourdomain.com/privkey.pem
+```
+
+This runs both HTTP (`:80`) and HTTPS (`:443`) listeners. Clients and browsers can connect directly to `https://yourdomain.com` — no proxy needed!
 
 ---
 
@@ -203,8 +218,9 @@ Now, your clients can connect securely through NGINX. Because NGINX provides a r
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-http` | `:8080` | HTTP listen address (for end users / apps) |
+| `-https` | *(none)* | HTTPS listen address (e.g. `:443`) — requires `-cert` and `-key` |
 | `-tun` | `:2222` | Tunnel listen address (for tunnel client) |
-| `-token` | *(required)* | Shared auth token |
+| `-token` | *(auto-generated)* | Shared auth token |
 | `-cert` | *(auto)* | TLS cert PEM file |
 | `-key` | *(auto)* | TLS key PEM file |
 | `-apikey` | *(none)* | Optional HTTP API key |

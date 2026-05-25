@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -41,18 +42,22 @@ type Inspector struct {
 	subsMu sync.Mutex
 	subs   []chan CapturedRequest
 
-	ServerAddr string
-	TargetAddr string
-	StartTime  time.Time
+	ServerAddr  string
+	TargetAddr  string
+	StartTime   time.Time
+	Token       string
+	ActiveConns *atomic.Int64
 }
 
 // NewInspector creates a new request inspector.
-func NewInspector(serverAddr, targetAddr string) *Inspector {
+func NewInspector(serverAddr, targetAddr, token string, activeConns *atomic.Int64) *Inspector {
 	return &Inspector{
-		requests:   make([]CapturedRequest, 0, maxCapturedRequests),
-		ServerAddr: serverAddr,
-		TargetAddr: targetAddr,
-		StartTime:  time.Now(),
+		requests:    make([]CapturedRequest, 0, maxCapturedRequests),
+		ServerAddr:  serverAddr,
+		TargetAddr:  targetAddr,
+		StartTime:   time.Now(),
+		Token:       token,
+		ActiveConns: activeConns,
 	}
 }
 
@@ -131,12 +136,18 @@ func (ins *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ins.mu.RLock()
 		total := ins.nextID
 		ins.mu.RUnlock()
+		var active int64
+		if ins.ActiveConns != nil {
+			active = ins.ActiveConns.Load()
+		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
-			"server":     ins.ServerAddr,
-			"target":     ins.TargetAddr,
-			"uptime_sec": int(time.Since(ins.StartTime).Seconds()),
-			"total":      total,
+			"server":       ins.ServerAddr,
+			"target":       ins.TargetAddr,
+			"uptime_sec":   int(time.Since(ins.StartTime).Seconds()),
+			"total":        total,
+			"token":        ins.Token,
+			"active_conns": active,
 		})
 	case "/api/requests/stream":
 		ins.handleSSE(w, r)

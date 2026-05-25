@@ -128,7 +128,23 @@ ssh user@vps.example.com -p 22222
 
 #### Native HTTPS
 
-`gotunnel` can serve HTTPS directly without a reverse proxy.
+`gotunnel` can serve HTTPS directly without a reverse proxy. To do this, you need an SSL/TLS certificate (e.g., from Let's Encrypt).
+
+**1. Obtain Certificates (Certbot)**
+
+You can use `certbot` to generate a free SSL certificate. 
+
+```bash
+# Standard certificate (Standalone mode, requires port 80 to be free)
+sudo certbot certonly --standalone -d example.com
+
+# Wildcard certificate for subdomain routing (Requires DNS challenge)
+sudo certbot certonly --manual --preferred-challenges dns -d example.com -d "*.example.com"
+```
+
+**2. Start the Server**
+
+Run the server with root privileges to bind to ports 80 and 443, providing the paths to your generated certificates:
 
 ```bash
 sudo ./gotunnel server \
@@ -137,8 +153,8 @@ sudo ./gotunnel server \
   -https :443 \
   -tun :2222 \
   -domain example.com \
-  -cert /path/to/fullchain.pem \
-  -key /path/to/privkey.pem
+  -cert /etc/letsencrypt/live/example.com/fullchain.pem \
+  -key /etc/letsencrypt/live/example.com/privkey.pem
 ```
 
 #### Behind a Proxy (NGINX/Cloudflare)

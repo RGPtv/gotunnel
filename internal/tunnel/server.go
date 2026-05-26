@@ -99,7 +99,7 @@ func RunServer(cfg *ServerConfig) {
 		poolSize = 512
 	}
 
-	if token == "" {
+	if token == "auto" {
 		b := make([]byte, 32)
 		if _, err := rand.Read(b); err != nil {
 			log.Fatalf("failed to generate token: %v", err)

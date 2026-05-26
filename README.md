@@ -1,6 +1,6 @@
 # GoTunnel
 
-`GoTunnel` is a reverse tunneling solution written in Go. It allows you to expose local services (HTTP, WebSockets, or raw TCP) to the public internet via a remote server, similar to tools like ngrok or Cloudflare Tunnels.
+`GoTunnel` is a reverse tunneling solution written in Go. Expose local HTTP, WebSocket, or raw TCP services to the public internet via a remote server — similar to ngrok or Cloudflare Tunnels, but self-hosted.
 
 ```text
 Local machine                       Public VPS
@@ -14,19 +14,19 @@ Local machine                       Public VPS
 
 ## Features
 
-- **Standard Library Only**: Built entirely with the Go standard library. No external dependencies.
-- **Terminal UI**: Real-time traffic monitoring in the client terminal.
-- **Modern Dashboard UI**: A tabbed web inspector (`localhost:4040` by default) featuring a navigation sidebar, overview metrics, and a full traffic inspector panel.
-- **Protocol Support**: HTTP, WebSockets, and raw TCP.
+- **Zero-flag Startup**: All configuration lives in a single `config.yaml` file. Run `./gotunnel` with no arguments.
+- **YAML Configuration**: Human-readable, well-commented config. No CLI flags to memorise.
+- **Multiple Tunnels**: Define any number of tunnels in one config file — all start concurrently.
+- **Protocol Support**: HTTP, WebSockets, and raw TCP tunnels.
 - **Subdomain Routing**: Route traffic to multiple local services using subdomains.
-- **Security**: Supports HTTP Basic Auth, auto-generated self-signed TLS certificates, and API key authentication (with automatic secure key generation).
-- **Configuration**: Manage tunnels via JSON configuration files.
+- **Terminal UI**: Real-time traffic monitoring in the client terminal (single-tunnel mode).
+- **Modern Web Dashboard**: Tabbed inspector at `localhost:4040` with metrics, token display, and request replay.
+- **Security**: HTTP Basic Auth, auto-generated TLS certificates, per-tunnel API key authentication.
+- **Minimal Dependencies**: Only `gopkg.in/yaml.v3` beyond the Go standard library.
 
 ---
 
 ## Installation
-
-Clone the repository and build the binary:
 
 ```bash
 git clone https://github.com/RGPtv/gotunnel.git
@@ -36,182 +36,203 @@ go build -o gotunnel ./cmd/gotunnel
 
 ---
 
-## Usage
+## Quick Start
 
-### 1. Generate an Auth Token (Optional)
-While the server can auto-generate a secure token on startup, you can generate your own custom 256-bit token beforehand:
-```bash
-./gotunnel genkey
-```
+### 1. Create your config file
 
-### 2. Start the Server
-Run the server on your remote machine (e.g., a public VPS). By default, it listens for HTTP traffic on port `:8080` and tunnel connections on port `:2222`.
+GoTunnel reads **`config.yml`** or **`config.yaml`** from the current working directory. The file must contain exactly one root section — either `serverConfig:` or `clientConfig:`.
+
+### 2. Run
 
 ```bash
-# Basic startup (with a custom token)
-./gotunnel server -token <YOUR_TOKEN>
-
-# Advanced startup (with subdomain routing and HTTP basic authentication)
-./gotunnel server \
-  -http :8080 \
-  -tun :2222 \
-  -domain example.com \
-  -auth admin:secret
+./gotunnel
 ```
 
-> [!NOTE]
-> - **Auto-generated Token**: If `-token` is omitted, the server will auto-generate a secure 256-bit token. The console will display a masked version (e.g., `abcde...`), but you can retrieve and copy the full token from the web dashboard.
-> - **Firewall**: Ensure that the HTTP/HTTPS ports (e.g., `8080`, `443`) and the tunnel port (e.g., `2222`) are open in your firewall.
-
-### 3. Start the Client
-Run the client on your local machine (where the target service is running) to connect to the server.
-
-#### Option A: Interactive Command (Simplest)
-If you run the client without arguments, it will interactively prompt you for the server address and token:
-```bash
-./gotunnel client
-```
-
-#### Option B: CLI Arguments
-Specify the server details and target service directly via flags:
-```bash
-# Expose local port 3000 to the public server
-./gotunnel client -server vps.example.com:2222 -token <YOUR_TOKEN> -target localhost:3000 -k
-```
-
-> [!TIP]
-> - **Self-Signed Certificates**: By default, `gotunnel` uses an auto-generated, in-memory self-signed certificate for the tunnel connection. You **must** pass the `-k` flag to the client to skip TLS certificate verification.
-> - **Gateway API Key Authentication**: You can secure a specific tunnel by requiring an API key. Pass `-apikey auto` to generate a random key, or `-apikey your_secret_key`. Requests accessing the tunnel must then provide the key in the `X-API-Key` or `Authorization: Bearer <key>` header.
-
-Your local service at `:3000` is now accessible via the server at `http://vps.example.com:8080`.
+That's it. No subcommands. No flags.
 
 ---
 
-## Configuration Files
+## Server Setup
 
-Instead of specifying long command-line arguments every time, you can manage multiple complex tunnel configurations using a `config.json` file. 
+Create `config.yaml` on your VPS:
 
-Place `config.json` in the working directory from which you run the client or server.
-
-### `config.json` Structure
-
-You can configure both the server properties and multiple client tunnels in a single file:
-
-```json
-{
-  "serverConfig": {
-    "http": ":8080",
-    "tun": ":2222",
-    "token": "YOUR_TOKEN",
-    "domain": "example.com",
-    "inspect": ":4040"
-  },
-  "clientConfig": {
-    "server": "vps.example.com:2222",
-    "token": "YOUR_TOKEN",
-    "tunnels": {
-      "api": {
-        "target": "localhost:3000",
-        "subdomain": "api",
-        "type": "http",
-        "workers": 10
-      },
-      "ssh": {
-        "target": "localhost:22",
-        "type": "tcp",
-        "remote": ":22222",
-        "insecure": true
-      }
-    }
-  }
-}
+```yaml
+serverConfig:
+  http:    ":8080"   # Public HTTP port
+  tun:     ":2222"   # Tunnel port (clients connect here)
+  token:   "YOUR_SECRET_TOKEN"
+  inspect: ":4040"   # Web dashboard (omit to disable)
 ```
 
-### Configuration Fields
+Then run:
 
-- **`serverConfig`**: Configuration defaults for the `server` command.
-  - `http` (string): HTTP listen address for external users (default: `":8080"`).
-  - `tun` (string): Tunnel listen address for clients (default: `":2222"`).
-  - `token` (string): Shared client authentication token (use `"auto"` or leave empty to auto-generate).
-  - `domain` (string): Base domain for subdomain routing.
-  - `cert` (string): Path to TLS certificate PEM file.
-  - `key` (string): Path to TLS key PEM file.
-  - `auth` (string): HTTP Basic Auth (`user:pass`) for external traffic.
-  - `notls` (bool): Disable TLS on tunnel port.
-  - `https` (string): HTTPS listen address.
-  - `inspect` (string): Inspector web UI address (default: `":4040"`).
-  - `inspectUser` (string): Dashboard login username (default: `"admin"`).
-  - `inspectPass` (string): Dashboard login password.
-  - `poolSize` (int): Maximum connection capacity per tunnel pool (default: `512`).
-- **`clientConfig`**: Configuration for the client (`start`) command.
-  - `server` (string): The remote server address (maps to client's `-server` flag).
-  - `token` (string): The shared authentication token (maps to client's `-token` flag).
-  - `tunnels` (object): A map of named tunnel configurations.
-- **Tunnel Fields**:
-  - `target` (string): The local address/port to tunnel (maps to client's `-target` flag).
-  - `type` (string): The tunnel protocol, either `"http"` or `"tcp"` (maps to `-type`).
-  - `subdomain` (string): The requested subdomain for HTTP routing (maps to `-subdomain`).
-  - `remote` (string): The remote TCP address/port to bind on the server (maps to `-remote`).
-  - `apikey` (string): Optional API key for this tunnel (use `"auto"` to auto-generate, maps to `-apikey`).
-  - `workers` (int): Parallel tunnel connections (maps to `-workers`).
-  - `insecure` (bool): Skip TLS certificate verification (maps to `-k`).
-  - `notls` (bool): Use plain TCP (maps to `-notls`).
+```bash
+./gotunnel
+```
 
 > [!NOTE]
-> For backward compatibility, `server`, `token`, and `tunnels` can also be placed directly at the root of `config.json` instead of inside `clientConfig`.
+> - If `token` is omitted, a secure 256-bit token is auto-generated and printed on startup. Copy it from the dashboard or the console.
+> - Ensure your firewall allows the HTTP port (e.g., `8080`) and the tunnel port (e.g., `2222`).
 
-### Running with a Configuration File
+---
 
-#### 1. Server
-To start the server using the defaults provided in your `config.json`, simply run the `server` command:
+## Client Setup
+
+Create `config.yaml` on your local machine:
+
+```yaml
+clientConfig:
+  server: "vps.example.com:2222"
+  token:  "YOUR_SECRET_TOKEN"
+  skipTLSVerify: true   # required when server uses self-signed cert
+
+  tunnels:
+    - name:   "web"
+      target: "localhost:3000"
+      type:   "http"
+      workers: 10
+```
+
+Then run:
 
 ```bash
-./gotunnel server
-```
-The server will automatically load `serverConfig` properties from `config.json` if it exists in the current directory. You can still append command-line flags to override specific config properties at runtime (e.g., `./gotunnel server -http :9090`).
-
-#### 2. Client Tunnels
-To start a specific client tunnel configuration, use the `start` command followed by the name of the tunnel:
-
-```bash
-./gotunnel start api
+./gotunnel
 ```
 
-##### Appending Extra Client Arguments
-Any additional command-line flags you pass to the `start` command are automatically appended to the client. This allows you to combine configured settings with runtime client flags (such as skipping TLS verification or adding an API key):
+Your local service at `:3000` is now accessible at `http://vps.example.com:8080`.
 
-```bash
-# Start the "api" tunnel, skip TLS verification, and enable gateway API key security
-./gotunnel start api -k -apikey auto
+---
 
-# Start the "ssh" tunnel and skip TLS verification
-./gotunnel start ssh -k
+## Full Configuration Reference
+
+### Server (`serverConfig:`)
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `http` | `:8080` | HTTP listen address for external users |
+| `https` | *(off)* | HTTPS listen address — requires `cert` and `key` |
+| `tun` | `:2222` | Tunnel listen address for clients |
+| `token` | *(auto)* | Shared auth token — auto-generated if empty |
+| `cert` | *(auto)* | Path to TLS certificate PEM file |
+| `key` | *(auto)* | Path to TLS private key PEM file |
+| `auth` | *(off)* | HTTP Basic Auth for all traffic (`user:pass`) |
+| `domain` | *(off)* | Base domain for subdomain routing (e.g. `example.com`) |
+| `inspect` | `:4040` | Web dashboard address — omit or set `""` to disable |
+| `inspectUser` | `admin` | Dashboard login username |
+| `inspectPass` | *(auto)* | Dashboard password — auto-generated and saved to `.gotunnel-admin` |
+| `noTLS` | `false` | Disable TLS on tunnel port (use when behind a TLS-terminating proxy) |
+| `poolSize` | `512` | Max idle connections per tunnel pool |
+
+**Full example:**
+
+```yaml
+serverConfig:
+  http:        ":8080"
+  https:       ":8443"
+  tun:         ":2222"
+  token:       "YOUR_TOKEN"
+  domain:      "example.com"
+  cert:        "/etc/letsencrypt/live/example.com/fullchain.pem"
+  key:         "/etc/letsencrypt/live/example.com/privkey.pem"
+  auth:        "admin:secret"
+  inspect:     ":4040"
+  inspectUser: "admin"
+  inspectPass: "dashboard-password"
+  noTLS:       false
+  poolSize:    512
 ```
+
+---
+
+### Client (`clientConfig:`)
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `server` | *(required)* | Server address — `host:port` or `https://host[:port]` |
+| `token` | *(required)* | Must match server's `token` |
+| `skipTLSVerify` | `false` | Skip TLS cert check (required for self-signed certs) |
+| `noTLS` | `false` | Use plain TCP (when server uses `noTLS: true`) |
+| `tunnels` | *(required)* | List of tunnel definitions — see below |
+
+---
+
+### Tunnel Fields (`tunnels:`)
+
+Each entry in `tunnels:` is a tunnel that starts when `./gotunnel` runs.
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `name` | *(optional)* | Human-readable label shown in startup output |
+| `target` | *(required)* | Local service to forward to (e.g. `localhost:3000`) |
+| `type` | `http` | Tunnel type: `http` or `tcp` |
+| `subdomain` | *(optional)* | Request a subdomain — requires server `domain` to be set |
+| `remote` | *(required for tcp)* | Port opened on the server for TCP traffic (e.g. `:22222`) |
+| `apiKey` | *(optional)* | Bearer token gate — use `"auto"` to generate one |
+| `workers` | `10` | Parallel tunnel connections to maintain |
+
+**Full example — multiple tunnels:**
+
+```yaml
+clientConfig:
+  server:        "vps.example.com:2222"
+  token:         "YOUR_TOKEN"
+  skipTLSVerify: false
+  noTLS:         false
+
+  tunnels:
+    - name:      "api"
+      target:    "localhost:3000"
+      type:      "http"
+      subdomain: "api"
+      apiKey:    "auto"
+      workers:   10
+
+    - name:      "ollama"
+      target:    "localhost:11434"
+      type:      "http"
+      workers:   5
+
+    - name:      "ssh"
+      target:    "localhost:22"
+      type:      "tcp"
+      remote:    ":22222"
+      workers:   3
+```
+
+---
+
+## Validation
+
+GoTunnel validates your config on startup and exits with a descriptive error if anything is wrong:
+
+| Error | Cause |
+|-------|-------|
+| `No configuration file found` | No `config.yml` or `config.yaml` in CWD |
+| `both 'serverConfig' and 'clientConfig' are present` | Only one root section is allowed |
+| `neither 'serverConfig' nor 'clientConfig' is present` | Config file has no recognised root section |
+| `field X not found in type ...` | Unknown YAML key — includes line number |
+| `tunnel "ssh" (type 'tcp') requires 'remote' field` | TCP tunnel missing `remote` |
+| `'server' is required` | Missing required client field |
 
 ---
 
 ## Web Dashboard & Traffic Inspector
 
-The server provides a modern, responsive web-based dashboard for monitoring, configuration overview, and request inspection.
-
-When the server is running, navigate to `http://127.0.0.1:4040` (or your configured inspector address) and log in. The dashboard is divided into two primary views managed by the left sidebar navigation:
+When the server is running, navigate to `http://127.0.0.1:4040` (or your configured `inspect` address) to access the dashboard.
 
 > [!IMPORTANT]
-> - **Credentials**: The default username is `admin`.
-> - **Password**: If `-inspect-pass` is not specified, a random password is generated and printed to the console on startup, and saved to a `.gotunnel-admin` file in the server's working directory.
+> The default username is `admin`. If `inspectPass` is not set, a random password is generated on startup and saved to `.gotunnel-admin` in the server's working directory.
 
-### 1. Overview
-The default landing view, offering:
-- **Server Metrics**: Real-time tracking of total requests, active connections, proxy endpoints, and tunnel ports.
-- **Client Auth Token**: View, reveal, and quickly copy the shared client authentication token.
-- **API Key**: If a tunnel client connects with an API key, this section displays the key with fully integrated reveal and copy actions.
+### Overview Panel
+- Real-time metrics: total requests, active connections, proxy endpoints, tunnel ports
+- Client auth token: view, reveal, and copy
+- Per-tunnel API key display
 
-### 2. Traffic Inspector
-An advanced request/response monitoring suite that provides:
-- **Real-Time Request Stream**: Instant updates of incoming HTTP requests with method, path, hostname, response status, and duration metrics.
-- **Search & Filters**: Quickly locate specific requests by searching their paths or methods.
-- **Deep Inspection**: View detailed HTTP headers and formatted body payloads for both requests and responses.
-- **Request Replay**: Trigger one-click replays of captured requests directly to your local service.
+### Traffic Inspector
+- Live HTTP request stream with method, path, status, and duration
+- Search and filter by path or method
+- Full request/response header and body inspection
+- One-click request replay to your local service
 
 ---
 
@@ -219,18 +240,48 @@ An advanced request/response monitoring suite that provides:
 
 ### Subdomain Routing
 
-Host multiple services on the same server using subdomains.
+Serve multiple local services from a single public server using subdomains.
 
-1. Start the server with a base domain: `-domain example.com`
-2. Start the client and specify a subdomain: `-subdomain api`
-3. The service will be routed via `api.example.com:8080`.
+**Server `config.yaml`:**
+```yaml
+serverConfig:
+  http:   ":8080"
+  tun:    ":2222"
+  token:  "YOUR_TOKEN"
+  domain: "example.com"
+```
 
-### TCP Tunneling
+**Client `config.yaml`:**
+```yaml
+clientConfig:
+  server: "vps.example.com:2222"
+  token:  "YOUR_TOKEN"
+  skipTLSVerify: true
 
-Expose raw TCP services, such as SSH or databases.
+  tunnels:
+    - name:      "api"
+      target:    "localhost:3000"
+      subdomain: "api"       # → api.example.com:8080
+    - name:      "docs"
+      target:    "localhost:4000"
+      subdomain: "docs"      # → docs.example.com:8080
+```
 
-```bash
-./gotunnel client -server vps.example.com:2222 -token <TOKEN> -type tcp -target localhost:22 -remote :22222 -k
+---
+
+### TCP Tunneling (SSH, databases, etc.)
+
+```yaml
+clientConfig:
+  server: "vps.example.com:2222"
+  token:  "YOUR_TOKEN"
+  skipTLSVerify: true
+
+  tunnels:
+    - name:   "ssh"
+      target: "localhost:22"
+      type:   "tcp"
+      remote: ":22222"
 ```
 
 Connect remotely:
@@ -238,56 +289,73 @@ Connect remotely:
 ssh user@vps.example.com -p 22222
 ```
 
-### TLS and Reverse Proxies
+---
 
-#### Native HTTPS
+### Per-Tunnel API Key Authentication
 
-`gotunnel` can serve HTTPS directly without a reverse proxy. To do this, you need an SSL/TLS certificate (e.g., from Let's Encrypt).
+Secure a specific tunnel so only requests bearing a valid API key are forwarded:
 
-**1. Obtain Certificates (Certbot)**
+```yaml
+tunnels:
+  - name:   "private-api"
+    target: "localhost:8000"
+    type:   "http"
+    apiKey: "auto"   # printed on startup; use a fixed string to set your own
+```
 
-You can use `certbot` to generate a free SSL certificate. 
+Clients must then pass the key in one of:
+```
+X-API-Key: <key>
+Authorization: Bearer <key>
+```
+
+---
+
+### Native HTTPS (Let's Encrypt)
+
+**1. Obtain certificates:**
 
 ```bash
-# Standard certificate (Standalone mode, requires port 80 to be free)
+# Standard domain
 sudo certbot certonly --standalone -d example.com
 
-# Wildcard certificate for subdomain routing (Requires DNS challenge)
+# Wildcard for subdomain routing
 sudo certbot certonly --manual --preferred-challenges dns -d example.com -d "*.example.com"
 ```
 
-**2. Start the Server**
+**2. Server `config.yaml`:**
 
-Run the server with root privileges to bind to ports 80 and 443, providing the paths to your generated certificates:
-
-```bash
-sudo ./gotunnel server \
-  -token <TOKEN> \
-  -http :80 \
-  -https :443 \
-  -tun :2222 \
-  -domain example.com \
-  -cert /etc/letsencrypt/live/example.com/fullchain.pem \
-  -key /etc/letsencrypt/live/example.com/privkey.pem
+```yaml
+serverConfig:
+  http:   ":80"
+  https:  ":443"
+  tun:    ":2222"
+  token:  "YOUR_TOKEN"
+  domain: "example.com"
+  cert:   "/etc/letsencrypt/live/example.com/fullchain.pem"
+  key:    "/etc/letsencrypt/live/example.com/privkey.pem"
 ```
 
-#### Behind a Proxy (NGINX / Cloudflare)
+---
 
-If you are using a proxy that terminates TLS, disable TLS on the tunnel port using `-notls`.
+### Behind a TLS-Terminating Proxy (NGINX, Cloudflare)
 
-```bash
-# Server configuration
-./gotunnel server -token <TOKEN> -notls -http :8080 -tun :4444
+**Server `config.yaml`:**
+```yaml
+serverConfig:
+  http:  ":8080"
+  tun:   ":4444"
+  token: "YOUR_TOKEN"
+  noTLS: true   # proxy handles TLS — no double-wrap
 ```
 
-Example NGINX configuration for WebSocket upgrade on the tunnel port:
-
+**NGINX config (tunnel port):**
 ```nginx
 server {
     listen 443 ssl;
     server_name tunnel.example.com;
-    
-    # SSL configuration here
+
+    # SSL config here
 
     location / {
         proxy_pass http://127.0.0.1:4444;
@@ -299,60 +367,24 @@ server {
 }
 ```
 
-Connect the client through the proxy:
+**Client `config.yaml`:**
+```yaml
+clientConfig:
+  server: "https://tunnel.example.com"
+  token:  "YOUR_TOKEN"
+  noTLS:  false   # proxy presents a real cert — no skipTLSVerify needed
 
-```bash
-./gotunnel client -server https://tunnel.example.com -token <TOKEN> -target localhost:3000
+  tunnels:
+    - name:   "web"
+      target: "localhost:3000"
 ```
-
----
-
-## Command Line Reference
-
-| Command | Description |
-|---------|-------------|
-| `server` | Run the tunnel server on your VPS / public host |
-| `client` | Run the tunnel client on your local machine |
-| `start` | Run a named tunnel from config.json |
-| `genkey` | Generate a random 256-bit auth token |
-
-### `server` Flags
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `-http` | `:8080` | HTTP listen address for external users |
-| `-https` | | HTTPS listen address (requires `-cert` and `-key`) |
-| `-tun` | `:2222` | Tunnel listen address for clients |
-| `-token` | *(auto)* | Shared client authentication token (auto-generated if empty, first 8 characters printed on startup) |
-| `-cert` | | TLS certificate PEM file (auto-generated if empty) |
-| `-key` | | TLS key PEM file (auto-generated if empty) |
-| `-auth` | | Optional HTTP Basic Auth (`user:pass`) for external HTTP traffic |
-| `-domain` | | Base domain for subdomain routing |
-| `-inspect` | `:4040` | Inspector web UI address (empty to disable) |
-| `-inspect-user` | `admin` | Dashboard login username |
-| `-inspect-pass` | *(auto)* | Dashboard login password (auto-generated if empty and saved to `.gotunnel-admin`) |
-| `-notls` | `false` | Disable TLS on tunnel port (useful when behind a TLS-terminating proxy) |
-| `-poolsize` | `512` | Maximum connection capacity per tunnel pool |
-
-### `client` Flags
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `-server` | *(prompt)* | Remote server address (host:port or https://host[:port]) |
-| `-token` | *(prompt)* | Shared authentication token |
-| `-target` | `localhost:8080` | Local service to tunnel (e.g. `localhost:3000` or `http://localhost:3000`) |
-| `-type` | `http` | Tunnel type (`http` or `tcp`) |
-| `-subdomain` | | Request a specific subdomain (requires server to use `-domain`) |
-| `-remote` | | Remote address/port for TCP tunnels (e.g. `:22222`) |
-| `-apikey` | | Optional API key for this tunnel (use `auto` to auto-generate one) |
-| `-workers` | `10` | Parallel tunnel connections |
-| `-k` | `false` | Skip TLS certificate verification (required when server uses self-signed certificate) |
-| `-notls` | `false` | Use plain TCP (when server runs `-notls` behind a TLS proxy) |
 
 ---
 
 ## Architecture Overview
 
 1. The **server** exposes two listeners: one for external HTTP/WebSocket traffic, and one for incoming tunnel client connections.
-2. The **client** initiates a connection to the tunnel listener, authenticates, and maintains a pool of worker connections (`-workers`).
-3. **HTTP/WS Proxying**: For standard HTTP, the server reads the request, forwards it through an available tunnel connection, and streams the response back. For WebSockets, the server hijacks the TCP connection after the `Upgrade` header is detected and splices it directly with the tunnel connection.
+2. The **client** connects to the tunnel listener, authenticates via HMAC-SHA256 challenge/response, and maintains a pool of idle worker connections.
+3. **HTTP/WS Proxying**: The server reads each incoming HTTP request, dequeues an idle tunnel connection from the pool, forwards the request, and streams the response back. WebSocket connections are spliced bidirectionally at the TCP level.
+4. **TCP Tunneling**: The server opens a dedicated TCP listener per `remote` port. When an external connection arrives, it signals a pooled tunnel worker to start a raw bidirectional pipe to the local target.
+5. **Pool Management**: A background janitor probes idle connections every 5 seconds and evicts dead ones. Named pools (per subdomain or TCP remote) are cleaned up automatically when all clients disconnect.

@@ -1,0 +1,48 @@
+# gotunnel configuration file
+#
+# Only ONE root section is allowed: either serverConfig OR clientConfig.
+# Remove or comment out the section that does not apply to this instance.
+#
+# Run with: ./gotunnel
+# -------------------------------------------------------------------
+
+# ── SERVER MODE ─────────────────────────────────────────────────────
+# Uncomment and configure this section to run as the tunnel server.
+#
+# serverConfig:
+#   http:        ":80"          # HTTP proxy port (public-facing)
+#   https:       ":443"          # HTTPS proxy port (requires cert + key)
+#   tun:         ":2222"          # Tunnel listen port (clients connect here)
+#   token:       "YOUR_TOKEN"     # Shared auth token — keep this secret
+#   domain:      "example.com"    # Base domain for subdomain routing
+#   cert:        "./cert.pem"     # TLS certificate (omit for auto self-signed)
+#   key:         "./key.pem"      # TLS private key  (omit for auto self-signed)
+#   auth:        "admin:password" # Optional HTTP Basic Auth for all traffic
+#   inspect:     ":4040"          # Dashboard address (omit to disable)
+#   inspectUser: "admin"          # Dashboard username
+#   inspectPass: "dashboard-pass" # Dashboard password (auto-generated if omitted)
+#   noTLS:       false            # Set true when behind a TLS-terminating proxy
+#   poolSize:    512              # Max idle tunnel connections per pool
+
+# ── CLIENT MODE ─────────────────────────────────────────────────────
+# Uncomment and configure this section to run as the tunnel client.
+#
+clientConfig:
+  server:        "vps.example.com:2222"  # Tunnel server address
+  token:         "YOUR_TOKEN"            # Must match serverConfig.token
+  skipTLSVerify: false                   # Set true when server uses self-signed cert
+  noTLS:         false                   # Set true when server uses noTLS: true
+
+  tunnels:
+    - name:      "api"
+      target:    "localhost:3000"
+      type:      "http"
+      subdomain: "api"           # optional: requests api.example.com
+      apiKey:    ""              # optional: Bearer token gate ("auto" to generate)
+      workers:   10
+
+    # - name:    "ssh"
+    #   target:  "localhost:22"
+    #   type:    "tcp"
+    #   remote:  ":22222"        # port opened on the server for TCP traffic
+    #   workers: 5

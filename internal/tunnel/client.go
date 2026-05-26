@@ -9,7 +9,6 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
-	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -113,115 +112,16 @@ func normalizeTargetAddr(addr string) string {
 	return addr
 }
 
-func RunClient(args []string) {
-	fs := flag.NewFlagSet("client", flag.ExitOnError)
-	server    := fs.String("server",    "",             "Tunnel server — host:port or https://host[:port] (required)")
-	token     := fs.String("token",     "",             "Auth token — must match server's -token (required)")
-	target    := fs.String("target",    "localhost:8080","Local service to tunnel, e.g. localhost:3000")
-	typeFlag  := fs.String("type",      "http",         "Tunnel type: 'http' (or websocket) or 'tcp'")
-	subdomain := fs.String("subdomain", "",             "Request a specific subdomain (requires server to use -domain)")
-	remote    := fs.String("remote",    "",             "Remote address/port to listen on for TCP tunnels, e.g. ':22222'")
-	apiKey    := fs.String("apikey",    "",             "Optional API key for this tunnel (use 'auto' to auto-generate)")
-	workers   := fs.Int("workers",      10,             "Number of parallel tunnel connections")
-	insecure  := fs.Bool("k",           false,          "Skip TLS cert verification (for self-signed certs)")
-	noTLS     := fs.Bool("notls",       false,          "Use plain TCP (when server runs -notls behind a TLS proxy)")
-	fs.Parse(args)
-
-	if *server == "" {
-		fmt.Print("? Enter the tunnel server address (e.g. example.com:2222): ")
-		reader := bufio.NewReader(os.Stdin)
-		input, _ := reader.ReadString('\n')
-		*server = strings.TrimSpace(input)
+func RunClient(cfg *ClientConfig) {
+	// Set up log file output (shared across all tunnels).
+	if f, err := os.OpenFile("gotunnel.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666); err == nil {
+		log.SetOutput(f)
+	} else {
+		fmt.Fprintf(os.Stderr, "warning: cannot open gotunnel.log: %v — logging disabled\n", err)
+		log.SetOutput(io.Discard)
 	}
-	if *token == "" {
-		fmt.Print("? Enter your auth token: ")
-		reader := bufio.NewReader(os.Stdin)
-		input, _ := reader.ReadString('\n')
-		*token = strings.TrimSpace(input)
-	}
-
-	if *server == "" || *token == "" {
-		log.Fatal("ERROR: -server and -token are required")
-	}
-	if *typeFlag == "tcp" && *remote == "" {
-		log.Fatal("ERROR: -remote is required for tcp tunnels (e.g. -remote :22222)")
-	}
-	if *subdomain != "" && *typeFlag != "http" {
-		log.Fatal("ERROR: -subdomain can only be used with -type http")
-	}
-
-	if *apiKey == "auto" {
-		b := make([]byte, 16)
-		if _, err := rand.Read(b); err != nil {
-			log.Fatalf("failed to generate apikey: %v", err)
-		}
-		*apiKey = hex.EncodeToString(b)
-	}
-	if strings.ContainsAny(*apiKey, " \t\r\n") {
-		log.Fatal("ERROR: -apikey must not contain whitespace")
-	}
-
-	remoteVal := *remote
-	if *typeFlag == "http" && *subdomain != "" {
-		remoteVal = *subdomain
-	}
-
-	serverAddr := normalizeServerAddr(*server)
 
 	ctx, cancel := context.WithCancel(context.Background())
-
-	c := &Client{
-		serverAddr: serverAddr,
-		token:      *token,
-		tunnelType: *typeFlag,
-		remoteAddr: remoteVal,
-		apiKey:     *apiKey,
-		targetAddr: normalizeTargetAddr(*target),
-		noTLS:      *noTLS,
-		httpClient: &http.Client{
-			Transport: &http.Transport{
-				DialContext: (&net.Dialer{
-					Timeout:   10 * time.Second,
-					KeepAlive: 30 * time.Second,
-				}).DialContext,
-				MaxIdleConns:          200,
-				MaxIdleConnsPerHost:   50,
-				IdleConnTimeout:       90 * time.Second,
-				ResponseHeaderTimeout: 0, 
-			},
-			CheckRedirect: func(*http.Request, []*http.Request) error {
-				return http.ErrUseLastResponse
-			},
-		},
-		tlsConfig: &tls.Config{InsecureSkipVerify: *insecure},
-		uiStatus:  "connecting...",
-		ctx:       ctx,
-		cancel:    cancel,
-	}
-
-	c.startUI()
-
-	// ── Startup banner ───────────────────────────────────────────────────────
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintf(os.Stderr, "  \x1b[1;36mgotunnel\x1b[0m client\n")
-	fmt.Fprintln(os.Stderr)
-	fmt.Fprintf(os.Stderr, "  %-14s %s\n", "Tunnel", serverAddr)
-	fmt.Fprintf(os.Stderr, "  %-14s %s\n", "Type", *typeFlag)
-	if *typeFlag == "tcp" {
-		fmt.Fprintf(os.Stderr, "  %-14s %s\n", "Remote Port", *remote)
-	}
-	if *typeFlag == "http" && *subdomain != "" {
-		fmt.Fprintf(os.Stderr, "  %-14s %s\n", "Subdomain", *subdomain)
-	}
-	if *apiKey != "" {
-		fmt.Fprintf(os.Stderr, "  %-14s %s\n", "API Key", *apiKey)
-	}
-	fmt.Fprintf(os.Stderr, "  %-14s %s\n", "Forwarding", *target)
-	fmt.Fprintf(os.Stderr, "  %-14s %d\n", "Workers", *workers)
-	if *insecure {
-		fmt.Fprintf(os.Stderr, "  %-14s disabled (-k)\n", "TLS Verify")
-	}
-	fmt.Fprintln(os.Stderr)
 
 	// Graceful shutdown on SIGINT.
 	sigCh := make(chan os.Signal, 1)
@@ -231,14 +131,124 @@ func RunClient(args []string) {
 		cancel()
 	}()
 
+	serverAddr := normalizeServerAddr(cfg.Server)
+	tlsCfg := &tls.Config{InsecureSkipVerify: cfg.SkipTLSVerify}
+	singleTunnel := len(cfg.Tunnels) == 1
+
+	// ── Startup banner ───────────────────────────────────────────────────────
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintf(os.Stderr, "  \x1b[1;36mgotunnel\x1b[0m client\n")
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintf(os.Stderr, "  %-14s %s\n", "Server", serverAddr)
+	fmt.Fprintf(os.Stderr, "  %-14s %d\n", "Tunnels", len(cfg.Tunnels))
+	fmt.Fprintln(os.Stderr)
+
 	var wg sync.WaitGroup
-	for i := 0; i < *workers; i++ {
-		wg.Add(1)
-		go func(id int) {
-			defer wg.Done()
-			c.runWorker(id)
-		}(i + 1)
+
+	for idx, t := range cfg.Tunnels {
+		t := t // capture loop variable
+
+		tunnelType := strings.ToLower(t.Type)
+		if tunnelType == "" {
+			tunnelType = "http"
+		}
+		workers := t.Workers
+		if workers <= 0 {
+			workers = 10
+		}
+
+		apiKey := t.APIKey
+		if apiKey == "auto" {
+			b := make([]byte, 16)
+			if _, err := rand.Read(b); err != nil {
+				fmt.Fprintf(os.Stderr, "ERROR: failed to generate apikey for tunnel %d: %v\n", idx+1, err)
+				cancel()
+				wg.Wait()
+				return
+			}
+			apiKey = hex.EncodeToString(b)
+		}
+
+		remoteVal := t.Remote
+		if tunnelType == "http" && t.Subdomain != "" {
+			remoteVal = t.Subdomain
+		}
+
+		c := &Client{
+			serverAddr: serverAddr,
+			token:      cfg.Token,
+			tunnelType: tunnelType,
+			remoteAddr: remoteVal,
+			apiKey:     apiKey,
+			targetAddr: normalizeTargetAddr(t.Target),
+			noTLS:      cfg.NoTLS,
+			httpClient: &http.Client{
+				Transport: &http.Transport{
+					DialContext: (&net.Dialer{
+						Timeout:   10 * time.Second,
+						KeepAlive: 30 * time.Second,
+					}).DialContext,
+					MaxIdleConns:          200,
+					MaxIdleConnsPerHost:   50,
+					IdleConnTimeout:       90 * time.Second,
+					ResponseHeaderTimeout: 0,
+				},
+				CheckRedirect: func(*http.Request, []*http.Request) error {
+					return http.ErrUseLastResponse
+				},
+			},
+			tlsConfig: tlsCfg,
+			uiStatus:  "connecting...",
+			ctx:       ctx,
+			cancel:    cancel,
+		}
+
+		if singleTunnel {
+			// Single-tunnel mode: full banner + interactive TUI.
+			fmt.Fprintf(os.Stderr, "  %-14s %s\n", "Type", tunnelType)
+			if tunnelType == "tcp" {
+				fmt.Fprintf(os.Stderr, "  %-14s %s\n", "Remote Port", t.Remote)
+			}
+			if tunnelType == "http" && t.Subdomain != "" {
+				fmt.Fprintf(os.Stderr, "  %-14s %s\n", "Subdomain", t.Subdomain)
+			}
+			if apiKey != "" {
+				fmt.Fprintf(os.Stderr, "  %-14s %s\n", "API Key", apiKey)
+			}
+			fmt.Fprintf(os.Stderr, "  %-14s %s\n", "Forwarding", t.Target)
+			fmt.Fprintf(os.Stderr, "  %-14s %d\n", "Workers", workers)
+			if cfg.SkipTLSVerify {
+				fmt.Fprintf(os.Stderr, "  %-14s disabled (skipTLSVerify: true)\n", "TLS Verify")
+			}
+			fmt.Fprintln(os.Stderr)
+			c.startUI()
+		} else {
+			// Multi-tunnel mode: compact per-tunnel summary line.
+			label := t.Name
+			if label == "" {
+				label = fmt.Sprintf("tunnel-%d", idx+1)
+			}
+			fmt.Fprintf(os.Stderr, "  [%s] %s → %s  (%d workers)\n", label, tunnelType, t.Target, workers)
+			if tunnelType == "tcp" {
+				fmt.Fprintf(os.Stderr, "         remote: %s\n", t.Remote)
+			}
+			if tunnelType == "http" && t.Subdomain != "" {
+				fmt.Fprintf(os.Stderr, "         subdomain: %s\n", t.Subdomain)
+			}
+			if apiKey != "" {
+				fmt.Fprintf(os.Stderr, "         api key: %s\n", apiKey)
+			}
+		}
+
+		for i := 0; i < workers; i++ {
+			wg.Add(1)
+			go func(id int) {
+				defer wg.Done()
+				c.runWorker(id)
+			}(i + 1)
+		}
 	}
+
 	wg.Wait()
 }
 
@@ -537,15 +547,8 @@ func writeErrorResponse(w io.Writer, code int, msg string) error {
 // ── TUI Dashboard ─────────────────────────────────────────────────────────────
 
 func (c *Client) startUI() {
-	f, err := os.OpenFile("gotunnel.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-	if err == nil {
-		log.SetOutput(f)
-	} else {
-		fmt.Fprintf(os.Stderr, "warning: cannot open gotunnel.log: %v — logging disabled\n", err)
-		log.SetOutput(io.Discard)
-	}
-
 	// Clear the screen once on startup before the ticker starts.
+	// (Log setup is handled by RunClient before this is called.)
 	fmt.Print("\033[2J")
 
 	ticker := time.NewTicker(200 * time.Millisecond)

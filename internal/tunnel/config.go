@@ -1,138 +1,185 @@
 package tunnel
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
-	"log"
 	"os"
+	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
+// AppConfig is the top-level YAML configuration structure.
+// Exactly one of ServerConfig or ClientConfig must be set.
+type AppConfig struct {
+	ServerConfig *ServerConfig `yaml:"serverConfig"`
+	ClientConfig *ClientConfig `yaml:"clientConfig"`
+}
+
+// ServerConfig holds all settings for running gotunnel in server mode.
 type ServerConfig struct {
-	HTTPAddr    string `json:"http,omitempty"`
-	TunAddr     string `json:"tun,omitempty"`
-	Token       string `json:"token,omitempty"`
-	CertFile    string `json:"cert,omitempty"`
-	KeyFile     string `json:"key,omitempty"`
-	Auth        string `json:"auth,omitempty"`
-	Domain      string `json:"domain,omitempty"`
-	NoTLS       bool   `json:"notls,omitempty"`
-	HTTPSAddr   string `json:"https,omitempty"`
-	Inspect     string `json:"inspect,omitempty"`
-	InspectUser string `json:"inspectUser,omitempty"`
-	InspectPass string `json:"inspectPass,omitempty"`
-	PoolSize    int    `json:"poolSize,omitempty"`
+	HTTPAddr    string `yaml:"http"`
+	HTTPSAddr   string `yaml:"https"`
+	TunAddr     string `yaml:"tun"`
+	Token       string `yaml:"token"`
+	CertFile    string `yaml:"cert"`
+	KeyFile     string `yaml:"key"`
+	Auth        string `yaml:"auth"`
+	Domain      string `yaml:"domain"`
+	Inspect     string `yaml:"inspect"`
+	InspectUser string `yaml:"inspectUser"`
+	InspectPass string `yaml:"inspectPass"`
+	NoTLS       bool   `yaml:"noTLS"`
+	PoolSize    int    `yaml:"poolSize"`
 }
 
+// ClientConfig holds all settings for running gotunnel in client mode.
 type ClientConfig struct {
-	Server  string            `json:"server,omitempty"`
-	Token   string            `json:"token,omitempty"`
-	Tunnels map[string]Tunnel `json:"tunnels,omitempty"`
+	Server        string         `yaml:"server"`
+	Token         string         `yaml:"token"`
+	SkipTLSVerify bool           `yaml:"skipTLSVerify"`
+	NoTLS         bool           `yaml:"noTLS"`
+	Tunnels       []TunnelConfig `yaml:"tunnels"`
 }
 
-type Config struct {
-	Server       string            `json:"server,omitempty"`
-	Token        string            `json:"token,omitempty"`
-	ServerConfig *ServerConfig     `json:"serverConfig,omitempty"`
-	ClientConfig *ClientConfig     `json:"clientConfig,omitempty"`
-	Tunnels      map[string]Tunnel `json:"tunnels,omitempty"`
+// TunnelConfig defines a single tunnel to be opened by the client.
+type TunnelConfig struct {
+	Name      string `yaml:"name"`
+	Target    string `yaml:"target"`
+	Type      string `yaml:"type"`
+	Subdomain string `yaml:"subdomain"`
+	Remote    string `yaml:"remote"`
+	APIKey    string `yaml:"apiKey"`
+	Workers   int    `yaml:"workers"`
 }
 
-type Tunnel struct {
-	Target    string `json:"target,omitempty"`
-	Type      string `json:"type,omitempty"`
-	Subdomain string `json:"subdomain,omitempty"`
-	Remote    string `json:"remote,omitempty"`
-	APIKey    string `json:"apikey,omitempty"`
-	Workers   int    `json:"workers,omitempty"`
-	Insecure  bool   `json:"insecure,omitempty"`
-	NoTLS     bool   `json:"notls,omitempty"`
-}
-
-func loadConfig() *Config {
-	data, err := os.ReadFile("config.json")
+// LoadConfig searches for config.yml then config.yaml in the current working
+// directory, parses it, and validates the result. It returns a descriptive
+// error if no file is found, parsing fails, or validation fails.
+func LoadConfig() (*AppConfig, error) {
+	data, filename, err := readConfigFile()
 	if err != nil {
-		return nil
+		return nil, err
 	}
-	var cfg Config
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		log.Fatalf("ERROR parsing config.json: %v", err)
+
+	var cfg AppConfig
+	dec := yaml.NewDecoder(strings.NewReader(string(data)))
+	dec.KnownFields(true)
+	if err := dec.Decode(&cfg); err != nil {
+		return nil, fmt.Errorf("error parsing %s: %w", filename, err)
 	}
-	return &cfg
+
+	if err := validateConfig(&cfg); err != nil {
+		return nil, err
+	}
+
+	return &cfg, nil
 }
 
-func RunStart(args []string) {
-	if len(args) < 1 {
-		fmt.Println("Usage: gotunnel start <tunnel_name>")
-		os.Exit(1)
-	}
-	tunnelName := args[0]
+// readConfigFile tries config.yml then config.yaml and returns the file
+// contents and the name of the file that was found.
+func readConfigFile() ([]byte, string, error) {
+	candidates := []string{"config.yml", "config.yaml"}
+	var missing []string
 
-	cfg := loadConfig()
-	if cfg == nil {
-		log.Fatal("ERROR: config.json not found in current directory")
-	}
-
-	// Support both top-level client configuration and "clientConfig" wrapper
-	var tunnels map[string]Tunnel
-	var globalServer, globalToken string
-
-	if cfg.ClientConfig != nil {
-		tunnels = cfg.ClientConfig.Tunnels
-		globalServer = cfg.ClientConfig.Server
-		globalToken = cfg.ClientConfig.Token
+	for _, name := range candidates {
+		data, err := os.ReadFile(name)
+		if err == nil {
+			return data, name, nil
+		}
+		if errors.Is(err, os.ErrNotExist) {
+			missing = append(missing, "- "+name)
+			continue
+		}
+		// Unexpected error (permissions, etc.)
+		return nil, name, fmt.Errorf("could not read %s: %w", name, err)
 	}
 
-	// Fallback to top-level if not found in ClientConfig
-	if len(tunnels) == 0 {
-		tunnels = cfg.Tunnels
+	return nil, "", fmt.Errorf(
+		"no configuration file found.\nExpected:\n%s",
+		strings.Join(missing, "\n"),
+	)
+}
+
+// validateConfig enforces mutual exclusivity and required-field rules.
+func validateConfig(cfg *AppConfig) error {
+	hasServer := cfg.ServerConfig != nil
+	hasClient := cfg.ClientConfig != nil
+
+	if hasServer && hasClient {
+		return errors.New(
+			"invalid configuration: both 'serverConfig' and 'clientConfig' are present.\n" +
+				"Only one root configuration section is allowed at a time.\n" +
+				"Remove the section that does not apply to this instance.",
+		)
 	}
-	if globalServer == "" {
-		globalServer = cfg.Server
-	}
-	if globalToken == "" {
-		globalToken = cfg.Token
+	if !hasServer && !hasClient {
+		return errors.New(
+			"invalid configuration: neither 'serverConfig' nor 'clientConfig' is present.\n" +
+				"Your config.yaml must contain exactly one of these root sections.",
+		)
 	}
 
-	t, ok := tunnels[tunnelName]
-	if !ok {
-		log.Fatalf("ERROR: tunnel '%s' not found in config.json", tunnelName)
+	if hasServer {
+		return validateServerConfig(cfg.ServerConfig)
+	}
+	return validateClientConfig(cfg.ClientConfig)
+}
+
+func validateServerConfig(s *ServerConfig) error {
+	if s.HTTPSAddr != "" && (s.CertFile == "" || s.KeyFile == "") {
+		return errors.New(
+			"invalid serverConfig: 'https' requires both 'cert' and 'key' to be set",
+		)
+	}
+	if s.Auth != "" && strings.Count(s.Auth, ":") != 1 {
+		return errors.New(
+			"invalid serverConfig: 'auth' must be in 'user:pass' format",
+		)
+	}
+	return nil
+}
+
+func validateClientConfig(c *ClientConfig) error {
+	if c.Server == "" {
+		return errors.New("invalid clientConfig: 'server' is required")
+	}
+	if c.Token == "" {
+		return errors.New("invalid clientConfig: 'token' is required")
+	}
+	if len(c.Tunnels) == 0 {
+		return errors.New("invalid clientConfig: at least one tunnel must be defined under 'tunnels'")
 	}
 
-	// Reconstruct args to pass to runClient
-	clientArgs := []string{}
-	if globalServer != "" {
-		clientArgs = append(clientArgs, "-server", globalServer)
-	}
-	if globalToken != "" {
-		clientArgs = append(clientArgs, "-token", globalToken)
-	}
-	if t.Target != "" {
-		clientArgs = append(clientArgs, "-target", t.Target)
-	}
-	if t.Type != "" {
-		clientArgs = append(clientArgs, "-type", t.Type)
-	}
-	if t.Subdomain != "" {
-		clientArgs = append(clientArgs, "-subdomain", t.Subdomain)
-	}
-	if t.Remote != "" {
-		clientArgs = append(clientArgs, "-remote", t.Remote)
-	}
-	if t.APIKey != "" {
-		clientArgs = append(clientArgs, "-apikey", t.APIKey)
-	}
-	if t.Workers > 0 {
-		clientArgs = append(clientArgs, "-workers", fmt.Sprintf("%d", t.Workers))
-	}
-	if t.Insecure {
-		clientArgs = append(clientArgs, "-k")
-	}
-	if t.NoTLS {
-		clientArgs = append(clientArgs, "-notls")
-	}
-	if len(args) > 1 {
-		clientArgs = append(clientArgs, args[1:]...)
+	seen := make(map[string]bool)
+	for i, t := range c.Tunnels {
+		label := fmt.Sprintf("tunnels[%d]", i)
+		if t.Name != "" {
+			label = fmt.Sprintf("tunnel %q", t.Name)
+			if seen[t.Name] {
+				return fmt.Errorf("invalid clientConfig: duplicate tunnel name %q", t.Name)
+			}
+			seen[t.Name] = true
+		}
+
+		if t.Target == "" {
+			return fmt.Errorf("invalid clientConfig: %s is missing required field 'target'", label)
+		}
+
+		tunnelType := strings.ToLower(t.Type)
+		if tunnelType == "" {
+			tunnelType = "http"
+		}
+		if tunnelType != "http" && tunnelType != "tcp" {
+			return fmt.Errorf("invalid clientConfig: %s has unknown type %q (must be 'http' or 'tcp')", label, t.Type)
+		}
+		if tunnelType == "tcp" && t.Remote == "" {
+			return fmt.Errorf("invalid clientConfig: %s (type 'tcp') requires 'remote' field (e.g. remote: ':22222')", label)
+		}
+		if tunnelType != "http" && t.Subdomain != "" {
+			return fmt.Errorf("invalid clientConfig: %s 'subdomain' can only be used with type 'http'", label)
+		}
 	}
 
-	RunClient(clientArgs)
+	return nil
 }

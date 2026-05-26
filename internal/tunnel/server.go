@@ -13,7 +13,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -75,84 +74,67 @@ var hopByHopHeaders = []string{
 	"TE", "Trailers", "Transfer-Encoding", "Upgrade",
 }
 
-func RunServer(args []string) {
-	cfg := loadConfig()
-	defHTTP, defTun, defToken, defCert, defKey, defAuth, defDomain := ":8080", ":2222", "", "", "", "", ""
-	defNoTLS := false
-	defHTTPS, defInspect, defInspectUser, defInspectPass := "", ":4040", "admin", ""
-	defPoolSize := 512
-
-	if cfg != nil && cfg.ServerConfig != nil {
-		if cfg.ServerConfig.HTTPAddr != "" { defHTTP = cfg.ServerConfig.HTTPAddr }
-		if cfg.ServerConfig.TunAddr != "" { defTun = cfg.ServerConfig.TunAddr }
-		if cfg.ServerConfig.Token != "" { defToken = cfg.ServerConfig.Token }
-		if cfg.ServerConfig.CertFile != "" { defCert = cfg.ServerConfig.CertFile }
-		if cfg.ServerConfig.KeyFile != "" { defKey = cfg.ServerConfig.KeyFile }
-		if cfg.ServerConfig.Auth != "" { defAuth = cfg.ServerConfig.Auth }
-		if cfg.ServerConfig.Domain != "" { defDomain = cfg.ServerConfig.Domain }
-		if cfg.ServerConfig.NoTLS { defNoTLS = true }
-		if cfg.ServerConfig.HTTPSAddr != "" { defHTTPS = cfg.ServerConfig.HTTPSAddr }
-		if cfg.ServerConfig.Inspect != "" { defInspect = cfg.ServerConfig.Inspect }
-		if cfg.ServerConfig.InspectUser != "" { defInspectUser = cfg.ServerConfig.InspectUser }
-		if cfg.ServerConfig.InspectPass != "" { defInspectPass = cfg.ServerConfig.InspectPass }
-		if cfg.ServerConfig.PoolSize > 0 { defPoolSize = cfg.ServerConfig.PoolSize }
+func RunServer(cfg *ServerConfig) {
+	// Apply defaults for unset fields.
+	httpAddr := cfg.HTTPAddr
+	if httpAddr == "" {
+		httpAddr = ":8080"
+	}
+	tunAddr := cfg.TunAddr
+	if tunAddr == "" {
+		tunAddr = ":2222"
+	}
+	token := cfg.Token
+	inspectUser := cfg.InspectUser
+	if inspectUser == "" {
+		inspectUser = "admin"
+	}
+	inspectPass := cfg.InspectPass
+	inspect := cfg.Inspect
+	if inspect == "" {
+		inspect = ":4040"
+	}
+	poolSize := cfg.PoolSize
+	if poolSize <= 0 {
+		poolSize = 512
 	}
 
-	fs := flag.NewFlagSet("server", flag.ExitOnError)
-	httpAddr := fs.String("http", defHTTP, "HTTP listen address (for end users / apps)")
-	tunAddr := fs.String("tun", defTun, "Tunnel listen address (for tunnel client)")
-	token := fs.String("token", defToken, "Shared auth token — must match client's -token (required)")
-	certFile := fs.String("cert", defCert, "TLS cert PEM file (auto-generated if empty)")
-	keyFile := fs.String("key", defKey, "TLS key PEM file (auto-generated if empty)")
-	auth := fs.String("auth", defAuth, "Optional HTTP Basic Auth (format: user:pass)")
-	domain := fs.String("domain", defDomain, "Base domain for subdomain routing (e.g., example.com)")
-	noTLS := fs.Bool("notls", defNoTLS, "Disable TLS on tunnel port (use when behind a TLS-terminating proxy)")
-	httpsAddr := fs.String("https", defHTTPS, "HTTPS listen address (e.g. :443) — requires -cert and -key")
-	inspect := fs.String("inspect", defInspect, "Inspector web UI address (empty to disable)")
-	inspectUser := fs.String("inspect-user", defInspectUser, "Dashboard login username")
-	inspectPass := fs.String("inspect-pass", defInspectPass, "Dashboard login password (auto-generated if empty)")
-	poolSize := fs.Int("poolsize", defPoolSize, "Maximum capacity per connection pool")
-	fs.Parse(args)
-
-	if *token == "" || *token == "auto" {
+	if token == "" {
 		b := make([]byte, 32)
 		if _, err := rand.Read(b); err != nil {
 			log.Fatalf("failed to generate token: %v", err)
 		}
-		*token = hex.EncodeToString(b)
+		token = hex.EncodeToString(b)
 		log.Printf("▶  Auto-generated token (give this to your clients)")
-		log.Printf("   %s...", (*token)[:8])
+		log.Printf("   %s...", token[:8])
 	}
 
-	if *inspect != "" && *inspectPass == "" {
+	if inspect != "" && inspectPass == "" {
 		b := make([]byte, 10)
 		if _, err := rand.Read(b); err != nil {
 			log.Fatalf("failed to generate inspect password: %v", err)
 		}
-		*inspectPass = hex.EncodeToString(b)
-		if err := os.WriteFile(".gotunnel-admin", []byte(fmt.Sprintf("username: %s\npassword: %s\n", *inspectUser, *inspectPass)), 0600); err != nil {
-			log.Printf("▶  Dashboard login : user= %s  pass= %s", *inspectUser, *inspectPass)
+		inspectPass = hex.EncodeToString(b)
+		if err := os.WriteFile(".gotunnel-admin", []byte(fmt.Sprintf("username: %s\npassword: %s\n", inspectUser, inspectPass)), 0600); err != nil {
+			log.Printf("▶  Dashboard login : user= %s  pass= %s", inspectUser, inspectPass)
 		} else {
 			log.Printf("▶  Dashboard credentials saved to .gotunnel-admin")
 		}
 	}
 
 	basicAuthEnc := ""
-	if *auth != "" {
-		if strings.Count(*auth, ":") != 1 {
-			log.Fatal("ERROR: -auth must be exactly in 'user:pass' format")
-		}
-		basicAuthEnc = base64.StdEncoding.EncodeToString([]byte(*auth))
+	if cfg.Auth != "" {
+		basicAuthEnc = base64.StdEncoding.EncodeToString([]byte(cfg.Auth))
 	}
 
 	srv := &Server{
-		token:        *token,
+		token:        token,
 		basicAuth:    basicAuthEnc,
-		domain:       *domain,
-		httpAddr:     *httpAddr,
-		httpsAddr:    *httpsAddr,
-		poolSize:     *poolSize,
-		pool:         make(chan *poolConn, *poolSize),
+		domain:       cfg.Domain,
+		httpAddr:     httpAddr,
+		httpsAddr:    cfg.HTTPSAddr,
+		poolSize:     poolSize,
+		pool:         make(chan *poolConn, poolSize),
 		httpPools:    make(map[string]chan *poolConn),
 		tcpPools:     make(map[string]chan *poolConn),
 		tcpListeners: make(map[string]net.Listener),
@@ -162,38 +144,38 @@ func RunServer(args []string) {
 	var tunLn net.Listener
 	var err error
 
-	if *noTLS {
-		tunLn, err = net.Listen("tcp", *tunAddr)
+	if cfg.NoTLS {
+		tunLn, err = net.Listen("tcp", tunAddr)
 		if err != nil {
-			log.Fatalf("Tunnel listen %s: %v", *tunAddr, err)
+			log.Fatalf("Tunnel listen %s: %v", tunAddr, err)
 		}
-		log.Printf("▶  Tunnel listener : %s (plain TCP — proxy handles TLS)", *tunAddr)
+		log.Printf("▶  Tunnel listener : %s (plain TCP — proxy handles TLS)", tunAddr)
 	} else {
-		tlsCfg, err := makeTLSConfig(*certFile, *keyFile)
+		tlsCfg, err := makeTLSConfig(cfg.CertFile, cfg.KeyFile)
 		if err != nil {
 			log.Fatalf("TLS setup: %v", err)
 		}
-		tunLn, err = tls.Listen("tcp", *tunAddr, tlsCfg)
+		tunLn, err = tls.Listen("tcp", tunAddr, tlsCfg)
 		if err != nil {
-			log.Fatalf("Tunnel listen %s: %v", *tunAddr, err)
+			log.Fatalf("Tunnel listen %s: %v", tunAddr, err)
 		}
-		log.Printf("▶  Tunnel listener : %s (TLS)", *tunAddr)
-		if *certFile == "" {
-			log.Printf("ℹ  Self-signed cert — run client with -k flag")
+		log.Printf("▶  Tunnel listener : %s (TLS)", tunAddr)
+		if cfg.CertFile == "" {
+			log.Printf("ℹ  Self-signed cert — run client with skipTLSVerify: true")
 		}
 	}
 
-	log.Printf("▶  HTTP proxy      : %s", *httpAddr)
-	if *httpsAddr != "" {
-		log.Printf("▶  HTTPS proxy     : %s", *httpsAddr)
+	log.Printf("▶  HTTP proxy      : %s", httpAddr)
+	if cfg.HTTPSAddr != "" {
+		log.Printf("▶  HTTPS proxy     : %s", cfg.HTTPSAddr)
 	}
 
 	// Start inspector web UI.
-	if *inspect != "" {
-		srv.inspector = NewInspector(*httpAddr, *tunAddr, *token, *inspectUser, *inspectPass, &srv.count, srv)
+	if inspect != "" {
+		srv.inspector = NewInspector(httpAddr, tunAddr, token, inspectUser, inspectPass, &srv.count, srv)
 		go func() {
-			isrv := &http.Server{Addr: *inspect, Handler: srv.inspector}
-			log.Printf("▶  Inspector       : http://%s", *inspect)
+			isrv := &http.Server{Addr: inspect, Handler: srv.inspector}
+			log.Printf("▶  Inspector       : http://%s", inspect)
 			if err := isrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 				log.Printf("inspector: %v", err)
 			}
@@ -204,27 +186,24 @@ func RunServer(args []string) {
 	go srv.startJanitor()
 
 	httpSrv := &http.Server{
-		Addr:              *httpAddr,
+		Addr:              httpAddr,
 		Handler:           srv,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       60 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
 
-	// Start native HTTPS server if -https flag is provided.
+	// Start native HTTPS listener if configured.
 	var httpsSrv *http.Server
-	if *httpsAddr != "" {
-		if *certFile == "" || *keyFile == "" {
-			log.Fatal("ERROR: -https requires -cert and -key flags")
-		}
+	if cfg.HTTPSAddr != "" {
 		httpsSrv = &http.Server{
-			Addr:              *httpsAddr,
+			Addr:              cfg.HTTPSAddr,
 			Handler:           srv,
 			ReadHeaderTimeout: 10 * time.Second,
 			IdleTimeout:       120 * time.Second,
 		}
 		go func() {
-			if err := httpsSrv.ListenAndServeTLS(*certFile, *keyFile); err != nil && err != http.ErrServerClosed {
+			if err := httpsSrv.ListenAndServeTLS(cfg.CertFile, cfg.KeyFile); err != nil && err != http.ErrServerClosed {
 				log.Fatalf("HTTPS server: %v", err)
 			}
 		}()

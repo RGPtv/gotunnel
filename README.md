@@ -71,7 +71,7 @@ Then run:
 ```
 
 > [!NOTE]
-> - If `token` is omitted, a secure 256-bit token is auto-generated and printed on startup. Copy it from the dashboard or the console.
+> - If `token` is set to `"auto"`, a secure 256-bit token is auto-generated and printed on startup. Copy it from the dashboard or the console.
 > - Ensure your firewall allows the HTTP port (e.g., `8080`) and the tunnel port (e.g., `2222`).
 
 ---
@@ -112,7 +112,7 @@ Your local service at `:3000` is now accessible at `http://vps.example.com:8080`
 | `http` | `:8080` | HTTP listen address for external users |
 | `https` | *(off)* | HTTPS listen address — requires `cert` and `key` |
 | `tun` | `:2222` | Tunnel listen address for clients |
-| `token` | *(auto)* | Shared auth token — auto-generated if empty |
+| `token` | `""` | Shared auth token — auto-generated if set to `"auto"` |
 | `cert` | *(auto)* | Path to TLS certificate PEM file |
 | `key` | *(auto)* | Path to TLS private key PEM file |
 | `auth` | *(off)* | HTTP Basic Auth for all traffic (`user:pass`) |

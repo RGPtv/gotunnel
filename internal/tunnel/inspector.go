@@ -62,6 +62,7 @@ type Inspector struct {
 
 	ServerAddr  string
 	TunAddr     string
+	Token       string
 	StartTime   time.Time
 	ActiveConns *atomic.Int64
 
@@ -76,11 +77,12 @@ type Inspector struct {
 }
 
 // NewInspector creates a new request inspector.
-func NewInspector(serverAddr, tunAddr, _, username, password string, activeConns *atomic.Int64, srv *Server) *Inspector {
+func NewInspector(serverAddr, tunAddr, token, username, password string, activeConns *atomic.Int64, srv *Server) *Inspector {
 	ins := &Inspector{
 		requests:    make([]CapturedRequest, 0, maxCapturedRequests),
 		ServerAddr:  serverAddr,
 		TunAddr:     tunAddr,
+		Token:       token,
 		StartTime:   time.Now(),
 		ActiveConns: activeConns,
 		Username:    username,
@@ -207,6 +209,15 @@ func (ins *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Security headers on every authenticated response.
+	// CSP: script/style/connect only from same origin — blocks exfiltration even
+	// if injected JS manages to call /api/token with the victim's live session.
+	w.Header().Set("Content-Security-Policy",
+		"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'")
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+
 	switch r.URL.Path {
 	case "/":
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -234,6 +245,8 @@ func (ins *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"total":        total,
 			"active_conns": active,
 		})
+	case "/api/token":
+		ins.handleToken(w, r)
 	case "/api/tunnels":
 		ins.handleTunnels(w, r)
 	case "/api/requests/stream":
@@ -355,6 +368,19 @@ func (ins *Inspector) buildTunnelList() []TunnelEntry {
 		})
 	}
 	return tunnels
+}
+
+// handleToken returns the server token on an explicit authenticated GET request.
+// The token is never pushed automatically (not in SSE or status) so a passive
+// XSS beacon cannot exfiltrate it without simulating a deliberate user action.
+func (ins *Inspector) handleToken(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	json.NewEncoder(w).Encode(map[string]string{"token": ins.Token})
 }
 
 func (ins *Inspector) handleTunnels(w http.ResponseWriter, r *http.Request) {

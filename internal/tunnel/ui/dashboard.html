@@ -716,8 +716,8 @@ nav {
   </div>
 
   <div class="nav-right">
-    <div class="token-chip" id="nav-token-chip" onclick="tokenCopy()" title="Copy Token" style="display:none">
-      Token: <span id="nav-token-val">...</span>
+    <div class="token-chip" id="nav-token-chip" onclick="tokenCopy()" title="Copy Token">
+      Token: <span id="nav-token-val">••••••••</span>
     </div>
   </div>
 </nav>
@@ -853,7 +853,6 @@ let activeTunnel = null;
 let currentTab = 'overview';
 let allReqs    = [];
 let tunnelsMap = {};
-let rawToken   = '';
 let rawApiKey  = '';
 let apiRevealed = false;
 let totalEver  = 0;
@@ -960,35 +959,42 @@ function hdrsHtml(h) {
 }
 
 // ── Token ──────────────────────────────────────
+// The token is never stored in a JS variable. It is fetched from /api/token
+// only when the user explicitly clicks "Copy Token", used once for the
+// clipboard write, then discarded. This prevents passive XSS beacons from
+// silently reading a persistent rawToken global.
 function tokenCopy() {
-  if (!rawToken) return;
-  const finishCopy = () => {
-    const btn = document.getElementById('nav-token-chip');
-    if (btn) {
-      btn.classList.add('ok');
-      setTimeout(() => btn.classList.remove('ok'), 1800);
-    }
-  };
-  if (navigator.clipboard && window.isSecureContext) {
-    navigator.clipboard.writeText(rawToken).then(finishCopy).catch(() => fallbackCopy());
-  } else {
-    fallbackCopy();
-  }
+  const chip = document.getElementById('nav-token-chip');
+  if (chip) chip.title = 'Fetching…';
 
-  function fallbackCopy() {
+  fetch('/api/token')
+    .then(r => { if (!r.ok) throw new Error('fetch failed'); return r.json(); })
+    .then(data => {
+      const tok = data.token;
+      if (!tok) return;
+      const finishCopy = () => {
+        if (chip) {
+          chip.classList.add('ok');
+          chip.title = 'Copied!';
+          setTimeout(() => { chip.classList.remove('ok'); chip.title = 'Copy Token'; }, 1800);
+        }
+      };
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(tok).then(finishCopy).catch(() => fallbackCopy(tok, finishCopy));
+      } else {
+        fallbackCopy(tok, finishCopy);
+      }
+    })
+    .catch(() => { if (chip) chip.title = 'Copy Token'; });
+
+  function fallbackCopy(tok, finishCopy) {
     const ta = document.createElement('textarea');
-    ta.value = rawToken;
+    ta.value = tok;
     ta.setAttribute('readonly', '');
-    ta.style.position = 'absolute';
-    ta.style.left = '-9999px';
+    ta.style.cssText = 'position:absolute;left:-9999px';
     document.body.appendChild(ta);
     ta.select();
-    try {
-      document.execCommand('copy');
-      finishCopy();
-    } catch (e) {
-      console.error('Copy failed', e);
-    }
+    try { document.execCommand('copy'); finishCopy(); } catch (e) { console.error('Copy failed', e); }
     document.body.removeChild(ta);
   }
 }
@@ -1248,11 +1254,6 @@ statusSse.onmessage = e => {
   try {
     const s = JSON.parse(e.data);
     $uptime.textContent = fmtUptime(s.uptime_sec);
-    if (s.token && !rawToken) {
-      rawToken = s.token;
-      document.getElementById('nav-token-val').textContent = rawToken;
-      document.getElementById('nav-token-chip').style.display = 'flex';
-    }
     renderTunnels(s.tunnels || []);
   } catch(_) {}
 };

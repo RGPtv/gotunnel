@@ -91,24 +91,37 @@ Your local service at `:3000` is now accessible via the server at `http://vps.ex
 
 Instead of specifying long command-line arguments every time, you can manage multiple complex tunnel configurations using a `config.json` file. 
 
-Place `config.json` in the working directory from which you run the client.
+Place `config.json` in the working directory from which you run the client or server.
 
 ### `config.json` Structure
 
+You can configure both the server properties and multiple client tunnels in a single file:
+
 ```json
 {
-  "server": "vps.example.com:2222",
-  "token": "YOUR_TOKEN",
-  "tunnels": {
-    "api": {
-      "target": "localhost:3000",
-      "subdomain": "api",
-      "type": "http"
-    },
-    "ssh": {
-      "target": "localhost:22",
-      "type": "tcp",
-      "remote": ":22222"
+  "serverConfig": {
+    "http": ":8080",
+    "tun": ":2222",
+    "token": "YOUR_TOKEN",
+    "domain": "example.com",
+    "inspect": ":4040"
+  },
+  "clientConfig": {
+    "server": "vps.example.com:2222",
+    "token": "YOUR_TOKEN",
+    "tunnels": {
+      "api": {
+        "target": "localhost:3000",
+        "subdomain": "api",
+        "type": "http",
+        "workers": 10
+      },
+      "ssh": {
+        "target": "localhost:22",
+        "type": "tcp",
+        "remote": ":22222",
+        "insecure": true
+      }
     }
   }
 }
@@ -116,25 +129,55 @@ Place `config.json` in the working directory from which you run the client.
 
 ### Configuration Fields
 
-- **Root Fields**:
+- **`serverConfig`**: Configuration defaults for the `server` command.
+  - `http` (string): HTTP listen address for external users (default: `":8080"`).
+  - `tun` (string): Tunnel listen address for clients (default: `":2222"`).
+  - `token` (string): Shared client authentication token (use `"auto"` or leave empty to auto-generate).
+  - `domain` (string): Base domain for subdomain routing.
+  - `cert` (string): Path to TLS certificate PEM file.
+  - `key` (string): Path to TLS key PEM file.
+  - `auth` (string): HTTP Basic Auth (`user:pass`) for external traffic.
+  - `notls` (bool): Disable TLS on tunnel port.
+  - `https` (string): HTTPS listen address.
+  - `inspect` (string): Inspector web UI address (default: `":4040"`).
+  - `inspectUser` (string): Dashboard login username (default: `"admin"`).
+  - `inspectPass` (string): Dashboard login password.
+  - `poolSize` (int): Maximum connection capacity per tunnel pool (default: `512`).
+- **`clientConfig`**: Configuration for the client (`start`) command.
   - `server` (string): The remote server address (maps to client's `-server` flag).
   - `token` (string): The shared authentication token (maps to client's `-token` flag).
   - `tunnels` (object): A map of named tunnel configurations.
 - **Tunnel Fields**:
   - `target` (string): The local address/port to tunnel (maps to client's `-target` flag).
-  - `type` (string): The tunnel protocol, either `"http"` or `"tcp"` (maps to client's `-type` flag).
-  - `subdomain` (string): The requested subdomain for HTTP routing (maps to client's `-subdomain` flag).
-  - `remote` (string): The remote TCP address/port to bind on the server (maps to client's `-remote` flag).
+  - `type` (string): The tunnel protocol, either `"http"` or `"tcp"` (maps to `-type`).
+  - `subdomain` (string): The requested subdomain for HTTP routing (maps to `-subdomain`).
+  - `remote` (string): The remote TCP address/port to bind on the server (maps to `-remote`).
+  - `apikey` (string): Optional API key for this tunnel (use `"auto"` to auto-generate, maps to `-apikey`).
+  - `workers` (int): Parallel tunnel connections (maps to `-workers`).
+  - `insecure` (bool): Skip TLS certificate verification (maps to `-k`).
+  - `notls` (bool): Use plain TCP (maps to `-notls`).
 
-### Running a Configured Tunnel
+> [!NOTE]
+> For backward compatibility, `server`, `token`, and `tunnels` can also be placed directly at the root of `config.json` instead of inside `clientConfig`.
 
-To start a specific tunnel configuration, use the `start` command followed by the name of the tunnel:
+### Running with a Configuration File
+
+#### 1. Server
+To start the server using the defaults provided in your `config.json`, simply run the `server` command:
+
+```bash
+./gotunnel server
+```
+The server will automatically load `serverConfig` properties from `config.json` if it exists in the current directory. You can still append command-line flags to override specific config properties at runtime (e.g., `./gotunnel server -http :9090`).
+
+#### 2. Client Tunnels
+To start a specific client tunnel configuration, use the `start` command followed by the name of the tunnel:
 
 ```bash
 ./gotunnel start api
 ```
 
-#### Appending Extra Arguments
+##### Appending Extra Client Arguments
 Any additional command-line flags you pass to the `start` command are automatically appended to the client. This allows you to combine configured settings with runtime client flags (such as skipping TLS verification or adding an API key):
 
 ```bash

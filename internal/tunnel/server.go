@@ -76,23 +76,45 @@ var hopByHopHeaders = []string{
 }
 
 func RunServer(args []string) {
+	cfg := loadConfig()
+	defHTTP, defTun, defToken, defCert, defKey, defAuth, defDomain := ":8080", ":2222", "", "", "", "", ""
+	defNoTLS := false
+	defHTTPS, defInspect, defInspectUser, defInspectPass := "", ":4040", "admin", ""
+	defPoolSize := 512
+
+	if cfg != nil && cfg.ServerConfig != nil {
+		if cfg.ServerConfig.HTTPAddr != "" { defHTTP = cfg.ServerConfig.HTTPAddr }
+		if cfg.ServerConfig.TunAddr != "" { defTun = cfg.ServerConfig.TunAddr }
+		if cfg.ServerConfig.Token != "" { defToken = cfg.ServerConfig.Token }
+		if cfg.ServerConfig.CertFile != "" { defCert = cfg.ServerConfig.CertFile }
+		if cfg.ServerConfig.KeyFile != "" { defKey = cfg.ServerConfig.KeyFile }
+		if cfg.ServerConfig.Auth != "" { defAuth = cfg.ServerConfig.Auth }
+		if cfg.ServerConfig.Domain != "" { defDomain = cfg.ServerConfig.Domain }
+		if cfg.ServerConfig.NoTLS { defNoTLS = true }
+		if cfg.ServerConfig.HTTPSAddr != "" { defHTTPS = cfg.ServerConfig.HTTPSAddr }
+		if cfg.ServerConfig.Inspect != "" { defInspect = cfg.ServerConfig.Inspect }
+		if cfg.ServerConfig.InspectUser != "" { defInspectUser = cfg.ServerConfig.InspectUser }
+		if cfg.ServerConfig.InspectPass != "" { defInspectPass = cfg.ServerConfig.InspectPass }
+		if cfg.ServerConfig.PoolSize > 0 { defPoolSize = cfg.ServerConfig.PoolSize }
+	}
+
 	fs := flag.NewFlagSet("server", flag.ExitOnError)
-	httpAddr := fs.String("http", ":8080", "HTTP listen address (for end users / apps)")
-	tunAddr := fs.String("tun", ":2222", "Tunnel listen address (for tunnel client)")
-	token := fs.String("token", "", "Shared auth token — must match client's -token (required)")
-	certFile := fs.String("cert", "", "TLS cert PEM file (auto-generated if empty)")
-	keyFile := fs.String("key", "", "TLS key PEM file (auto-generated if empty)")
-	auth := fs.String("auth", "", "Optional HTTP Basic Auth (format: user:pass)")
-	domain := fs.String("domain", "", "Base domain for subdomain routing (e.g., example.com)")
-	noTLS := fs.Bool("notls", false, "Disable TLS on tunnel port (use when behind a TLS-terminating proxy)")
-	httpsAddr := fs.String("https", "", "HTTPS listen address (e.g. :443) — requires -cert and -key")
-	inspect := fs.String("inspect", ":4040", "Inspector web UI address (empty to disable)")
-	inspectUser := fs.String("inspect-user", "admin", "Dashboard login username")
-	inspectPass := fs.String("inspect-pass", "", "Dashboard login password (auto-generated if empty)")
-	poolSize := fs.Int("poolsize", 512, "Maximum capacity per connection pool")
+	httpAddr := fs.String("http", defHTTP, "HTTP listen address (for end users / apps)")
+	tunAddr := fs.String("tun", defTun, "Tunnel listen address (for tunnel client)")
+	token := fs.String("token", defToken, "Shared auth token — must match client's -token (required)")
+	certFile := fs.String("cert", defCert, "TLS cert PEM file (auto-generated if empty)")
+	keyFile := fs.String("key", defKey, "TLS key PEM file (auto-generated if empty)")
+	auth := fs.String("auth", defAuth, "Optional HTTP Basic Auth (format: user:pass)")
+	domain := fs.String("domain", defDomain, "Base domain for subdomain routing (e.g., example.com)")
+	noTLS := fs.Bool("notls", defNoTLS, "Disable TLS on tunnel port (use when behind a TLS-terminating proxy)")
+	httpsAddr := fs.String("https", defHTTPS, "HTTPS listen address (e.g. :443) — requires -cert and -key")
+	inspect := fs.String("inspect", defInspect, "Inspector web UI address (empty to disable)")
+	inspectUser := fs.String("inspect-user", defInspectUser, "Dashboard login username")
+	inspectPass := fs.String("inspect-pass", defInspectPass, "Dashboard login password (auto-generated if empty)")
+	poolSize := fs.Int("poolsize", defPoolSize, "Maximum capacity per connection pool")
 	fs.Parse(args)
 
-	if *token == "" {
+	if *token == "" || *token == "auto" {
 		b := make([]byte, 32)
 		if _, err := rand.Read(b); err != nil {
 			log.Fatalf("failed to generate token: %v", err)

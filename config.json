@@ -1,11 +1,21 @@
 {
-  "server": "localhost:4444",
-  "token": "TOKEN",
-  "tunnels": {
-    "ollama": {
-      "target": "localhost:11434",
-      "subdomain": "test",
-      "type": "http"
+  "serverConfig": {
+    "http": ":9090",
+    "tun": ":3333",
+    "token": "my-secret-token",
+    "inspect": ":5050"
+  },
+  "clientConfig": {
+    "server": "localhost:3333",
+    "token": "my-secret-token",
+    "tunnels": {
+      "my_tunnel": {
+        "target": "localhost:8000",
+        "type": "http",
+        "workers": 5,
+        "insecure": true,
+        "notls": true
+      }
     }
   }
 }

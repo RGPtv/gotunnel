@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	mrand "math/rand"
 	"net"
 	"net/http"
 	"net/url"
@@ -268,25 +269,11 @@ func (c *Client) runWorker(id int) {
 			case <-c.ctx.Done():
 				return
 			}
-			jitter := time.Duration(0)
-			if backoff > 0 {
-				mRaw := make([]byte, 8)
-				if _, rerr := rand.Read(mRaw); rerr == nil {
-					var randInt int64
-					for i := 0; i < 8; i++ {
-						randInt = (randInt << 8) | int64(mRaw[i])
-					}
-					if randInt < 0 {
-						randInt = -randInt
-					}
-					jitter = time.Duration(randInt % int64(backoff/2+1))
-				}
-			}
-			backoff *= 2
+			jitter := time.Duration(mrand.Int63n(int64(backoff/2 + 1)))
+			backoff = backoff*2 + jitter
 			if backoff > 10*time.Second {
 				backoff = 10 * time.Second
 			}
-			backoff += jitter
 		} else {
 			backoff = time.Second
 		}
@@ -306,17 +293,15 @@ func (c *Client) connectAndServe(id int) error {
 		return err
 	}
 	hijacked := false
+	watchDone := make(chan struct{})
 	defer func() {
+		if watchDone != nil {
+			close(watchDone)
+		}
 		if !hijacked {
 			conn.Close()
 		}
 	}()
-
-	// Ensure the connection is closed immediately when shutting down.
-	// The done channel lets this goroutine exit when connectAndServe returns normally
-	// (conn already closed), preventing a goroutine leak per worker per reconnect.
-	watchDone := make(chan struct{})
-	defer close(watchDone)
 	go func() {
 		select {
 		case <-c.ctx.Done():
@@ -390,7 +375,12 @@ func (c *Client) connectAndServe(id int) error {
 
 	if c.tunnelType == "tcp" {
 		hijacked = true
+		// Transfer ownership of watchDone to the goroutine so the context
+		// watcher stays active for the full duration of the TCP session.
+		wd := watchDone
+		watchDone = nil // prevent the deferred close from firing
 		go func() {
+			defer close(wd)
 			c.handleTCPWorker(id, conn, reader)
 			conn.Close()
 		}()
@@ -429,6 +419,17 @@ func (c *Client) connectAndServe(id int) error {
 	}
 }
 
+// targetHost returns the host:port of the target address, stripping any scheme.
+func targetHost(addr string) string {
+	if h := strings.TrimPrefix(addr, "https://"); h != addr {
+		return h
+	}
+	if h := strings.TrimPrefix(addr, "http://"); h != addr {
+		return h
+	}
+	return addr
+}
+
 func (c *Client) handleTCPWorker(id int, tunnelConn net.Conn, tunnelReader *bufio.Reader) error {
 	line, err := tunnelReader.ReadString('\n')
 	if err != nil {
@@ -438,7 +439,7 @@ func (c *Client) handleTCPWorker(id int, tunnelConn net.Conn, tunnelReader *bufi
 		return fmt.Errorf("unexpected command: %s", line)
 	}
 
-	targetConn, err := net.DialTimeout("tcp", strings.TrimPrefix(strings.TrimPrefix(c.targetAddr, "http://"), "https://"), 10*time.Second)
+	targetConn, err := net.DialTimeout("tcp", targetHost(c.targetAddr), 10*time.Second)
 	if err != nil {
 		log.Printf("[w%d] tcp dial target failed: %v", id, err)
 		tunnelConn.Close() // forces server-side external client to get a clean reset
@@ -465,7 +466,7 @@ func (c *Client) handleTCPWorker(id int, tunnelConn net.Conn, tunnelReader *bufi
 }
 
 func (c *Client) handleWebSocket(id int, tunnelConn net.Conn, tunnelReader *bufio.Reader, req *http.Request) error {
-	targetConn, err := net.DialTimeout("tcp", strings.TrimPrefix(strings.TrimPrefix(c.targetAddr, "http://"), "https://"), 10*time.Second)
+	targetConn, err := net.DialTimeout("tcp", targetHost(c.targetAddr), 10*time.Second)
 	if err != nil {
 		writeErrorResponse(tunnelConn, 502, err.Error())
 		return fmt.Errorf("dial target for ws: %w", err)
@@ -473,11 +474,9 @@ func (c *Client) handleWebSocket(id int, tunnelConn net.Conn, tunnelReader *bufi
 	defer targetConn.Close()
 
 	req.URL.Scheme = "http"
-	req.URL.Host = strings.TrimPrefix(strings.TrimPrefix(c.targetAddr, "http://"), "https://")
+	req.URL.Host = targetHost(c.targetAddr)
 	req.Host = req.URL.Host
 	req.RequestURI = ""
-	req.Header.Del("X-Forwarded-For")
-	req.Header.Del("X-Forwarded-Proto")
 
 	if err := req.Write(targetConn); err != nil {
 		return fmt.Errorf("ws write to target: %w", err)
@@ -523,9 +522,6 @@ func (c *Client) forwardToTarget(req *http.Request) (*http.Response, error) {
 		req.Host = req.URL.Host
 	}
 	req.RequestURI = "" 
-
-	req.Header.Del("X-Forwarded-For")
-	req.Header.Del("X-Forwarded-Proto")
 
 	return c.httpClient.Do(req)
 }

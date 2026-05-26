@@ -74,6 +74,15 @@ var hopByHopHeaders = []string{
 	"TE", "Trailers", "Transfer-Encoding", "Upgrade",
 }
 
+// hopByHopSet is a case-folded set of hop-by-hop header names for O(1) lookup.
+var hopByHopSet = func() map[string]struct{} {
+	m := make(map[string]struct{}, len(hopByHopHeaders))
+	for _, h := range hopByHopHeaders {
+		m[strings.ToLower(h)] = struct{}{}
+	}
+	return m
+}()
+
 func RunServer(cfg *ServerConfig) {
 	// Apply defaults for unset fields.
 	httpAddr := cfg.HTTPAddr
@@ -200,6 +209,7 @@ func RunServer(cfg *ServerConfig) {
 			Addr:              cfg.HTTPSAddr,
 			Handler:           srv,
 			ReadHeaderTimeout: 10 * time.Second,
+			ReadTimeout:       60 * time.Second,
 			IdleTimeout:       120 * time.Second,
 		}
 		go func() {
@@ -278,6 +288,11 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 			return
 		}
 		wsKey := req.Header.Get("Sec-WebSocket-Key")
+		if wsKey == "" {
+			fmt.Fprintf(conn, "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n")
+			conn.Close()
+			return
+		}
 		const wsMagic = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 		h := sha1.Sum([]byte(wsKey + wsMagic))
 		acceptKey := base64.StdEncoding.EncodeToString(h[:])
@@ -520,7 +535,6 @@ func (s *Server) handleExternalTCPConn(conn net.Conn, remoteAddr string) {
 	go cp(pc.conn, conn)
 	go cp(conn, pc.r) // Use buffered reader from poolConn!
 	<-done
-	pc.conn.Close()
 	<-done
 
 	s.closeConn(pc, "tcp session closed")
@@ -627,14 +641,20 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, reqBody *capp
 	// Buffer the request body upfront so that the retry attempt can replay it.
 	// Without this, out.Body is drained on the first write and the retry sends
 	// an empty body for POST/PUT/PATCH requests.
+	// We read up to maxBodyBuf+1 bytes: if we get more than maxBodyBuf, the
+	// body exceeds the limit and we return 413 instead of silently truncating.
 	var bodyBuf []byte
 	if out.Body != nil {
 		const maxBodyBuf = 10 * 1024 * 1024 // 10 MB
 		var rerr error
-		bodyBuf, rerr = io.ReadAll(io.LimitReader(out.Body, maxBodyBuf))
+		bodyBuf, rerr = io.ReadAll(io.LimitReader(out.Body, maxBodyBuf+1))
 		out.Body.Close()
 		if rerr != nil {
 			http.Error(w, "failed to read request body", http.StatusBadRequest)
+			return
+		}
+		if int64(len(bodyBuf)) > maxBodyBuf {
+			http.Error(w, "request body too large (max 10 MB)", http.StatusRequestEntityTooLarge)
 			return
 		}
 		out.ContentLength = int64(len(bodyBuf))
@@ -983,6 +1003,7 @@ func (s *Server) drainPool() {
 // waiting 10 s for a connection that will never come.
 func (s *Server) startJanitor() {
 	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
 	for range ticker.C {
 		s.cleanPool(s.pool)
 
@@ -1075,31 +1096,28 @@ func removeHopByHop(h http.Header) {
 }
 
 func isHopByHop(k string) bool {
-	for _, h := range hopByHopHeaders {
-		if strings.EqualFold(k, h) {
-			return true
-		}
-	}
-	return false
+	_, ok := hopByHopSet[strings.ToLower(k)]
+	return ok
 }
 
-// clientIP extracts the real client IP, respecting X-Forwarded-For from
-// upstream proxies.
+// clientIP returns the direct peer IP. It intentionally does NOT forward a
+// client-supplied X-Forwarded-For because the server sits at the edge —
+// any XFF already present came from an untrusted client and would allow IP
+// spoofing. Only the real remote address from the TCP connection is trustworthy.
 func clientIP(r *http.Request) string {
-	host, _, _ := net.SplitHostPort(r.RemoteAddr)
-	if host == "" {
-		host = r.RemoteAddr
-	}
-	if prior := r.Header.Get("X-Forwarded-For"); prior != "" {
-		return prior + ", " + host
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
 	}
 	return host
 }
 
-// scheme returns "https" if the request arrived over TLS (or was forwarded
-// from a TLS proxy), otherwise "http".
+// scheme returns "https" if the request arrived over TLS, otherwise "http".
+// X-Forwarded-Proto is intentionally NOT trusted from clients — this server
+// is the TLS termination point, so the scheme is determined solely from the
+// connection itself.
 func scheme(r *http.Request) string {
-	if r.TLS != nil || strings.ToLower(r.Header.Get("X-Forwarded-Proto")) == "https" {
+	if r.TLS != nil {
 		return "https"
 	}
 	return "http"

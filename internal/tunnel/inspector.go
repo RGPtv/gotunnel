@@ -63,7 +63,6 @@ type Inspector struct {
 	ServerAddr  string
 	TunAddr     string
 	StartTime   time.Time
-	Token       string
 	ActiveConns *atomic.Int64
 
 	// Auth
@@ -77,13 +76,12 @@ type Inspector struct {
 }
 
 // NewInspector creates a new request inspector.
-func NewInspector(serverAddr, tunAddr, token, username, password string, activeConns *atomic.Int64, srv *Server) *Inspector {
+func NewInspector(serverAddr, tunAddr, _, username, password string, activeConns *atomic.Int64, srv *Server) *Inspector {
 	ins := &Inspector{
 		requests:    make([]CapturedRequest, 0, maxCapturedRequests),
 		ServerAddr:  serverAddr,
 		TunAddr:     tunAddr,
 		StartTime:   time.Now(),
-		Token:       token,
 		ActiveConns: activeConns,
 		Username:    username,
 		Password:    password,
@@ -97,6 +95,7 @@ func NewInspector(serverAddr, tunAddr, token, username, password string, activeC
 // cleanSessions periodically purges expired session tokens.
 func (ins *Inspector) cleanSessions() {
 	ticker := time.NewTicker(15 * time.Minute)
+	defer ticker.Stop()
 	for range ticker.C {
 		now := time.Now()
 		ins.sessionsMu.Lock()
@@ -310,48 +309,56 @@ func (ins *Inspector) handleLogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/login", http.StatusFound)
 }
 
-func (ins *Inspector) handleTunnels(w http.ResponseWriter, r *http.Request) {
+// buildTunnelList returns a snapshot of all active tunnels.
+// Callers must NOT hold srv.mu or srv.tunnelMetaMu.
+func (ins *Inspector) buildTunnelList() []TunnelEntry {
 	tunnels := []TunnelEntry{}
-	if ins.srv != nil {
-		ins.srv.mu.RLock()
-		ins.srv.tunnelMetaMu.RLock()
-		// Default (no-subdomain) HTTP pool
-		if dc := len(ins.srv.pool); dc > 0 {
-			meta := ins.srv.tunnelMeta["(default)"]
-			tunnels = append(tunnels, TunnelEntry{
-				Type:        "http",
-				Endpoint:    "(default)",
-				Connections: dc,
-				APIKey:      meta.APIKey,
-				ProxyURL:    meta.ProxyURL,
-				ClientIP:    meta.ClientIP,
-			})
-		}
-		for sub, pool := range ins.srv.httpPools {
-			meta := ins.srv.tunnelMeta[sub]
-			tunnels = append(tunnels, TunnelEntry{
-				Type:        "http",
-				Endpoint:    sub,
-				Connections: len(pool),
-				APIKey:      meta.APIKey,
-				ProxyURL:    meta.ProxyURL,
-				ClientIP:    meta.ClientIP,
-			})
-		}
-		for port, pool := range ins.srv.tcpPools {
-			meta := ins.srv.tunnelMeta[port]
-			tunnels = append(tunnels, TunnelEntry{
-				Type:        "tcp",
-				Endpoint:    port,
-				Connections: len(pool),
-				APIKey:      meta.APIKey,
-				ProxyURL:    meta.ProxyURL,
-				ClientIP:    meta.ClientIP,
-			})
-		}
-		ins.srv.tunnelMetaMu.RUnlock()
-		ins.srv.mu.RUnlock()
+	if ins.srv == nil {
+		return tunnels
 	}
+	ins.srv.mu.RLock()
+	ins.srv.tunnelMetaMu.RLock()
+	defer ins.srv.tunnelMetaMu.RUnlock()
+	defer ins.srv.mu.RUnlock()
+
+	if dc := len(ins.srv.pool); dc > 0 {
+		meta := ins.srv.tunnelMeta["(default)"]
+		tunnels = append(tunnels, TunnelEntry{
+			Type:        "http",
+			Endpoint:    "(default)",
+			Connections: dc,
+			APIKey:      meta.APIKey,
+			ProxyURL:    meta.ProxyURL,
+			ClientIP:    meta.ClientIP,
+		})
+	}
+	for sub, pool := range ins.srv.httpPools {
+		meta := ins.srv.tunnelMeta[sub]
+		tunnels = append(tunnels, TunnelEntry{
+			Type:        "http",
+			Endpoint:    sub,
+			Connections: len(pool),
+			APIKey:      meta.APIKey,
+			ProxyURL:    meta.ProxyURL,
+			ClientIP:    meta.ClientIP,
+		})
+	}
+	for port, pool := range ins.srv.tcpPools {
+		meta := ins.srv.tunnelMeta[port]
+		tunnels = append(tunnels, TunnelEntry{
+			Type:        "tcp",
+			Endpoint:    port,
+			Connections: len(pool),
+			APIKey:      meta.APIKey,
+			ProxyURL:    meta.ProxyURL,
+			ClientIP:    meta.ClientIP,
+		})
+	}
+	return tunnels
+}
+
+func (ins *Inspector) handleTunnels(w http.ResponseWriter, r *http.Request) {
+	tunnels := ins.buildTunnelList()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(tunnels)
 }
@@ -410,53 +417,13 @@ func (ins *Inspector) handleStatusSSE(w http.ResponseWriter, r *http.Request) {
 				active = ins.ActiveConns.Load()
 			}
 
-			tunnels := []TunnelEntry{}
-			if ins.srv != nil {
-				ins.srv.mu.RLock()
-				ins.srv.tunnelMetaMu.RLock()
-				if dc := len(ins.srv.pool); dc > 0 {
-					meta := ins.srv.tunnelMeta["(default)"]
-					tunnels = append(tunnels, TunnelEntry{
-						Type:        "http",
-						Endpoint:    "(default)",
-						Connections: dc,
-						APIKey:      meta.APIKey,
-						ProxyURL:    meta.ProxyURL,
-						ClientIP:    meta.ClientIP,
-					})
-				}
-				for sub, pool := range ins.srv.httpPools {
-					meta := ins.srv.tunnelMeta[sub]
-					tunnels = append(tunnels, TunnelEntry{
-						Type:        "http",
-						Endpoint:    sub,
-						Connections: len(pool),
-						APIKey:      meta.APIKey,
-						ProxyURL:    meta.ProxyURL,
-						ClientIP:    meta.ClientIP,
-					})
-				}
-				for port, pool := range ins.srv.tcpPools {
-					meta := ins.srv.tunnelMeta[port]
-					tunnels = append(tunnels, TunnelEntry{
-						Type:        "tcp",
-						Endpoint:    port,
-						Connections: len(pool),
-						APIKey:      meta.APIKey,
-						ProxyURL:    meta.ProxyURL,
-						ClientIP:    meta.ClientIP,
-					})
-				}
-				ins.srv.tunnelMetaMu.RUnlock()
-				ins.srv.mu.RUnlock()
-			}
+			tunnels := ins.buildTunnelList()
 
 			payload := map[string]any{
 				"server":       ins.ServerAddr,
 				"tun_addr":     ins.TunAddr,
 				"uptime_sec":   int(time.Since(ins.StartTime).Seconds()),
 				"total":        total,
-				"token":        ins.Token,
 				"active_conns": active,
 				"tunnels":      tunnels,
 			}

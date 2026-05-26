@@ -1,4 +1,4 @@
-# gotunnel
+# GoTunnel
 
 `gotunnel` is a reverse tunneling solution written in Go. It allows you to expose local services (HTTP, WebSockets, or raw TCP) to the public internet via a remote server, similar to tools like ngrok or Cloudflare Tunnels.
 

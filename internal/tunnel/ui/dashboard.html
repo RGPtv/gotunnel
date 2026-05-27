@@ -916,15 +916,20 @@ function renderTunnelOverview() {
   $tunType.textContent = t.type || '—';
   $tunConns.textContent = t.connections;
   document.getElementById('tun-clientip').textContent = (t.client_ip || '—').replace(/(:\d+)$/, '').replace(/^\[|\]$/g, '');
-  
+
+  const section = document.getElementById('apikey-section');
   if (t.has_apikey) {
-    document.getElementById('apikey-section').style.display = 'block';
-    // Never cache the key in JS — fetch on demand only
-    $apiVal.textContent = '••••••••••••••••••••••••••••••••';
-    $apiVal.classList.add('masked');
-    document.getElementById('api-reveal').title = 'Reveal';
+    // Only initialize the section on first render (when hidden).
+    // Never touch $apiVal or the reveal state on subsequent SSE ticks —
+    // that would re-mask the key every second while it's being shown.
+    if (section.style.display === 'none' || section.style.display === '') {
+      section.style.display = 'block';
+      $apiVal.textContent = '••••••••••••••••••••••••••••••••';
+      $apiVal.classList.add('masked');
+      document.getElementById('api-reveal').title = 'Reveal';
+    }
   } else {
-    document.getElementById('apikey-section').style.display = 'none';
+    section.style.display = 'none';
   }
 }
 

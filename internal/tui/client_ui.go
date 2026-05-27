@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -15,13 +14,8 @@ func RunClientUI(ipcPort int) error {
 
 	go func() {
 		readInput(
-			func() { // Ctrl+C
-				ipcClient.Shutdown()
-				close(quit)
-			},
-			func() { // Ctrl+D
-				close(quit)
-			},
+			func() { ipcClient.Shutdown(); close(quit) }, // Ctrl+C
+			func() { close(quit) },                       // Ctrl+D
 		)
 	}()
 
@@ -35,74 +29,73 @@ func RunClientUI(ipcPort int) error {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
-	renderClientUI(ipcClient)
-
+	drawClientFrame(ipcClient)
 	for {
 		select {
 		case <-quit:
 			return nil
 		case <-ticker.C:
-			renderClientUI(ipcClient)
+			drawClientFrame(ipcClient)
 		}
 	}
 }
 
-func renderClientUI(ipcClient *ipc.Client) {
-	state, err := ipcClient.GetClientState()
+func drawClientFrame(ipcClient *ipc.Client) {
 	w, h := termSize()
 	if w < 60 {
 		w = 60
 	}
 
 	var b strings.Builder
-	b.WriteString(esc + "H")
 
-	// ── connecting / error states ─────────────────────────────────────────────
+	// Move cursor to top-left without clearing — avoids the full-screen flash
+	b.WriteString("\x1b[H")
+
+	state, err := ipcClient.GetClientState()
 	if err != nil {
-		renderSplash(&b, w, h, red+"  ✗  Disconnected from client"+reset, "")
-		b.WriteString(esc + "J")
-		fmt.Fprint(os.Stdout, b.String())
+		renderSplash(&b, w, h, red+"  ✗  Disconnected from client"+reset)
+		b.WriteString("\x1b[J")
+		flush(&b)
 		return
 	}
 	if state.Status == "" {
-		renderSplash(&b, w, h, yellow+"  ◌  Connecting to GoTunnel client…"+reset, "")
-		b.WriteString(esc + "J")
-		fmt.Fprint(os.Stdout, b.String())
+		renderSplash(&b, w, h, yellow+"  ◌  Connecting to GoTunnel client…"+reset)
+		b.WriteString("\x1b[J")
+		flush(&b)
 		return
 	}
 
-	// ── header ────────────────────────────────────────────────────────────────
+	// ── 1. Header ─────────────────────────────────────────────────────────────
 	renderHeader(&b, w, "GoTunnel Client", state.ServerAddr, "CLIENT")
 
-	// ── status strip ──────────────────────────────────────────────────────────
-	statusColor := "\x1b[38;5;82m" // bright green
+	// ── 2. Status strip ───────────────────────────────────────────────────────
+	statusColor := lgreen
 	statusIcon := "●"
 	statusLabel := "ONLINE"
 	if state.Status != "online" {
-		statusColor = "\x1b[38;5;214m" // amber
+		statusColor = amber
 		statusIcon = "◌"
 		statusLabel = strings.ToUpper(state.Status)
 	}
 
 	typeLabel := "HTTP"
-	typeColor := "\x1b[38;5;39m"
+	typeColor := lblue
 	if state.TunnelType == "tcp" {
 		typeLabel = " TCP"
-		typeColor = "\x1b[38;5;213m"
+		typeColor = lpink
 	}
 
-	statsLine := fmt.Sprintf(
-		"  %s STATUS %s%s %s%s   %s TYPE %s%s%s   %s WORKERS %s%d%s",
-		dim+"┃"+reset, statusColor+bold, statusIcon, statusLabel, reset,
-		dim+"┃"+reset, typeColor+bold, typeLabel, reset,
-		dim+"┃"+reset, "\x1b[38;5;123m"+bold, state.Workers, reset,
-	)
-	writeLine(&b, statsLine, w)
-	writeLine(&b, dim+strings.Repeat("─", w)+reset, w)
+	statsLine := "  " +
+		statsBadge("STATUS", statusIcon+" "+statusLabel, statusColor) +
+		statsBadge("TYPE", typeLabel, typeColor) +
+		statsBadge("WORKERS", fmt.Sprintf("%d", state.Workers), lteal)
 
-	// ── forwarding panel ──────────────────────────────────────────────────────
+	writeLine(&b, statsLine, w)
+	writeLine(&b, dim+hline(w, "─")+reset, w)
+
+	// ── 3. Forwarding panel ───────────────────────────────────────────────────
 	writeLine(&b, " "+dim+"Tunnel Configuration"+reset, w)
-	writeLine(&b, dim+strings.Repeat("·", w)+reset, w)
+	writeLine(&b, dim+hline(w, "·")+reset, w)
 
 	forwardingStr := ""
 	if state.TunnelType == "tcp" {
@@ -116,20 +109,20 @@ func renderClientUI(ipcClient *ipc.Client) {
 	}
 
 	col := w / 2
-	row1 := cfgCell("  Forwarding", forwardingStr, w)
-	row2 := cfgCell("  Server    ", state.ServerAddr, col) + cfgCell("  Target    ", state.TargetAddr, w-col)
+	writeLine(&b, cfgCell("  Forwarding", forwardingStr, w), w)
+	writeLine(&b, cfgCell("  Server    ", state.ServerAddr, col)+cfgCell("  Target    ", state.TargetAddr, w-col), w)
+	writeLine(&b, dim+hline(w, "─")+reset, w)
 
-	writeLine(&b, row1, w)
-	writeLine(&b, row2, w)
-
-	writeLine(&b, dim+strings.Repeat("─", w)+reset, w)
-
-	// ── HTTP requests table ───────────────────────────────────────────────────
+	// ── 4. HTTP requests table ────────────────────────────────────────────────
 	writeLine(&b, " "+dim+"HTTP Request Log"+reset, w)
 
-	headerH := 11
-	separators := 4
-	reqsH := h - headerH - separators
+	// Lines used: 1(hdr)+1(stats)+1(sep)+1(cfg-label)+1(cfg-dot)+2(cfg-rows)+1(sep)+1(req-label) = 9
+	// Footer = 1
+	const (
+		usedLines = 9
+		footerH   = 1
+	)
+	reqsH := h - usedLines - footerH - 3 // 3 = table header + dot + sep
 	if reqsH < 2 {
 		reqsH = 2
 	}
@@ -137,16 +130,15 @@ func renderClientUI(ipcClient *ipc.Client) {
 	methodW := 8
 	statusW := 8
 	durW := 10
-	pathW := w - methodW - statusW - durW - 5
+	pathW := w - methodW - statusW - durW - 4
 
-	th := dim +
-		"  " + pad("METHOD", methodW) +
+	th := dim + "  " +
+		pad("METHOD", methodW) +
 		pad("PATH", pathW) +
 		pad("STATUS", statusW) +
-		pad("DURATION", durW) +
-		reset
+		pad("DURATION", durW) + reset
 	writeLine(&b, th, w)
-	writeLine(&b, dim+strings.Repeat("·", w)+reset, w)
+	writeLine(&b, dim+hline(w, "·")+reset, w)
 
 	shown := state.Requests
 	if len(shown) > reqsH {
@@ -154,25 +146,25 @@ func renderClientUI(ipcClient *ipc.Client) {
 	}
 
 	for _, req := range shown {
-		sColor := "\x1b[38;5;82m" // green
+		sColor := lgreen
 		sBg := ""
 		if req.Status >= 500 {
-			sColor = "\x1b[38;5;196m"
-			sBg = "\x1b[48;5;52m"
+			sColor = lred
+			sBg = bgLred
 		} else if req.Status >= 400 {
-			sColor = "\x1b[38;5;214m"
+			sColor = amber
 		} else if req.Status >= 300 {
-			sColor = "\x1b[38;5;39m"
+			sColor = lblue
 		}
 
-		methodColor := "\x1b[38;5;82m"
+		methodColor := lgreen
 		switch req.Method {
 		case "POST":
-			methodColor = "\x1b[38;5;214m"
+			methodColor = amber
 		case "PUT", "PATCH":
-			methodColor = "\x1b[38;5;39m"
+			methodColor = lblue
 		case "DELETE":
-			methodColor = "\x1b[38;5;196m"
+			methodColor = lred
 		}
 
 		path := req.Path
@@ -186,7 +178,7 @@ func renderClientUI(ipcClient *ipc.Client) {
 			methodColor + pad(req.Method, methodW) + reset +
 			dim + pad(path, pathW) + reset +
 			sBg + sColor + bold + pad(fmt.Sprintf("%d", req.Status), statusW) + reset +
-			dim + pad(dur, durW) + reset
+			lteal + pad(dur, durW) + reset
 
 		writeLine(&b, line, w)
 	}
@@ -199,9 +191,11 @@ func renderClientUI(ipcClient *ipc.Client) {
 		writeLine(&b, "", w)
 	}
 
-	// ── footer / keybind bar ──────────────────────────────────────────────────
+	writeLine(&b, dim+hline(w, "─")+reset, w)
+
+	// ── 5. Footer ─────────────────────────────────────────────────────────────
 	renderFooter(&b, w, "ctrl+d  detach", "ctrl+c  stop client")
 
-	b.WriteString(esc + "J")
-	fmt.Fprint(os.Stdout, b.String())
+	b.WriteString("\x1b[J")
+	flush(&b)
 }

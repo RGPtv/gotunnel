@@ -42,6 +42,7 @@ func RunServerUI(ipcPort int) error {
 
 func drawServerFrame(ipcClient *ipc.Client) {
 	w, h := termSize()
+	h-- // Prevent terminal scroll by leaving bottom row empty
 	if w < 60 {
 		w = 60
 	}

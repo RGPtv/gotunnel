@@ -9,6 +9,7 @@ import (
 )
 
 func RunClientUI(ipcPort int) error {
+	initTerminal()
 	ipcClient := ipc.NewClient(ipcPort)
 	quit := make(chan struct{})
 
@@ -42,6 +43,8 @@ func RunClientUI(ipcPort int) error {
 
 func drawClientFrame(ipcClient *ipc.Client) {
 	w, h := termSize()
+	w -= 1 // Prevent Windows cmd auto-wrap
+	h -= 1 // Prevent bottom row scroll
 	if w < 60 {
 		w = 60
 	}

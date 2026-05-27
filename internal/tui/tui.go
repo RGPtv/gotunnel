@@ -259,8 +259,8 @@ func cfgCell(label, value string, width int) string {
 	content := dim + label + reset + " " + lteal + value + reset
 	vis := labelVis + 1 + len([]rune(value))
 	padLen := width - vis
-	if padLen < 1 {
-		padLen = 1
+	if padLen < 0 {
+		padLen = 0
 	}
 	return content + strings.Repeat(" ", padLen)
 }

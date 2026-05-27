@@ -1063,6 +1063,8 @@ func (s *Server) startJanitor() {
 		s.cleanPool(s.pool)
 
 		var deletedSubs, deletedTCPs []string
+		deletedDefault := len(s.pool) == 0
+
 		s.mu.Lock()
 		for sub, p := range s.httpPools {
 			s.cleanPool(p)
@@ -1086,8 +1088,11 @@ func (s *Server) startJanitor() {
 		}
 		s.mu.Unlock()
 
-		if len(deletedSubs) > 0 || len(deletedTCPs) > 0 {
+		if len(deletedSubs) > 0 || len(deletedTCPs) > 0 || deletedDefault {
 			s.tunnelMetaMu.Lock()
+			if deletedDefault {
+				delete(s.tunnelMeta, "(default)")
+			}
 			for _, sub := range deletedSubs {
 				delete(s.tunnelMeta, sub)
 			}

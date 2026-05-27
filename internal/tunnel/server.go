@@ -163,18 +163,33 @@ srv := &Server{
 
 	
 	ipc.StartIPCServer(41400, func() interface{} {
+		srv.mu.RLock()
 		srv.tunnelMetaMu.RLock()
+		
 		var tunnels []ipc.TunnelInfo
-		for _, tm := range srv.tunnelMeta {
+		for ep, tm := range srv.tunnelMeta {
+			conns := 0
+			if tm.Type == "tcp" {
+				if p, ok := srv.tcpPools[ep]; ok {
+					conns = len(p)
+				}
+			} else {
+				if ep == "(default)" {
+					conns = len(srv.pool)
+				} else if p, ok := srv.httpPools[ep]; ok {
+					conns = len(p)
+				}
+			}
 			tunnels = append(tunnels, ipc.TunnelInfo{
 				Endpoint:    tm.Endpoint,
 				Type:        tm.Type,
-				Connections: 0, // Simplified for now
+				Connections: conns,
 				ClientIP:    tm.ClientIP,
 				ProxyURL:    tm.ProxyURL,
 			})
 		}
 		srv.tunnelMetaMu.RUnlock()
+		srv.mu.RUnlock()
 
 		srv.logsMu.Lock()
 		logs := make([]ipc.LogEntry, len(srv.logs))

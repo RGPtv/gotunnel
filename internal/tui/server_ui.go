@@ -147,10 +147,10 @@ func drawServerFrame(ipcClient *ipc.Client) {
 	}
 
 	// Column widths for the tunnel table.
-	epW   := 24
+	epW   := 22
 	typeW := 6
-	conW  := 5
-	ipW   := 15
+	conW  := 7
+	ipW   := 21 // fits "255.255.255.255:65535"
 	urlW  := (w - 8) - epW - typeW - conW - ipW - 8 // 8 for 4 separators of 2 spaces
 	if urlW < 8 {
 		urlW = 8
@@ -159,7 +159,7 @@ func drawServerFrame(ipcClient *ipc.Client) {
 	th := dim +
 		pad("ENDPOINT", epW) + "  " +
 		pad("TYPE", typeW) + "  " +
-		rpad("CONNS", conW) + "  " +
+		pad("CONNS", conW) + "  " +
 		pad("CLIENT IP", ipW) + "  " +
 		pad("PROXY URL", urlW) + reset
 	panelRow(&b, th, w) // 1 line (counted in fixedInside)
@@ -180,7 +180,7 @@ func drawServerFrame(ipcClient *ipc.Client) {
 		}
 		line := bold + pad(tun.Endpoint, epW) + reset + "  " +
 			typeColor + pad(badge, typeW) + reset + "  " +
-			lgreen + rpad(fmt.Sprintf("%d", tun.Connections), conW) + reset + "  " +
+			lgreen + pad(fmt.Sprintf("%d", tun.Connections), conW) + reset + "  " +
 			dim + pad(orDash(tun.ClientIP), ipW) + reset + "  " +
 			lblue + pad(orDash(tun.ProxyURL), urlW) + reset
 		panelRow(&b, line, w)

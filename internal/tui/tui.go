@@ -66,7 +66,7 @@ func termSize() (w, h int) {
 // pad pads/truncates s to exactly n visible runes.
 func pad(s string, n int) string {
 	r := []rune(s)
-	if len(r) >= n {
+	if len(r) > n {
 		if n <= 3 {
 			return string(r[:n])
 		}
@@ -78,7 +78,7 @@ func pad(s string, n int) string {
 // rpad right-aligns s in n columns.
 func rpad(s string, n int) string {
 	r := []rune(s)
-	if len(r) >= n {
+	if len(r) > n {
 		return string(r[:n])
 	}
 	return strings.Repeat(" ", n-len(r)) + s

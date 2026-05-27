@@ -87,11 +87,11 @@ func rpad(s string, n int) string {
 // hline returns w copies of ch.
 func hline(w int, ch string) string { return strings.Repeat(ch, w) }
 
-// writeLine writes s followed by clear-to-EOL + newline into b.
+// writeLine writes s followed by clear-to-EOL + CRLF into b.
 // Every line MUST go through writeLine so old content is always erased.
 func writeLine(b *strings.Builder, s string, _ int) {
 	b.WriteString(s)
-	b.WriteString("\x1b[0K\n")
+	b.WriteString("\x1b[0K\r\n")
 }
 
 // flush writes the entire buffer to stdout in a single atomic write.

@@ -13,7 +13,6 @@ func RunServerUI(ipcPort int) error {
 	ipcClient := ipc.NewClient(ipcPort)
 	quit := make(chan struct{})
 
-	// Start reading input in a separate goroutine
 	go func() {
 		readInput(
 			func() { // Ctrl+C
@@ -36,7 +35,6 @@ func RunServerUI(ipcPort int) error {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
-	// Initial render
 	renderServerUI(ipcClient)
 
 	for {
@@ -52,144 +50,235 @@ func RunServerUI(ipcPort int) error {
 func renderServerUI(ipcClient *ipc.Client) {
 	state, err := ipcClient.GetServerState()
 	w, h := termSize()
-	
+	if w < 60 {
+		w = 60
+	}
+
 	var b strings.Builder
 	b.WriteString(esc + "H") // cursor home
 
+	// ── connecting / error states ─────────────────────────────────────────────
 	if err != nil {
-		b.WriteString(fmt.Sprintf("\n%s  Disconnected from server: %v%s\n", red, err, reset))
+		renderSplash(&b, w, h, red+"  ✗  Disconnected from server"+reset, "")
 		b.WriteString(esc + "J")
 		fmt.Fprint(os.Stdout, b.String())
 		return
 	}
 	if state.Token == "" {
-		b.WriteString("\n  Connecting to gotunnel server daemon...\n")
+		renderSplash(&b, w, h, yellow+"  ◌  Connecting to GoTunnel server…"+reset, "")
 		b.WriteString(esc + "J")
 		fmt.Fprint(os.Stdout, b.String())
 		return
 	}
 
-	// ── header bar ───────────────────────────────────────────────────────────
-	title := "  GoTunnel Server "
-	uptime := fmt.Sprintf("  uptime %s  ", fmtDuration(time.Duration(state.Uptime)*time.Second))
-	header := bold + bgCyan + " " + title + reset
-	header += strings.Repeat(" ", max(0, w-len(title)-len(uptime)-2))
-	header += dim + uptime + reset
-	writeLine(&b, header, w)
-	b.WriteString(dim + hline(w, "─") + reset + "\n")
+	uptime := fmtDuration(time.Duration(state.Uptime) * time.Second)
 
-	// ── info pane ─────────────────────────────────────────────────────────────
-	col := w / 2
+	// ── header ────────────────────────────────────────────────────────────────
+	renderHeader(&b, w, "GoTunnel Server", uptime, "SERVER")
 
+	// ── stats strip ──────────────────────────────────────────────────────────
+	statsLine := fmt.Sprintf(
+		"  %s ACTIVE %s%d%s   %s REQUESTS %s%d%s   %s UPTIME %s%s%s",
+		dim+"┃"+reset, green+bold, state.ActiveConns, reset,
+		dim+"┃"+reset, cyan+bold, state.TotalReqs, reset,
+		dim+"┃"+reset, blue+bold, uptime, reset,
+	)
+	writeLine(&b, statsLine, w)
+	writeLine(&b, dim+strings.Repeat("─", w)+reset, w)
+
+	// ── config panel ──────────────────────────────────────────────────────────
 	inspectUrl := "—"
 	if state.InspectAddr != "" {
 		inspectUrl = "http://" + state.InspectAddr
 	}
+	col := w / 2
 
-	row1 := infoCell("HTTP  ", state.HTTPAddr, col) + infoCell("Tunnel", state.TunAddr, w-col)
-	row2 := infoCell("HTTPS ", state.HTTPSAddr, col) + infoCell("Dashb.", inspectUrl, w-col)
-	row3 := infoCell("Token ", maskSecret(state.Token), col) + infoCell("Login ", state.DashUser+"/"+maskSecret(state.DashPass), w-col)
-	row4 := infoCell("Conns ", fmt.Sprintf("%d", state.ActiveConns), col) + infoCell("Reqs  ", fmt.Sprintf("%d", state.TotalReqs), w-col)
+	writeLine(&b, " "+dim+"Configuration"+reset, w)
+	writeLine(&b, dim+strings.Repeat("·", w)+reset, w)
+
+	row1 := cfgCell("  HTTP Proxy", state.HTTPAddr, col) + cfgCell("  Tunnel Port", state.TunAddr, w-col)
+	row2 := cfgCell("  HTTPS     ", orDash(state.HTTPSAddr), col) + cfgCell("  Dashboard ", inspectUrl, w-col)
+	row3 := cfgCell("  Token     ", maskSecret(state.Token), col) + cfgCell("  Login     ", state.DashUser+"/"+maskSecret(state.DashPass), w-col)
 
 	writeLine(&b, row1, w)
 	writeLine(&b, row2, w)
 	writeLine(&b, row3, w)
-	writeLine(&b, row4, w)
+	writeLine(&b, dim+strings.Repeat("─", w)+reset, w)
 
-	b.WriteString(dim + hline(w, "─") + reset + "\n")
+	// ── tunnels table ─────────────────────────────────────────────────────────
+	writeLine(&b, " "+dim+"Active Tunnels"+reset, w)
 
-	// ── tunnels pane ─────────────────────────────────────────────────────────
-	tunnelHeaderH := 8
-	logLines := 10
-	separators := 3
-
-	tunnelH := h - tunnelHeaderH - logLines - separators
-	if tunnelH < 3 {
-		tunnelH = 3
+	headerH := 11 // header+stats+config lines used
+	logLines := 9 // reserved for log pane
+	separators := 4
+	tunnelH := h - headerH - logLines - separators
+	if tunnelH < 2 {
+		tunnelH = 2
 	}
 
-	th := bold + dim +
-		" " + pad("ENDPOINT", 28) +
-		pad("TYPE", 6) +
-		rpad("CONNS", 7) + "  " +
-		pad("CLIENT IP", 22) +
-		pad("PROXY URL", w-28-6-7-2-22-1) +
+	epW := 26
+	typeW := 6
+	conW := 6
+	ipW := 18
+	urlW := w - epW - typeW - conW - ipW - 5
+
+	th := dim +
+		"  " + pad("ENDPOINT", epW) +
+		pad("TYPE", typeW) +
+		rpad("CONNS", conW) + "  " +
+		pad("CLIENT IP", ipW) +
+		pad("PROXY URL", urlW) +
 		reset
 	writeLine(&b, th, w)
-	b.WriteString(dim + hline(w, "·") + reset + "\n")
+	writeLine(&b, dim+strings.Repeat("·", w)+reset, w)
 
 	shown := state.Tunnels
-	if len(shown) > tunnelH-2 {
-		shown = shown[:tunnelH-2]
+	if len(shown) > tunnelH {
+		shown = shown[:tunnelH]
 	}
 	for _, tun := range shown {
-		typeColor := cyan
+		typeColor := "\x1b[38;5;39m" // bright blue for http
+		badge := " http"
 		if tun.Type == "tcp" {
-			typeColor = magenta
+			typeColor = "\x1b[38;5;213m" // pink/magenta for tcp
+			badge = "  tcp"
 		}
-		line := " " +
-			bold + pad(tun.Endpoint, 28) + reset +
-			typeColor + pad(tun.Type, 6) + reset +
-			green + rpad(fmt.Sprintf("%d", tun.Connections), 7) + reset + "  " +
-			dim + pad(orDash(tun.ClientIP), 22) + reset +
-			dim + pad(orDash(tun.ProxyURL), w-28-6-7-2-22-1) + reset
+		line := "  " +
+			bold + pad(tun.Endpoint, epW) + reset +
+			typeColor + pad(badge, typeW) + reset +
+			"\x1b[38;5;82m" + rpad(fmt.Sprintf("%d", tun.Connections), conW) + reset + "  " +
+			dim + pad(orDash(tun.ClientIP), ipW) + reset + " " +
+			"\x1b[38;5;39m" + pad(orDash(tun.ProxyURL), urlW) + reset
 		writeLine(&b, line, w)
 	}
-	for i := len(shown); i < tunnelH-2; i++ {
+	if len(shown) == 0 {
+		noTunnel := dim + "  No active tunnels" + reset
+		writeLine(&b, noTunnel, w)
+	}
+	for i := len(shown); i < tunnelH; i++ {
 		writeLine(&b, "", w)
 	}
 
-	b.WriteString(dim + hline(w, "─") + reset + "\n")
+	writeLine(&b, dim+strings.Repeat("─", w)+reset, w)
 
-	// ── log pane ─────────────────────────────────────────────────────────────
-	writeLine(&b, dim+" event log"+reset, w)
+	// ── event log ─────────────────────────────────────────────────────────────
+	writeLine(&b, " "+dim+"Event Log"+reset, w)
+	writeLine(&b, dim+strings.Repeat("·", w)+reset, w)
 
 	last := state.Logs
-	if len(last) > logLines-1 {
-		last = last[len(last)-(logLines-1):]
+	maxLogs := logLines - 3
+	if maxLogs < 1 {
+		maxLogs = 1
+	}
+	if len(last) > maxLogs {
+		last = last[len(last)-maxLogs:]
 	}
 	for _, e := range last {
-		col, sym := logStyle(e.Level)
+		col2, sym, lvlLabel := logStyleFull(e.Level)
 		ts := e.Time.Format("15:04:05")
-		line := fmt.Sprintf(" %s%s%s %s%s%s %s",
+		msg := e.Message
+		if len(msg)+20 > w {
+			msg = msg[:w-20] + "…"
+		}
+		line := fmt.Sprintf("  %s%s%s  %s%s%s  %s%s",
 			dim, ts, reset,
-			col, sym, reset,
-			e.Message)
+			col2, sym+" "+lvlLabel, reset,
+			reset, msg)
 		writeLine(&b, line, w)
 	}
-	for i := len(last); i < logLines-1; i++ {
+	for i := len(last); i < maxLogs; i++ {
 		writeLine(&b, "", w)
 	}
 
-	// ── help bar ──────────────────────────────────────────────────────────────
-	writeLine(&b, dim+"  ctrl+d: detach • ctrl+c: stop server"+reset, w)
+	// ── footer / keybind bar ──────────────────────────────────────────────────
+	renderFooter(&b, w, "ctrl+d  detach", "ctrl+c  stop server")
 
-	b.WriteString(esc + "J") // clear to end
+	b.WriteString(esc + "J")
 	fmt.Fprint(os.Stdout, b.String())
 }
 
-// Helpers
+// ── Shared helpers ────────────────────────────────────────────────────────────
 
-func infoCell(label, value string, width int) string {
-	if value == "" {
+func renderHeader(b *strings.Builder, w int, title, subtitle, badge string) {
+	// Full-width gradient-style header using 256-color bg
+	bg := "\x1b[48;5;24m" // deep teal
+	fg := "\x1b[38;5;231m"
+	accent := "\x1b[38;5;123m"
+
+	left := fmt.Sprintf("%s%s %s %s %s", bg, fg, bold+"◈"+reset+bg+fg, bold+title+reset+bg+fg, reset)
+	right := fmt.Sprintf("%s%s %s %s", bg, accent+dim, subtitle, reset)
+	badgeStr := fmt.Sprintf("%s %s %s", "\x1b[48;5;39m"+"\x1b[38;5;17m", bold+badge+reset, "")
+
+	leftVis := len("◈ " + title + "  ")
+	rightVis := len(subtitle) + 1
+	badgeVis := len(badge) + 2
+	padding := w - leftVis - rightVis - badgeVis
+	if padding < 0 {
+		padding = 0
+	}
+
+	line := left + strings.Repeat(" ", padding) + right + badgeStr
+	b.WriteString(line + "\n")
+}
+
+func renderSplash(b *strings.Builder, w, h int, msg, sub string) {
+	for i := 0; i < h/2-1; i++ {
+		b.WriteString("\n")
+	}
+	b.WriteString(strings.Repeat(" ", (w-len(msg))/2) + msg + "\n")
+	if sub != "" {
+		b.WriteString(strings.Repeat(" ", (w-len(sub))/2) + dim + sub + reset + "\n")
+	}
+}
+
+func renderFooter(b *strings.Builder, w int, left, right string) {
+	bg := "\x1b[48;5;236m"
+	fg := "\x1b[38;5;245m"
+	accent := "\x1b[38;5;39m"
+
+	l := fmt.Sprintf("%s%s  %s %s", bg, fg, accent+"⌨"+reset+bg+fg, left)
+	r := fmt.Sprintf("%s %s  ", accent+"✕"+reset+bg+fg, right)
+	lv := len(left) + 4
+	rv := len(right) + 4
+	pad := w - lv - rv
+	if pad < 0 {
+		pad = 0
+	}
+	b.WriteString(l + strings.Repeat(" ", pad) + r + reset + "\n")
+}
+
+func cfgCell(label, value string, width int) string {
+	if value == "" || value == "/" {
 		value = "—"
 	}
-	lbl := dim + " " + label + " " + reset
-	val := cyan + value + reset
-	visLen := 1 + len(label) + 1 + len(value)
-	padLen := width - visLen - 1
-	if padLen < 0 { padLen = 0 }
+	lbl := dim + label + reset + " "
+	val := "\x1b[38;5;123m" + value + reset
+	visLen := len(label) + 1 + len(value)
+	padLen := width - visLen
+	if padLen < 1 {
+		padLen = 1
+	}
 	return lbl + val + strings.Repeat(" ", padLen)
 }
 
-func logStyle(level int) (color, sym string) {
+func logStyleFull(level int) (color, sym, label string) {
 	switch level {
-	case 0: return cyan, "·"
-	case 1: return yellow, "!"
-	case 2: return red, "✗"
-	case 3: return green, "✓"
-	default: return dim, "·"
+	case 0:
+		return "\x1b[38;5;39m", "·", "INFO "
+	case 1:
+		return "\x1b[38;5;214m", "!", "WARN "
+	case 2:
+		return "\x1b[38;5;196m", "✗", "ERROR"
+	case 3:
+		return "\x1b[38;5;82m", "✓", "OK   "
+	default:
+		return dim, "·", "INFO "
 	}
+}
+
+func logStyle(level int) (color, sym string) {
+	c, s, _ := logStyleFull(level)
+	return c, s
 }
 
 func fmtDuration(d time.Duration) string {
@@ -204,10 +293,13 @@ func fmtDuration(d time.Duration) string {
 }
 
 func maskSecret(s string) string {
+	if s == "" {
+		return "—"
+	}
 	if len(s) <= 8 {
 		return "••••••••"
 	}
-	return s[:6] + "••••••"
+	return s[:4] + "••••••" + s[len(s)-2:]
 }
 
 func orDash(s string) string {
@@ -222,4 +314,8 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func infoCell(label, value string, width int) string {
+	return cfgCell(label, value, width)
 }

@@ -50,111 +50,157 @@ func RunClientUI(ipcPort int) error {
 func renderClientUI(ipcClient *ipc.Client) {
 	state, err := ipcClient.GetClientState()
 	w, h := termSize()
+	if w < 60 {
+		w = 60
+	}
 
 	var b strings.Builder
 	b.WriteString(esc + "H")
 
+	// ── connecting / error states ─────────────────────────────────────────────
 	if err != nil {
-		b.WriteString(fmt.Sprintf("\n%s  Disconnected from client: %v%s\n", red, err, reset))
+		renderSplash(&b, w, h, red+"  ✗  Disconnected from client"+reset, "")
 		b.WriteString(esc + "J")
 		fmt.Fprint(os.Stdout, b.String())
 		return
 	}
 	if state.Status == "" {
-		b.WriteString("\n  Connecting to gotunnel client daemon...\n")
+		renderSplash(&b, w, h, yellow+"  ◌  Connecting to GoTunnel client…"+reset, "")
 		b.WriteString(esc + "J")
 		fmt.Fprint(os.Stdout, b.String())
 		return
 	}
 
-	// ── header bar ───────────────────────────────────────────────────────────
-	title := "  GoTunnel Client "
-	header := bold + bgCyan + " " + title + reset
-	header += strings.Repeat(" ", max(0, w-len(title)-3))
-	writeLine(&b, header, w)
-	b.WriteString(dim + hline(w, "─") + reset + "\n")
+	// ── header ────────────────────────────────────────────────────────────────
+	renderHeader(&b, w, "GoTunnel Client", state.ServerAddr, "CLIENT")
 
-	// ── info pane ─────────────────────────────────────────────────────────────
-	statusColor := green
+	// ── status strip ──────────────────────────────────────────────────────────
+	statusColor := "\x1b[38;5;82m" // bright green
+	statusIcon := "●"
+	statusLabel := "ONLINE"
 	if state.Status != "online" {
-		statusColor = yellow
+		statusColor = "\x1b[38;5;214m" // amber
+		statusIcon = "◌"
+		statusLabel = strings.ToUpper(state.Status)
 	}
+
+	typeLabel := "HTTP"
+	typeColor := "\x1b[38;5;39m"
+	if state.TunnelType == "tcp" {
+		typeLabel = " TCP"
+		typeColor = "\x1b[38;5;213m"
+	}
+
+	statsLine := fmt.Sprintf(
+		"  %s STATUS %s%s %s%s   %s TYPE %s%s%s   %s WORKERS %s%d%s",
+		dim+"┃"+reset, statusColor+bold, statusIcon, statusLabel, reset,
+		dim+"┃"+reset, typeColor+bold, typeLabel, reset,
+		dim+"┃"+reset, "\x1b[38;5;123m"+bold, state.Workers, reset,
+	)
+	writeLine(&b, statsLine, w)
+	writeLine(&b, dim+strings.Repeat("─", w)+reset, w)
+
+	// ── forwarding panel ──────────────────────────────────────────────────────
+	writeLine(&b, " "+dim+"Tunnel Configuration"+reset, w)
+	writeLine(&b, dim+strings.Repeat("·", w)+reset, w)
 
 	forwardingStr := ""
 	if state.TunnelType == "tcp" {
-		forwardingStr = fmt.Sprintf("tcp://%s -> %s", state.ServerAddr+state.RemoteAddr, state.TargetAddr)
+		forwardingStr = fmt.Sprintf("tcp://%s → %s", state.ServerAddr+state.RemoteAddr, state.TargetAddr)
 	} else {
 		if state.RemoteAddr != "" {
-			forwardingStr = fmt.Sprintf("https://%s.%s -> %s", state.RemoteAddr, state.ServerAddr, state.TargetAddr)
+			forwardingStr = fmt.Sprintf("https://%s.%s → %s", state.RemoteAddr, state.ServerAddr, state.TargetAddr)
 		} else {
-			forwardingStr = fmt.Sprintf("https://%s -> %s", state.ServerAddr, state.TargetAddr)
+			forwardingStr = fmt.Sprintf("https://%s → %s", state.ServerAddr, state.TargetAddr)
 		}
 	}
 
-	row1 := "  Status     : " + statusColor + state.Status + reset
-	row2 := "  Forwarding : " + cyan + forwardingStr + reset
-	row3 := fmt.Sprintf("  Workers    : %s%d%s", cyan, state.Workers, reset)
+	col := w / 2
+	row1 := cfgCell("  Forwarding", forwardingStr, w)
+	row2 := cfgCell("  Server    ", state.ServerAddr, col) + cfgCell("  Target    ", state.TargetAddr, w-col)
 
 	writeLine(&b, row1, w)
 	writeLine(&b, row2, w)
-	writeLine(&b, row3, w)
 
-	b.WriteString(dim + hline(w, "─") + reset + "\n")
+	writeLine(&b, dim+strings.Repeat("─", w)+reset, w)
 
-	// ── requests pane ─────────────────────────────────────────────────────────
-	writeLine(&b, dim+"  HTTP Requests"+reset, w)
+	// ── HTTP requests table ───────────────────────────────────────────────────
+	writeLine(&b, " "+dim+"HTTP Request Log"+reset, w)
 
-	reqsH := h - 9 - 2
-	if reqsH < 3 {
-		reqsH = 3
+	headerH := 11
+	separators := 4
+	reqsH := h - headerH - separators
+	if reqsH < 2 {
+		reqsH = 2
 	}
 
-	th := bold + dim +
-		" " + pad("METHOD", 8) +
-		pad("PATH", 40) +
-		pad("STATUS", 8) +
-		pad("DURATION", 10) +
+	methodW := 8
+	statusW := 8
+	durW := 10
+	pathW := w - methodW - statusW - durW - 5
+
+	th := dim +
+		"  " + pad("METHOD", methodW) +
+		pad("PATH", pathW) +
+		pad("STATUS", statusW) +
+		pad("DURATION", durW) +
 		reset
 	writeLine(&b, th, w)
-	b.WriteString(dim + hline(w, "·") + reset + "\n")
+	writeLine(&b, dim+strings.Repeat("·", w)+reset, w)
 
 	shown := state.Requests
-	if len(shown) > reqsH-2 {
-		shown = shown[len(shown)-(reqsH-2):]
+	if len(shown) > reqsH {
+		shown = shown[len(shown)-reqsH:]
 	}
 
 	for _, req := range shown {
-		color := green
+		sColor := "\x1b[38;5;82m" // green
+		sBg := ""
 		if req.Status >= 500 {
-			color = red
+			sColor = "\x1b[38;5;196m"
+			sBg = "\x1b[48;5;52m"
 		} else if req.Status >= 400 {
-			color = yellow
+			sColor = "\x1b[38;5;214m"
 		} else if req.Status >= 300 {
-			color = cyan
+			sColor = "\x1b[38;5;39m"
+		}
+
+		methodColor := "\x1b[38;5;82m"
+		switch req.Method {
+		case "POST":
+			methodColor = "\x1b[38;5;214m"
+		case "PUT", "PATCH":
+			methodColor = "\x1b[38;5;39m"
+		case "DELETE":
+			methodColor = "\x1b[38;5;196m"
 		}
 
 		path := req.Path
-		if len(path) > 37 {
-			path = path[:34] + "..."
+		if len(path) > pathW-1 {
+			path = path[:pathW-4] + "…"
 		}
 
-		line := " " +
-			pad(req.Method, 8) +
-			pad(path, 40) +
-			color + pad(fmt.Sprintf("%d", req.Status), 8) + reset +
-			cyan + pad(fmt.Sprintf("%dms", req.Dur), 10) + reset
+		dur := fmt.Sprintf("%dms", req.Dur)
+
+		line := "  " +
+			methodColor + pad(req.Method, methodW) + reset +
+			dim + pad(path, pathW) + reset +
+			sBg + sColor + bold + pad(fmt.Sprintf("%d", req.Status), statusW) + reset +
+			dim + pad(dur, durW) + reset
 
 		writeLine(&b, line, w)
 	}
 
-	for i := len(shown); i < reqsH-2; i++ {
+	if len(shown) == 0 {
+		writeLine(&b, dim+"  Waiting for requests…"+reset, w)
+	}
+
+	for i := len(shown); i < reqsH; i++ {
 		writeLine(&b, "", w)
 	}
 
-	b.WriteString(dim + hline(w, "─") + reset + "\n")
-
-	// ── help bar ──────────────────────────────────────────────────────────────
-	writeLine(&b, dim+"  ctrl+d: detach • ctrl+c: stop client"+reset, w)
+	// ── footer / keybind bar ──────────────────────────────────────────────────
+	renderFooter(&b, w, "ctrl+d  detach", "ctrl+c  stop client")
 
 	b.WriteString(esc + "J")
 	fmt.Fprint(os.Stdout, b.String())

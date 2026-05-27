@@ -78,24 +78,27 @@ func drawClientFrame(ipcClient *ipc.Client) {
 		statusLabel = strings.ToUpper(state.Status)
 	}
 
-	typeLabel := "HTTP"
-	typeColor := lblue
+	typeLabel := " HTTP "
+	typeColor := bgLblue + "\x1b[38;5;17m" + bold
 	if state.TunnelType == "tcp" {
-		typeLabel = " TCP"
-		typeColor = lpink
+		typeLabel = " TCP  "
+		typeColor = bgCyan + "\x1b[38;5;16m" + bold
 	}
 
-	statsLine := "  " +
-		statsBadge("STATUS", statusIcon+" "+statusLabel, statusColor) +
+	statsLine := statsBadge("STATUS", statusIcon+" "+statusLabel, statusColor) +
 		statsBadge("TYPE", typeLabel, typeColor) +
 		statsBadge("WORKERS", fmt.Sprintf("%d", state.Workers), lteal)
 
-	writeLine(&b, statsLine, w)
-	writeLine(&b, dim+hline(w, "─")+reset, w)
+	statsVis := len([]rune(stripANSI(statsLine)))
+	padLen := (w - statsVis) / 2
+	if padLen < 0 {
+		padLen = 0
+	}
+	writeLine(&b, strings.Repeat(" ", padLen)+statsLine, w)
+	writeLine(&b, "", w)
 
 	// ── 3. Forwarding panel ───────────────────────────────────────────────────
-	writeLine(&b, " "+dim+"Tunnel Configuration"+reset, w)
-	writeLine(&b, dim+hline(w, "·")+reset, w)
+	panelTop(&b, "Tunnel Configuration", w)
 
 	forwardingStr := ""
 	if state.TunnelType == "tcp" {
@@ -108,21 +111,22 @@ func drawClientFrame(ipcClient *ipc.Client) {
 		}
 	}
 
-	col := w / 2
-	writeLine(&b, cfgCell("  Forwarding", forwardingStr, w), w)
-	writeLine(&b, cfgCell("  Server    ", state.ServerAddr, col)+cfgCell("  Target    ", state.TargetAddr, w-col), w)
-	writeLine(&b, dim+hline(w, "─")+reset, w)
+	col := (w - 8) / 2
+	panelRow(&b, cfgCell(" Forwarding ", forwardingStr, w-8), w)
+	panelRow(&b, cfgCell(" Server     ", state.ServerAddr, col)+cfgCell(" Target     ", state.TargetAddr, w-8-col), w)
+	panelBottom(&b, w)
+	writeLine(&b, "", w)
 
 	// ── 4. HTTP requests table ────────────────────────────────────────────────
-	writeLine(&b, " "+dim+"HTTP Request Log"+reset, w)
+	panelTop(&b, "HTTP Request Log", w)
 
-	// Lines used: 1(hdr)+1(stats)+1(sep)+1(cfg-label)+1(cfg-dot)+2(cfg-rows)+1(sep)+1(req-label) = 9
+	// Lines used: 1(hdr)+1(stats)+1(spc)+1(cfg-top)+2(cfg-rows)+1(cfg-bot)+1(spc)+1(req-top) = 9
 	// Footer = 1
 	const (
 		usedLines = 9
 		footerH   = 1
 	)
-	reqsH := h - usedLines - footerH - 3 // 3 = table header + dot + sep
+	reqsH := h - usedLines - footerH - 3 // 3 = table header + sep + bottom
 	if reqsH < 2 {
 		reqsH = 2
 	}
@@ -130,18 +134,18 @@ func drawClientFrame(ipcClient *ipc.Client) {
 	methodW := 8
 	statusW := 8
 	durW := 10
-	pathW := w - methodW - statusW - durW - 4
+	pathW := (w - 8) - methodW - statusW - durW
 	if pathW < 8 {
 		pathW = 8
 	}
 
-	th := dim + "  " +
+	th := dim +
 		pad("METHOD", methodW) +
 		pad("PATH", pathW) +
 		pad("STATUS", statusW) +
 		pad("DURATION", durW) + reset
-	writeLine(&b, th, w)
-	writeLine(&b, dim+hline(w, "·")+reset, w)
+	panelRow(&b, th, w)
+	panelSep(&b, w)
 
 	shown := state.Requests
 	var overflow int
@@ -179,28 +183,27 @@ func drawClientFrame(ipcClient *ipc.Client) {
 
 		dur := fmt.Sprintf("%dms", req.Dur)
 
-		line := "  " +
-			methodColor + pad(req.Method, methodW) + reset +
+		line := methodColor + pad(req.Method, methodW) + reset +
 			dim + pad(path, pathW) + reset +
 			sBg + sColor + bold + pad(fmt.Sprintf("%d", req.Status), statusW) + reset +
 			lteal + pad(dur, durW) + reset
 
-		writeLine(&b, line, w)
+		panelRow(&b, line, w)
 	}
 
 	if len(shown) == 0 {
-		writeLine(&b, dim+"  Waiting for requests…"+reset, w)
+		panelRow(&b, dim+"Waiting for requests…"+reset, w)
 	}
 
 	if overflow > 0 {
-		writeLine(&b, dim+fmt.Sprintf("  ... and %d older requests hidden", overflow)+reset, w)
+		panelRow(&b, dim+fmt.Sprintf("... and %d older requests hidden", overflow)+reset, w)
 	} else {
 		for i := len(shown); i < reqsH; i++ {
-			writeLine(&b, "", w)
+			panelRow(&b, "", w)
 		}
 	}
 
-	writeLine(&b, dim+hline(w, "─")+reset, w)
+	panelBottom(&b, w)
 
 	// ── 5. Footer ─────────────────────────────────────────────────────────────
 	renderFooter(&b, w, "ctrl+d  detach", "ctrl+c  stop client")

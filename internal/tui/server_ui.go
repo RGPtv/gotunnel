@@ -71,13 +71,16 @@ func drawServerFrame(ipcClient *ipc.Client) {
 	renderHeader(&b, w, "GoTunnel Server", uptime, "SERVER")
 
 	// ── 2. Stats strip ────────────────────────────────────────────────────────
-	statsLine :=
-		"  " +
-			statsBadge("CONNS", fmt.Sprintf("%d", state.ActiveConns), lgreen) +
-			statsBadge("REQUESTS", fmt.Sprintf("%d", state.TotalReqs), lblue) +
-			statsBadge("UPTIME", uptime, lteal)
-	writeLine(&b, statsLine, w)
-	writeLine(&b, dim+hline(w, "─")+reset, w)
+	statsLine := statsBadge("CONNS", fmt.Sprintf("%d", state.ActiveConns), lgreen) +
+		statsBadge("REQUESTS", fmt.Sprintf("%d", state.TotalReqs), lblue) +
+		statsBadge("UPTIME", uptime, lteal)
+	statsVis := len([]rune(stripANSI(statsLine)))
+	padLen := (w - statsVis) / 2
+	if padLen < 0 {
+		padLen = 0
+	}
+	writeLine(&b, strings.Repeat(" ", padLen)+statsLine, w)
+	writeLine(&b, "", w)
 
 	// ── 3. Config panel ───────────────────────────────────────────────────────
 	inspectUrl := "—"
@@ -89,26 +92,26 @@ func drawServerFrame(ipcClient *ipc.Client) {
 		}
 	}
 
-	writeLine(&b, " "+dim+"Configuration"+reset, w)
-	writeLine(&b, dim+hline(w, "·")+reset, w)
+	panelTop(&b, "Configuration", w)
 
-	col := w / 2
-	writeLine(&b, cfgCell("  HTTP Proxy ", state.HTTPAddr, col)+cfgCell("  Tunnel Port", state.TunAddr, w-col), w)
-	writeLine(&b, cfgCell("  HTTPS      ", orDash(state.HTTPSAddr), col)+cfgCell("  Dashboard  ", inspectUrl, w-col), w)
-	writeLine(&b, cfgCell("  Token      ", maskSecret(state.Token), col)+cfgCell("  Login      ", state.DashUser+"/"+maskSecret(state.DashPass), w-col), w)
-	writeLine(&b, dim+hline(w, "─")+reset, w)
+	col := (w - 8) / 2
+	panelRow(&b, cfgCell(" HTTP Proxy ", state.HTTPAddr, col)+cfgCell(" Tunnel Port", state.TunAddr, w-8-col), w)
+	panelRow(&b, cfgCell(" HTTPS      ", orDash(state.HTTPSAddr), col)+cfgCell(" Dashboard  ", inspectUrl, w-8-col), w)
+	panelRow(&b, cfgCell(" Token      ", maskSecret(state.Token), col)+cfgCell(" Login      ", state.DashUser+"/"+maskSecret(state.DashPass), w-8-col), w)
+	panelBottom(&b, w)
+	writeLine(&b, "", w)
 
 	// ── 4. Tunnels table ──────────────────────────────────────────────────────
-	writeLine(&b, " "+dim+"Active Tunnels"+reset, w)
+	panelTop(&b, "Active Tunnels", w)
 
 	// Calculate remaining height for tunnels + log sections
-	// Lines used so far: 1(hdr)+1(stats)+1(sep)+1(cfg-label)+1(cfg-dot)+3(cfg-rows)+1(sep)+1(tun-label) = 10
+	// Lines used so far: 1(hdr)+1(stats)+1(spc)+1(cfgTop)+3(cfg-rows)+1(cfgBot)+1(spc)+1(tunTop) = 10
 	const (
 		usedLines = 10
 		footerH   = 1
 	)
 	
-	avail := h - usedLines - footerH - 5 // 3 for tunnel header/sep, 2 for log header
+	avail := h - usedLines - footerH - 6 // 3 for tunnel header/sep/bot, 3 for log spc/top/bot
 	if avail < 2 {
 		avail = 2
 	}
@@ -126,22 +129,22 @@ func drawServerFrame(ipcClient *ipc.Client) {
 	}
 
 	epW := 26
-	typeW := 6
+	typeW := 8
 	conW := 7
 	ipW := 18
-	urlW := w - epW - typeW - conW - ipW - 4
+	urlW := (w - 8) - epW - typeW - conW - 1 - ipW
 	if urlW < 8 {
 		urlW = 8
 	}
 
-	th := dim + "  " +
+	th := dim +
 		pad("ENDPOINT", epW) +
 		pad("TYPE", typeW) +
 		rpad("CONNS", conW) + " " +
 		pad("CLIENT IP", ipW) +
 		pad("PROXY URL", urlW) + reset
-	writeLine(&b, th, w)
-	writeLine(&b, dim+hline(w, "·")+reset, w)
+	panelRow(&b, th, w)
+	panelSep(&b, w)
 
 	shown := state.Tunnels
 	var overflow int
@@ -150,35 +153,34 @@ func drawServerFrame(ipcClient *ipc.Client) {
 		shown = shown[:tunnelH-1]
 	}
 	for _, tun := range shown {
-		typeColor := lblue
-		badge := "http"
+		typeColor := bgLblue + "\x1b[38;5;17m" + bold
+		badge := " HTTP "
 		if tun.Type == "tcp" {
-			typeColor = lpink
-			badge = "tcp "
+			typeColor = bgCyan + "\x1b[38;5;16m" + bold
+			badge = " TCP  "
 		}
-		line := "  " +
-			bold + pad(tun.Endpoint, epW) + reset +
+		line := bold + pad(tun.Endpoint, epW) + reset +
 			typeColor + pad(badge, typeW) + reset +
 			lgreen + rpad(fmt.Sprintf("%d", tun.Connections), conW) + reset + " " +
 			dim + pad(orDash(tun.ClientIP), ipW) + reset +
 			lblue + pad(orDash(tun.ProxyURL), urlW) + reset
-		writeLine(&b, line, w)
+		panelRow(&b, line, w)
 	}
 	if len(shown) == 0 {
-		writeLine(&b, dim+"  No active tunnels — waiting for clients…"+reset, w)
+		panelRow(&b, dim+"No active tunnels — waiting for clients…"+reset, w)
 	}
 	if overflow > 0 {
-		writeLine(&b, dim+fmt.Sprintf("  ... and %d more active tunnels", overflow)+reset, w)
+		panelRow(&b, dim+fmt.Sprintf("... and %d more active tunnels", overflow)+reset, w)
 	} else {
 		for i := len(shown); i < tunnelH; i++ {
-			writeLine(&b, "", w)
+			panelRow(&b, "", w)
 		}
 	}
-	writeLine(&b, dim+hline(w, "─")+reset, w)
+	panelBottom(&b, w)
 
 	// ── 5. Event log ──────────────────────────────────────────────────────────
-	writeLine(&b, " "+dim+"Event Log"+reset, w)
-	writeLine(&b, dim+hline(w, "·")+reset, w)
+	writeLine(&b, "", w)
+	panelTop(&b, "Event Log", w)
 
 	last := state.Logs
 	if len(last) > maxLogs {
@@ -188,18 +190,20 @@ func drawServerFrame(ipcClient *ipc.Client) {
 		col2, sym, lvl := logStyleFull(e.Level)
 		ts := e.Time.Format("15:04:05")
 		msg := e.Message
-		maxMsg := w - 22
+		maxMsg := w - 27
 		if maxMsg > 0 && len([]rune(msg)) > maxMsg {
 			msg = string([]rune(msg)[:maxMsg-1]) + "…"
 		}
-		writeLine(&b, fmt.Sprintf("  %s%s%s  %s%s %s%s  %s",
+		line := fmt.Sprintf("%s%s%s  %s%s %s%s  %s",
 			dim, ts, reset,
 			col2, sym, lvl, reset,
-			msg), w)
+			msg)
+		panelRow(&b, line, w)
 	}
 	for i := len(last); i < maxLogs; i++ {
-		writeLine(&b, "", w)
+		panelRow(&b, "", w)
 	}
+	panelBottom(&b, w)
 
 	// ── 6. Footer ─────────────────────────────────────────────────────────────
 	renderFooter(&b, w, "ctrl+d  detach", "ctrl+c  stop server")

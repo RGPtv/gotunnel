@@ -167,6 +167,49 @@ func renderFooter(b *strings.Builder, w int, leftHint, rightHint string) {
 	writeLine(b, line, w)
 }
 
+// ── Box Panel Helpers ─────────────────────────────────────────────────────────
+
+func panelTop(b *strings.Builder, title string, w int) {
+	titleVis := len([]rune(stripANSI(title)))
+	dashCount := w - 8 - titleVis
+	if dashCount < 0 {
+		dashCount = 0
+	}
+	leftDashes := dashCount / 2
+	rightDashes := dashCount - leftDashes
+
+	line := "  " + dim + "╭─" + strings.Repeat("─", leftDashes) + reset + " " + bold + title + reset + " " + dim + strings.Repeat("─", rightDashes) + "─╮" + reset + "  "
+	writeLine(b, line, w)
+}
+
+func panelBottom(b *strings.Builder, w int) {
+	dashCount := w - 4
+	if dashCount < 0 {
+		dashCount = 0
+	}
+	line := "  " + dim + "╰" + strings.Repeat("─", dashCount-2) + "╯" + reset + "  "
+	writeLine(b, line, w)
+}
+
+func panelSep(b *strings.Builder, w int) {
+	dashCount := w - 4
+	if dashCount < 0 {
+		dashCount = 0
+	}
+	line := "  " + dim + "├" + strings.Repeat("─", dashCount-2) + "┤" + reset + "  "
+	writeLine(b, line, w)
+}
+
+func panelRow(b *strings.Builder, content string, w int) {
+	vis := len([]rune(stripANSI(content)))
+	padLen := (w - 8) - vis
+	if padLen < 0 {
+		padLen = 0
+	}
+	line := "  " + dim + "│ " + reset + content + strings.Repeat(" ", padLen) + dim + " │" + reset + "  "
+	writeLine(b, line, w)
+}
+
 // renderSplash renders a centered message on an empty screen.
 func renderSplash(b *strings.Builder, w, h int, msg string) {
 	for i := 0; i < h/2-1; i++ {
@@ -188,16 +231,16 @@ func cfgCell(label, value string, width int) string {
 	content := dim + label + reset + " " + lteal + value + reset
 	// visual width = len(label) + 1 + len(value)
 	vis := len([]rune(label)) + 1 + len([]rune(value))
-	pad := width - vis
-	if pad < 1 {
-		pad = 1
+	padLen := width - vis
+	if padLen < 1 {
+		padLen = 1
 	}
-	return content + strings.Repeat(" ", pad)
+	return content + strings.Repeat(" ", padLen)
 }
 
-// statsBadge renders a ┃-separated stat item.
+// statsBadge renders a stat item without the bar, for a cleaner look.
 func statsBadge(label, value, valueColor string) string {
-	return dim + "┃ " + reset + dim + label + " " + reset + valueColor + bold + value + reset + "  "
+	return dim + label + " " + reset + valueColor + bold + value + reset + "    "
 }
 
 // logStyleFull returns color, symbol and short label for a log level.

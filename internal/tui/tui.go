@@ -321,14 +321,4 @@ func orDash(s string) string {
 	return s
 }
 
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
 
-// infoCell is kept for compatibility.
-func infoCell(label, value string, width int) string {
-	return cfgCell(label, value, width)
-}

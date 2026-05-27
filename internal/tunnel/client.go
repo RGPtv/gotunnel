@@ -18,11 +18,13 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"github.com/RGPtv/gotunnel/internal/ipc"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
+
+	"github.com/RGPtv/gotunnel/internal/ipc"
 )
 
 // Client connects to the tunnel server and forwards HTTP requests to the
@@ -127,7 +129,7 @@ func RunClient(cfg *ClientConfig) {
 
 	// Graceful shutdown on SIGINT.
 	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Interrupt)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-sigCh
 		cancel()
@@ -396,7 +398,10 @@ func (c *Client) connectAndServe(id int) error {
 
 		if strings.ToLower(req.Header.Get("Upgrade")) == "websocket" {
 			hijacked = true
+			wd := watchDone
+			watchDone = nil // prevent deferred close; keep ctx watcher alive for WS session
 			go func() {
+				defer close(wd)
 				c.handleWebSocket(id, conn, reader, req)
 				conn.Close()
 			}()
@@ -531,7 +536,7 @@ func (c *Client) forwardToTarget(req *http.Request) (*http.Response, error) {
 func writeErrorResponse(w io.Writer, code int, msg string) error {
 	resp := &http.Response{
 		StatusCode: code,
-		Status:     fmt.Sprintf("%d Error", code),
+		Status:     fmt.Sprintf("%d %s", code, http.StatusText(code)),
 		Proto:      "HTTP/1.1",
 		ProtoMajor: 1,
 		ProtoMinor: 1,
@@ -544,7 +549,7 @@ func writeErrorResponse(w io.Writer, code int, msg string) error {
 // ── IPC Dashboard ─────────────────────────────────────────────────────────────
 
 func (c *Client) startIPC() {
-	ipc.StartIPCServer(41401, func() interface{} {
+	if _, err := ipc.StartIPCServer(41401, func() interface{} {
 		c.uiStatusMu.RLock()
 		uiStatus := c.uiStatus
 		c.uiStatusMu.RUnlock()
@@ -570,5 +575,7 @@ func (c *Client) startIPC() {
 			Workers:    int(c.uiWorkers.Load()),
 			Requests:   reqs,
 		}
-	})
+	}); err != nil {
+		log.Printf("IPC server failed to start: %v", err)
+	}
 }

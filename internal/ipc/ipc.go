@@ -119,21 +119,23 @@ func StartIPCServer(port int, getState func() interface{}) (net.Listener, error)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("ok"))
 	})
 	mux.HandleFunc("/state", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(getState())
 	})
 	mux.HandleFunc("/shutdown", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "POST" {
-			w.WriteHeader(http.StatusOK)
-			// Trigger hard shutdown
-			go func() {
-				time.Sleep(100 * time.Millisecond)
-				os.Exit(0)
-			}()
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
 		}
+		w.WriteHeader(http.StatusOK)
+		// Trigger hard shutdown after the response is flushed.
+		go func() {
+			time.Sleep(100 * time.Millisecond)
+			os.Exit(0)
+		}()
 	})
 
 	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))

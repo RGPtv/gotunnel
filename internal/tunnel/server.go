@@ -101,7 +101,7 @@ var hopByHopSet = func() map[string]struct{} {
 // without hard-coupling every call site to it.
 func (s *Server) srvLog(level int, format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
-	log.Printf(msg)
+	log.Print(msg)
 	if s != nil {
 		s.logsMu.Lock()
 		s.logs = append(s.logs, ipc.LogEntry{
@@ -146,7 +146,7 @@ func RunServer(cfg *ServerConfig) {
 	if cfg.Auth != "" {
 		basicAuthEnc = base64.StdEncoding.EncodeToString([]byte(cfg.Auth))
 	}
-srv := &Server{
+	srv := &Server{
 		token:        token,
 		basicAuth:    basicAuthEnc,
 		domain:       cfg.Domain,
@@ -161,8 +161,8 @@ srv := &Server{
 		startTime: time.Now(),
 	}
 
-	
-	ipc.StartIPCServer(41400, func() interface{} {
+
+	if _, err := ipc.StartIPCServer(41400, func() interface{} {
 		srv.mu.RLock()
 		srv.tunnelMetaMu.RLock()
 		
@@ -210,9 +210,11 @@ srv := &Server{
 			Tunnels:     tunnels,
 			Logs:        logs,
 		}
-	})
+	}); err != nil {
+		srv.srvLog(LevelError, "IPC server failed to start: %v", err)
+	}
 
-var tunLn net.Listener
+	var tunLn net.Listener
 	var err error
 
 	if cfg.NoTLS {

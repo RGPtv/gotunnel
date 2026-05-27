@@ -209,15 +209,20 @@ func drawClientFrame(ipcClient *ipc.Client) {
 		panelRow(&b, line, w)
 	}
 
+	// padStart tracks how many variable rows have already been written,
+	// so the empty-message (if any) is counted as one of the reqsH rows
+	// rather than being added on top of them.
+	padStart := len(shown)
 	if len(shown) == 0 {
 		panelRow(&b, dim+"Waiting for requests…"+reset, w)
+		padStart = 1
 	}
 
 	if overflow > 0 {
 		panelRow(&b, dim+fmt.Sprintf("… and %d older requests hidden", overflow)+reset, w)
 	} else {
 		// Pad remaining rows so the box bottom stays at a fixed position.
-		for i := len(shown); i < reqsH; i++ {
+		for i := padStart; i < reqsH; i++ {
 			panelRow(&b, "", w)
 		}
 	}

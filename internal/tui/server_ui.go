@@ -184,14 +184,19 @@ func drawServerFrame(ipcClient *ipc.Client) {
 			lblue + pad(orDash(tun.ProxyURL), urlW) + reset
 		panelRow(&b, line, w)
 	}
+	// padStart tracks how many variable rows have already been written,
+	// so the empty-message (if any) is counted as one of the tunnelH rows
+	// rather than being added on top of them.
+	padStart := len(shown)
 	if len(shown) == 0 {
 		panelRow(&b, dim+"No active tunnels — waiting for clients…"+reset, w)
+		padStart = 1
 	}
 	if overflow > 0 {
 		panelRow(&b, dim+fmt.Sprintf("… and %d more active tunnels", overflow)+reset, w)
 	} else {
 		// Pad remaining rows so the box bottom is always at a fixed position.
-		for i := len(shown); i < tunnelH; i++ {
+		for i := padStart; i < tunnelH; i++ {
 			panelRow(&b, "", w)
 		}
 	}

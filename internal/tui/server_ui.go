@@ -146,21 +146,50 @@ func drawServerFrame(ipcClient *ipc.Client) {
 		tunnelH = 1
 	}
 
-	// Column widths for the tunnel table.
-	epW   := 22
+	// Dynamic table layout for active tunnels.
+	epW := 22
 	typeW := 6
-	conW  := 5  // matches "CONNS" length exactly for perfect alignment
-	ipW   := 21 // fits "255.255.255.255:65535"
-	urlW  := (w - 8) - epW - typeW - conW - ipW - 8 // 8 for 4 separators of 2 spaces
-	if urlW < 8 {
+	conW := 5
+	ipW := 21
+	maxUrlW := 36
+
+	innerW := w - 8
+	if innerW < 0 {
+		innerW = 0
+	}
+
+	urlW := innerW - (epW + typeW + conW + ipW + 8) // 8 is min gaps (4 * 2)
+	if urlW > maxUrlW {
+		urlW = maxUrlW
+	} else if urlW < 8 {
 		urlW = 8
 	}
 
-	th := dim +
-		pad("ENDPOINT", epW) + "  " +
-		pad("TYPE", typeW) + "  " +
-		rpad("CONNS", conW) + "  " +
-		pad("CLIENT IP", ipW) + "  " +
+	totalCols := epW + typeW + conW + ipW + urlW
+	availableExtra := innerW - totalCols
+
+	gapSize := availableExtra / 6
+	if gapSize < 2 {
+		gapSize = 2
+	}
+	if gapSize > 6 {
+		gapSize = 6
+	}
+
+	usedByGaps := gapSize * 4
+	leftPad := 0
+	if availableExtra > usedByGaps {
+		leftPad = (availableExtra - usedByGaps) / 2
+	}
+
+	sep := strings.Repeat(" ", gapSize)
+	margin := strings.Repeat(" ", leftPad)
+
+	th := margin + dim +
+		pad("ENDPOINT", epW) + sep +
+		pad("TYPE", typeW) + sep +
+		rpad("CONNS", conW) + sep +
+		pad("CLIENT IP", ipW) + sep +
 		pad("PROXY URL", urlW) + reset
 	panelRow(&b, th, w) // 1 line (counted in fixedInside)
 	panelSep(&b, w)     // 1 line (counted in fixedInside)
@@ -178,10 +207,10 @@ func drawServerFrame(ipcClient *ipc.Client) {
 			typeColor = bgCyan + "\x1b[38;5;16m" + bold
 			badge = " TCP  "
 		}
-		line := bold + pad(tun.Endpoint, epW) + reset + "  " +
-			typeColor + pad(badge, typeW) + reset + "  " +
-			lgreen + rpad(fmt.Sprintf("%d", tun.Connections), conW) + reset + "  " +
-			dim + pad(orDash(tun.ClientIP), ipW) + reset + "  " +
+		line := margin + bold + pad(tun.Endpoint, epW) + reset + sep +
+			typeColor + pad(badge, typeW) + reset + sep +
+			lgreen + rpad(fmt.Sprintf("%d", tun.Connections), conW) + reset + sep +
+			dim + pad(orDash(tun.ClientIP), ipW) + reset + sep +
 			lblue + pad(orDash(tun.ProxyURL), urlW) + reset
 		panelRow(&b, line, w)
 	}

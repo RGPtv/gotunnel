@@ -2,156 +2,160 @@ package tui
 
 import (
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/RGPtv/gotunnel/internal/ipc"
-	"github.com/charmbracelet/bubbles/table"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
-type clientModel struct {
-	ipcClient *ipc.Client
-	state     ipc.ClientState
-	table     table.Model
-	width     int
-	height    int
-	err       error
-}
-
 func RunClientUI(ipcPort int) error {
-	columns := []table.Column{
-		{Title: "METHOD", Width: 8},
-		{Title: "PATH", Width: 40},
-		{Title: "STATUS", Width: 8},
-		{Title: "DURATION", Width: 10},
-	}
-	t := table.New(table.WithColumns(columns), table.WithHeight(10))
-	s := table.DefaultStyles()
-	s.Header = s.Header.BorderStyle(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("240")).BorderBottom(true).Bold(false)
-	s.Selected = s.Selected.Foreground(lipgloss.Color("229")).Background(lipgloss.Color("57")).Bold(false)
-	t.SetStyles(s)
+	ipcClient := ipc.NewClient(ipcPort)
+	quit := make(chan struct{})
 
-	m := clientModel{
-		ipcClient: ipc.NewClient(ipcPort),
-		table:     t,
-	}
+	go func() {
+		readInput(
+			func() { // Ctrl+C
+				ipcClient.Shutdown()
+				close(quit)
+			},
+			func() { // Ctrl+D
+				close(quit)
+			},
+		)
+	}()
 
-	p := tea.NewProgram(m, tea.WithAltScreen())
-	_, err := p.Run()
-	return err
-}
+	altScreen()
+	hideCursor()
+	defer func() {
+		showCursor()
+		mainScreen()
+	}()
 
-func (m clientModel) Init() tea.Cmd {
-	return tickClientCmd()
-}
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
 
-func tickClientCmd() tea.Cmd {
-	return tea.Tick(time.Millisecond*500, func(t time.Time) tea.Msg {
-		return tickMsg(t)
-	})
-}
+	renderClientUI(ipcClient)
 
-func (m clientModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+d":
-			return m, tea.Quit
-		case "ctrl+c":
-			m.ipcClient.Shutdown()
-			return m, tea.Quit
-		case "up", "k":
-			m.table, cmd = m.table.Update(msg)
-			return m, cmd
-		case "down", "j":
-			m.table, cmd = m.table.Update(msg)
-			return m, cmd
+	for {
+		select {
+		case <-quit:
+			return nil
+		case <-ticker.C:
+			renderClientUI(ipcClient)
 		}
-	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-	case tickMsg:
-		state, err := m.ipcClient.GetClientState()
-		if err != nil {
-			m.err = err
-			return m, tea.Quit
-		}
-		m.err = nil
-		m.state = state
-
-		// update table
-		var rows []table.Row
-		for _, req := range state.Requests {
-			color := "42" // green
-			if req.Status >= 500 {
-				color = "196" // red
-			} else if req.Status >= 400 {
-				color = "214" // yellow
-			} else if req.Status >= 300 {
-				color = "86" // cyan
-			}
-			
-			statusStr := lipgloss.NewStyle().Foreground(lipgloss.Color(color)).Render(fmt.Sprintf("%d", req.Status))
-
-			path := req.Path
-			if len(path) > 40 {
-				path = path[:37] + "..."
-			}
-
-			rows = append(rows, table.Row{
-				req.Method,
-				path,
-				statusStr,
-				fmt.Sprintf("%dms", req.Dur),
-			})
-		}
-		m.table.SetRows(rows)
-		
-		return m, tickClientCmd()
 	}
-	return m, nil
 }
 
-func (m clientModel) View() string {
-	if m.err != nil {
-		return errStyle.Render(fmt.Sprintf("\n  Disconnected from client: %v\n", m.err))
+func renderClientUI(ipcClient *ipc.Client) {
+	state, err := ipcClient.GetClientState()
+	w, h := termSize()
+
+	var b strings.Builder
+	b.WriteString(esc + "H")
+
+	if err != nil {
+		b.WriteString(fmt.Sprintf("\n%s  Disconnected from client: %v%s\n", red, err, reset))
+		b.WriteString(esc + "J")
+		fmt.Fprint(os.Stdout, b.String())
+		return
 	}
-	if m.state.Status == "" {
-		return "\n  Connecting to gotunnel client daemon...\n"
+	if state.Status == "" {
+		b.WriteString("\n  Connecting to gotunnel client daemon...\n")
+		b.WriteString(esc + "J")
+		fmt.Fprint(os.Stdout, b.String())
+		return
 	}
 
-	header := lipgloss.JoinHorizontal(lipgloss.Center,
-		titleStyle.Render(" gotunnel client "),
-	)
+	// ── header bar ───────────────────────────────────────────────────────────
+	title := "  GoTunnel Client "
+	header := bold + bgCyan + " " + title + reset
+	header += strings.Repeat(" ", max(0, w-len(title)-3))
+	writeLine(&b, header, w)
+	b.WriteString(dim + hline(w, "─") + reset + "\n")
 
-	statusColor := succStyle
-	if m.state.Status != "online" {
-		statusColor = warnStyle
+	// ── info pane ─────────────────────────────────────────────────────────────
+	statusColor := green
+	if state.Status != "online" {
+		statusColor = yellow
 	}
 
 	forwardingStr := ""
-	if m.state.TunnelType == "tcp" {
-		forwardingStr = fmt.Sprintf("tcp://%s -> %s", m.state.ServerAddr+m.state.RemoteAddr, m.state.TargetAddr)
+	if state.TunnelType == "tcp" {
+		forwardingStr = fmt.Sprintf("tcp://%s -> %s", state.ServerAddr+state.RemoteAddr, state.TargetAddr)
 	} else {
-		if m.state.RemoteAddr != "" {
-			forwardingStr = fmt.Sprintf("https://%s.%s -> %s", m.state.RemoteAddr, m.state.ServerAddr, m.state.TargetAddr)
+		if state.RemoteAddr != "" {
+			forwardingStr = fmt.Sprintf("https://%s.%s -> %s", state.RemoteAddr, state.ServerAddr, state.TargetAddr)
 		} else {
-			forwardingStr = fmt.Sprintf("https://%s -> %s", m.state.ServerAddr, m.state.TargetAddr)
+			forwardingStr = fmt.Sprintf("https://%s -> %s", state.ServerAddr, state.TargetAddr)
 		}
 	}
 
-	info := fmt.Sprintf(`Status          : %s
-Forwarding      : %s
-Active Workers  : %d`,
-		statusColor.Render(m.state.Status),
-		infoStyle.Render(forwardingStr),
-		m.state.Workers,
-	)
+	row1 := "  Status     : " + statusColor + state.Status + reset
+	row2 := "  Forwarding : " + cyan + forwardingStr + reset
+	row3 := fmt.Sprintf("  Workers    : %s%d%s", cyan, state.Workers, reset)
 
-	tableView := baseStyle.Render(m.table.View())
-	help := dimStyle.Render("  ↑/↓: scroll table • ctrl+d: detach • ctrl+c: stop client")
+	writeLine(&b, row1, w)
+	writeLine(&b, row2, w)
+	writeLine(&b, row3, w)
 
-	return fmt.Sprintf("\n%s\n\n%s\n\n  HTTP Requests\n%s\n\n%s", header, info, tableView, help)
+	b.WriteString(dim + hline(w, "─") + reset + "\n")
+
+	// ── requests pane ─────────────────────────────────────────────────────────
+	writeLine(&b, dim+"  HTTP Requests"+reset, w)
+
+	reqsH := h - 9 - 2
+	if reqsH < 3 {
+		reqsH = 3
+	}
+
+	th := bold + dim +
+		" " + pad("METHOD", 8) +
+		pad("PATH", 40) +
+		pad("STATUS", 8) +
+		pad("DURATION", 10) +
+		reset
+	writeLine(&b, th, w)
+	b.WriteString(dim + hline(w, "·") + reset + "\n")
+
+	shown := state.Requests
+	if len(shown) > reqsH-2 {
+		shown = shown[len(shown)-(reqsH-2):]
+	}
+
+	for _, req := range shown {
+		color := green
+		if req.Status >= 500 {
+			color = red
+		} else if req.Status >= 400 {
+			color = yellow
+		} else if req.Status >= 300 {
+			color = cyan
+		}
+
+		path := req.Path
+		if len(path) > 37 {
+			path = path[:34] + "..."
+		}
+
+		line := " " +
+			pad(req.Method, 8) +
+			pad(path, 40) +
+			color + pad(fmt.Sprintf("%d", req.Status), 8) + reset +
+			cyan + pad(fmt.Sprintf("%dms", req.Dur), 10) + reset
+
+		writeLine(&b, line, w)
+	}
+
+	for i := len(shown); i < reqsH-2; i++ {
+		writeLine(&b, "", w)
+	}
+
+	b.WriteString(dim + hline(w, "─") + reset + "\n")
+
+	// ── help bar ──────────────────────────────────────────────────────────────
+	writeLine(&b, dim+"  ctrl+d: detach • ctrl+c: stop client"+reset, w)
+
+	b.WriteString(esc + "J")
+	fmt.Fprint(os.Stdout, b.String())
 }

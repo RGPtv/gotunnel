@@ -2,192 +2,224 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/RGPtv/gotunnel/internal/ipc"
-	"github.com/charmbracelet/bubbles/table"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
-
-var (
-	baseStyle = lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("240"))
-	titleStyle = lipgloss.NewStyle().Background(lipgloss.Color("62")).Foreground(lipgloss.Color("230")).Padding(0, 1).Bold(true)
-	infoStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
-	warnStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
-	errStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
-	succStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
-	dimStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-)
-
-type serverModel struct {
-	ipcClient *ipc.Client
-	state     ipc.ServerState
-	table     table.Model
-	viewport  viewport.Model
-	width     int
-	height    int
-	err       error
-}
 
 func RunServerUI(ipcPort int) error {
-	columns := []table.Column{
-		{Title: "ENDPOINT", Width: 25},
-		{Title: "TYPE", Width: 6},
-		{Title: "CONNS", Width: 8},
-		{Title: "CLIENT IP", Width: 20},
-		{Title: "PROXY URL", Width: 30},
+	ipcClient := ipc.NewClient(ipcPort)
+	quit := make(chan struct{})
+
+	// Start reading input in a separate goroutine
+	go func() {
+		readInput(
+			func() { // Ctrl+C
+				ipcClient.Shutdown()
+				close(quit)
+			},
+			func() { // Ctrl+D
+				close(quit)
+			},
+		)
+	}()
+
+	altScreen()
+	hideCursor()
+	defer func() {
+		showCursor()
+		mainScreen()
+	}()
+
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	// Initial render
+	renderServerUI(ipcClient)
+
+	for {
+		select {
+		case <-quit:
+			return nil
+		case <-ticker.C:
+			renderServerUI(ipcClient)
+		}
 	}
-	t := table.New(table.WithColumns(columns), table.WithHeight(10))
-	s := table.DefaultStyles()
-	s.Header = s.Header.BorderStyle(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("240")).BorderBottom(true).Bold(false)
-	s.Selected = s.Selected.Foreground(lipgloss.Color("229")).Background(lipgloss.Color("57")).Bold(false)
-	t.SetStyles(s)
-
-	vp := viewport.New(100, 10)
-
-	m := serverModel{
-		ipcClient: ipc.NewClient(ipcPort),
-		table:     t,
-		viewport:  vp,
-	}
-
-	p := tea.NewProgram(m, tea.WithAltScreen())
-	_, err := p.Run()
-	return err
 }
 
-func (m serverModel) Init() tea.Cmd {
-	return tickCmd()
-}
-
-type tickMsg time.Time
-
-func tickCmd() tea.Cmd {
-	return tea.Tick(time.Millisecond*500, func(t time.Time) tea.Msg {
-		return tickMsg(t)
-	})
-}
-
-func (m serverModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+d":
-			return m, tea.Quit
-		case "ctrl+c":
-			m.ipcClient.Shutdown()
-			return m, tea.Quit
-		case "up", "k":
-			m.table, cmd = m.table.Update(msg)
-			return m, cmd
-		case "down", "j":
-			m.table, cmd = m.table.Update(msg)
-			return m, cmd
-		}
-	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-		m.viewport.Width = msg.Width - 4
-		m.viewport.Height = 10
-	case tickMsg:
-		state, err := m.ipcClient.GetServerState()
-		if err != nil {
-			m.err = err
-			// If daemon exits, we exit after a moment
-			return m, tea.Quit
-		}
-		m.err = nil
-		m.state = state
-
-		// update table
-		var rows []table.Row
-		for _, tun := range state.Tunnels {
-			rows = append(rows, table.Row{
-				tun.Endpoint,
-				tun.Type,
-				fmt.Sprintf("%d", tun.Connections),
-				tun.ClientIP,
-				tun.ProxyURL,
-			})
-		}
-		m.table.SetRows(rows)
-
-		// update viewport (logs)
-		var logLines []string
-		for _, l := range state.Logs {
-			ts := l.Time.Format("15:04:05")
-			msg := l.Message
-			// Apply basic colors based on level
-			var prefix string
-			switch l.Level {
-			case 0: // info
-				prefix = dimStyle.Render(ts) + infoStyle.Render(" · ")
-			case 1: // warn
-				prefix = dimStyle.Render(ts) + warnStyle.Render(" ! ")
-			case 2: // error
-				prefix = dimStyle.Render(ts) + errStyle.Render(" ✗ ")
-			case 3: // success
-				prefix = dimStyle.Render(ts) + succStyle.Render(" ✓ ")
-			}
-			logLines = append(logLines, prefix+msg)
-		}
-		m.viewport.SetContent(strings.Join(logLines, "\n"))
-		m.viewport.GotoBottom()
-		
-		return m, tickCmd()
-	}
-	return m, nil
-}
-
-func (m serverModel) View() string {
-	if m.err != nil {
-		return errStyle.Render(fmt.Sprintf("\n  Disconnected from server: %v\n", m.err))
-	}
-	if m.state.Token == "" {
-		return "\n  Connecting to gotunnel server...\n"
-	}
-
-	uptimeStr := (time.Duration(m.state.Uptime) * time.Second).String()
+func renderServerUI(ipcClient *ipc.Client) {
+	state, err := ipcClient.GetServerState()
+	w, h := termSize()
 	
-	header := lipgloss.JoinHorizontal(lipgloss.Center,
-		titleStyle.Render(" gotunnel server "),
-		"  ",
-		dimStyle.Render("uptime "+uptimeStr),
-	)
+	var b strings.Builder
+	b.WriteString(esc + "H") // cursor home
+
+	if err != nil {
+		b.WriteString(fmt.Sprintf("\n%s  Disconnected from server: %v%s\n", red, err, reset))
+		b.WriteString(esc + "J")
+		fmt.Fprint(os.Stdout, b.String())
+		return
+	}
+	if state.Token == "" {
+		b.WriteString("\n  Connecting to gotunnel server daemon...\n")
+		b.WriteString(esc + "J")
+		fmt.Fprint(os.Stdout, b.String())
+		return
+	}
+
+	// ── header bar ───────────────────────────────────────────────────────────
+	title := "  GoTunnel Server "
+	uptime := fmt.Sprintf("  uptime %s  ", fmtDuration(time.Duration(state.Uptime)*time.Second))
+	header := bold + bgCyan + " " + title + reset
+	header += strings.Repeat(" ", max(0, w-len(title)-len(uptime)-2))
+	header += dim + uptime + reset
+	writeLine(&b, header, w)
+	b.WriteString(dim + hline(w, "─") + reset + "\n")
+
+	// ── info pane ─────────────────────────────────────────────────────────────
+	col := w / 2
 
 	inspectUrl := "—"
-	if m.state.InspectAddr != "" {
-		inspectUrl = "http://" + m.state.InspectAddr
+	if state.InspectAddr != "" {
+		inspectUrl = "http://" + state.InspectAddr
 	}
 
-	info := fmt.Sprintf(`HTTP Proxy : %s
-HTTPS Proxy: %s
-Tunnel Port: %s
-Token      : %s
+	row1 := infoCell("HTTP  ", state.HTTPAddr, col) + infoCell("Tunnel", state.TunAddr, w-col)
+	row2 := infoCell("HTTPS ", state.HTTPSAddr, col) + infoCell("Dashb.", inspectUrl, w-col)
+	row3 := infoCell("Token ", maskSecret(state.Token), col) + infoCell("Login ", state.DashUser+"/"+maskSecret(state.DashPass), w-col)
+	row4 := infoCell("Conns ", fmt.Sprintf("%d", state.ActiveConns), col) + infoCell("Reqs  ", fmt.Sprintf("%d", state.TotalReqs), w-col)
 
-Dashboard  : %s
-Login      : %s / %s
+	writeLine(&b, row1, w)
+	writeLine(&b, row2, w)
+	writeLine(&b, row3, w)
+	writeLine(&b, row4, w)
 
-Active Conns: %d
-Total Reqs  : %d`,
-		infoStyle.Render(m.state.HTTPAddr),
-		infoStyle.Render(m.state.HTTPSAddr),
-		infoStyle.Render(m.state.TunAddr),
-		m.state.Token,
-		infoStyle.Render(inspectUrl),
-		m.state.DashUser, m.state.DashPass,
-		m.state.ActiveConns,
-		m.state.TotalReqs,
-	)
+	b.WriteString(dim + hline(w, "─") + reset + "\n")
 
-	tableView := baseStyle.Render(m.table.View())
-	logView := baseStyle.Render(m.viewport.View())
+	// ── tunnels pane ─────────────────────────────────────────────────────────
+	tunnelHeaderH := 8
+	logLines := 10
+	separators := 3
 
-	help := dimStyle.Render("  ↑/↓: scroll table • ctrl+d: detach • ctrl+c: stop server")
+	tunnelH := h - tunnelHeaderH - logLines - separators
+	if tunnelH < 3 {
+		tunnelH = 3
+	}
 
-	return fmt.Sprintf("\n%s\n\n%s\n\n%s\n\n%s\n\n%s", header, info, tableView, logView, help)
+	th := bold + dim +
+		" " + pad("ENDPOINT", 28) +
+		pad("TYPE", 6) +
+		rpad("CONNS", 7) + "  " +
+		pad("CLIENT IP", 22) +
+		pad("PROXY URL", w-28-6-7-2-22-1) +
+		reset
+	writeLine(&b, th, w)
+	b.WriteString(dim + hline(w, "·") + reset + "\n")
+
+	shown := state.Tunnels
+	if len(shown) > tunnelH-2 {
+		shown = shown[:tunnelH-2]
+	}
+	for _, tun := range shown {
+		typeColor := cyan
+		if tun.Type == "tcp" {
+			typeColor = magenta
+		}
+		line := " " +
+			bold + pad(tun.Endpoint, 28) + reset +
+			typeColor + pad(tun.Type, 6) + reset +
+			green + rpad(fmt.Sprintf("%d", tun.Connections), 7) + reset + "  " +
+			dim + pad(orDash(tun.ClientIP), 22) + reset +
+			dim + pad(orDash(tun.ProxyURL), w-28-6-7-2-22-1) + reset
+		writeLine(&b, line, w)
+	}
+	for i := len(shown); i < tunnelH-2; i++ {
+		writeLine(&b, "", w)
+	}
+
+	b.WriteString(dim + hline(w, "─") + reset + "\n")
+
+	// ── log pane ─────────────────────────────────────────────────────────────
+	writeLine(&b, dim+" event log"+reset, w)
+
+	last := state.Logs
+	if len(last) > logLines-1 {
+		last = last[len(last)-(logLines-1):]
+	}
+	for _, e := range last {
+		col, sym := logStyle(e.Level)
+		ts := e.Time.Format("15:04:05")
+		line := fmt.Sprintf(" %s%s%s %s%s%s %s",
+			dim, ts, reset,
+			col, sym, reset,
+			e.Message)
+		writeLine(&b, line, w)
+	}
+	for i := len(last); i < logLines-1; i++ {
+		writeLine(&b, "", w)
+	}
+
+	// ── help bar ──────────────────────────────────────────────────────────────
+	writeLine(&b, dim+"  ctrl+d: detach • ctrl+c: stop server"+reset, w)
+
+	b.WriteString(esc + "J") // clear to end
+	fmt.Fprint(os.Stdout, b.String())
+}
+
+// Helpers
+
+func infoCell(label, value string, width int) string {
+	if value == "" {
+		value = "—"
+	}
+	lbl := dim + " " + label + " " + reset
+	val := cyan + value + reset
+	visLen := 1 + len(label) + 1 + len(value)
+	padLen := width - visLen - 1
+	if padLen < 0 { padLen = 0 }
+	return lbl + val + strings.Repeat(" ", padLen)
+}
+
+func logStyle(level int) (color, sym string) {
+	switch level {
+	case 0: return cyan, "·"
+	case 1: return yellow, "!"
+	case 2: return red, "✗"
+	case 3: return green, "✓"
+	default: return dim, "·"
+	}
+}
+
+func fmtDuration(d time.Duration) string {
+	d = d.Round(time.Second)
+	h := int(d.Hours())
+	m := int(d.Minutes()) % 60
+	s := int(d.Seconds()) % 60
+	if h > 0 {
+		return fmt.Sprintf("%dh%02dm%02ds", h, m, s)
+	}
+	return fmt.Sprintf("%dm%02ds", m, s)
+}
+
+func maskSecret(s string) string {
+	if len(s) <= 8 {
+		return "••••••••"
+	}
+	return s[:6] + "••••••"
+}
+
+func orDash(s string) string {
+	if s == "" {
+		return "—"
+	}
+	return s
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }

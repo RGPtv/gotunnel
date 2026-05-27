@@ -74,7 +74,7 @@ func drawServerFrame(ipcClient *ipc.Client) {
 	statsLine := statsBadge("CONNS", fmt.Sprintf("%d", state.ActiveConns), lgreen) +
 		statsBadge("REQUESTS", fmt.Sprintf("%d", state.TotalReqs), lblue) +
 		statsBadge("UPTIME", uptime, lteal)
-	statsVis := len([]rune(stripANSI(statsLine)))
+	statsVis := len([]rune(strings.TrimRight(stripANSI(statsLine), " ")))
 	padLen := (w - statsVis) / 2
 	if padLen < 0 {
 		padLen = 0

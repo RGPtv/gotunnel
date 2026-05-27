@@ -135,7 +135,7 @@ func renderHeader(b *strings.Builder, w int, title, right, badge string) {
 
 	// Right side: subtitle
 	rightPlain := "  " + right + "  "
-	rightColored := bgTeal + grey + "  " + right + "  " + reset
+	rightColored := bgTeal + grey + "  " + right + "  "
 
 	// Badge: " SERVER "
 	badgePlain := " " + badge + " "
@@ -146,7 +146,7 @@ func renderHeader(b *strings.Builder, w int, title, right, badge string) {
 		padding = 0
 	}
 
-	line := leftColored + bgTeal + strings.Repeat(" ", padding) + reset + rightColored + badgeColored
+	line := leftColored + bgTeal + strings.Repeat(" ", padding) + rightColored + badgeColored
 	writeLine(b, line, w)
 }
 
@@ -171,7 +171,7 @@ func renderFooter(b *strings.Builder, w int, leftHint, rightHint string) {
 
 func panelTop(b *strings.Builder, title string, w int) {
 	titleVis := len([]rune(stripANSI(title)))
-	dashCount := w - 8 - titleVis
+	dashCount := w - 10 - titleVis
 	if dashCount < 0 {
 		dashCount = 0
 	}

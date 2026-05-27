@@ -89,7 +89,7 @@ func drawClientFrame(ipcClient *ipc.Client) {
 		statsBadge("TYPE", typeLabel, typeColor) +
 		statsBadge("WORKERS", fmt.Sprintf("%d", state.Workers), lteal)
 
-	statsVis := len([]rune(stripANSI(statsLine)))
+	statsVis := len([]rune(strings.TrimRight(stripANSI(statsLine), " ")))
 	padLen := (w - statsVis) / 2
 	if padLen < 0 {
 		padLen = 0

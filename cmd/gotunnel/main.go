@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"syscall"
 	"time"
 
 	"github.com/RGPtv/gotunnel/internal/ipc"
@@ -103,7 +102,7 @@ func main() {
 	if !ipcClient.Ping() {
 		// Start daemon
 		cmd := exec.Command(os.Args[0], "-daemon")
-		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		setDaemonAttr(cmd)
 		err := cmd.Start()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "failed to start daemon: %v\n", err)

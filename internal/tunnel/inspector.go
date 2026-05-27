@@ -46,7 +46,7 @@ type TunnelEntry struct {
 	Type        string `json:"type"`
 	Endpoint    string `json:"endpoint"`
 	Connections int    `json:"connections"`
-	APIKey      string `json:"apikey"`
+	HasAPIKey   bool   `json:"has_apikey"`
 	ProxyURL    string `json:"proxy_url"`
 	ClientIP    string `json:"client_ip"`
 }
@@ -247,6 +247,8 @@ func (ins *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		})
 	case "/api/token":
 		ins.handleToken(w, r)
+	case "/api/tunnels/apikey":
+		ins.handleTunnelAPIKey(w, r)
 	case "/api/tunnels":
 		ins.handleTunnels(w, r)
 	case "/api/requests/stream":
@@ -322,7 +324,7 @@ func (ins *Inspector) handleLogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/login", http.StatusFound)
 }
 
-// buildTunnelList returns a snapshot of all active tunnels.
+// buildTunnelList returns a snapshot of all active tunnels (without API keys).
 // Callers must NOT hold srv.mu or srv.tunnelMetaMu.
 func (ins *Inspector) buildTunnelList() []TunnelEntry {
 	tunnels := []TunnelEntry{}
@@ -340,7 +342,7 @@ func (ins *Inspector) buildTunnelList() []TunnelEntry {
 			Type:        "http",
 			Endpoint:    "(default)",
 			Connections: dc,
-			APIKey:      meta.APIKey,
+			HasAPIKey:   meta.APIKey != "",
 			ProxyURL:    meta.ProxyURL,
 			ClientIP:    meta.ClientIP,
 		})
@@ -351,7 +353,7 @@ func (ins *Inspector) buildTunnelList() []TunnelEntry {
 			Type:        "http",
 			Endpoint:    sub,
 			Connections: len(pool),
-			APIKey:      meta.APIKey,
+			HasAPIKey:   meta.APIKey != "",
 			ProxyURL:    meta.ProxyURL,
 			ClientIP:    meta.ClientIP,
 		})
@@ -362,12 +364,40 @@ func (ins *Inspector) buildTunnelList() []TunnelEntry {
 			Type:        "tcp",
 			Endpoint:    port,
 			Connections: len(pool),
-			APIKey:      meta.APIKey,
+			HasAPIKey:   meta.APIKey != "",
 			ProxyURL:    meta.ProxyURL,
 			ClientIP:    meta.ClientIP,
 		})
 	}
 	return tunnels
+}
+
+// handleTunnelAPIKey returns the API key for a specific tunnel endpoint
+// on an explicit authenticated GET request. Never broadcast in SSE or tunnel lists.
+func (ins *Inspector) handleTunnelAPIKey(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	endpoint := r.URL.Query().Get("endpoint")
+	if endpoint == "" {
+		http.Error(w, "missing endpoint parameter", http.StatusBadRequest)
+		return
+	}
+	if ins.srv == nil {
+		http.Error(w, "server unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	ins.srv.tunnelMetaMu.RLock()
+	meta, ok := ins.srv.tunnelMeta[endpoint]
+	ins.srv.tunnelMetaMu.RUnlock()
+	if !ok {
+		http.Error(w, "tunnel not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	json.NewEncoder(w).Encode(map[string]string{"apikey": meta.APIKey})
 }
 
 // handleToken returns the server token on an explicit authenticated GET request.

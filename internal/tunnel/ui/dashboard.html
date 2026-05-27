@@ -178,7 +178,7 @@ nav {
   display: flex; align-items: center; gap: 6px; font-size: 12px;
   font-family: 'Geist Mono', monospace; color: var(--text-2);
   background: var(--surface-2); border: 1px solid var(--border);
-  padding: 5px 12px; border-radius: 99px; cursor: pointer; transition: all .15s;
+  padding: 5px 10px; border-radius: 99px; transition: all .15s;
 }
 #nav-token-val {
   display: inline-block;
@@ -188,13 +188,18 @@ nav {
   white-space: nowrap;
   vertical-align: bottom;
   transition: max-width 0.3s ease;
+  letter-spacing: 0.04em;
 }
-.token-chip:hover #nav-token-val {
-  max-width: 400px;
-  color: var(--text);
-}
+#nav-token-val.masked { letter-spacing: 0.12em; }
+.token-chip:hover #nav-token-val { max-width: 320px; color: var(--text); }
 .token-chip:hover { border-color: var(--border-2); color: var(--text); }
 .token-chip.ok { color: var(--green); border-color: rgba(34,197,94,.4); background: rgba(34,197,94,.1); }
+.chip-btn {
+  background: none; border: none; cursor: pointer; padding: 0 2px;
+  color: var(--text-2); font-size: 13px; line-height: 1;
+  opacity: 0.6; transition: opacity .15s;
+}
+.chip-btn:hover { opacity: 1; }
 
 
 .live-badge {
@@ -716,8 +721,10 @@ nav {
   </div>
 
   <div class="nav-right">
-    <div class="token-chip" id="nav-token-chip" onclick="tokenCopy()" title="Copy Token">
-      Token: <span id="nav-token-val">••••••••</span>
+    <div class="token-chip" id="nav-token-chip" title="Token">
+      Token: <span id="nav-token-val" class="masked">••••••••</span>
+      <button class="chip-btn" id="token-reveal-btn" onclick="tokenReveal()" title="Reveal">👁</button>
+      <button class="chip-btn" id="token-copy-btn"   onclick="tokenCopy()"   title="Copy">⎘</button>
     </div>
   </div>
 </nav>
@@ -853,8 +860,6 @@ let activeTunnel = null;
 let currentTab = 'overview';
 let allReqs    = [];
 let tunnelsMap = {};
-let rawApiKey  = '';
-let apiRevealed = false;
 let totalEver  = 0;
 
 // ── DOM refs ───────────────────────────────────
@@ -881,6 +886,7 @@ function switchTab(tab) {
 }
 
 function selectTunnel(ep) {
+  _maskApiKey(); // re-mask key from previous tunnel before switching
   activeTunnel = ep;
   document.querySelectorAll('.tunnel-entry').forEach(el => {
     el.classList.toggle('active', el.dataset.ep === ep);
@@ -911,17 +917,14 @@ function renderTunnelOverview() {
   $tunConns.textContent = t.connections;
   document.getElementById('tun-clientip').textContent = (t.client_ip || '—').replace(/(:\d+)$/, '').replace(/^\[|\]$/g, '');
   
-  if (t.apikey) {
+  if (t.has_apikey) {
     document.getElementById('apikey-section').style.display = 'block';
-    rawApiKey = t.apikey;
-    if (apiRevealed) {
-      $apiVal.textContent = rawApiKey;
-    } else {
-      $apiVal.textContent = '••••••••••••••••••••••••••••••••';
-    }
+    // Never cache the key in JS — fetch on demand only
+    $apiVal.textContent = '••••••••••••••••••••••••••••••••';
+    $apiVal.classList.add('masked');
+    document.getElementById('api-reveal').title = 'Reveal';
   } else {
     document.getElementById('apikey-section').style.display = 'none';
-    rawApiKey = '';
   }
 }
 
@@ -959,92 +962,161 @@ function hdrsHtml(h) {
 }
 
 // ── Token ──────────────────────────────────────
-// The token is never stored in a JS variable. It is fetched from /api/token
-// only when the user explicitly clicks "Copy Token", used once for the
-// clipboard write, then discarded. This prevents passive XSS beacons from
-// silently reading a persistent rawToken global.
-function tokenCopy() {
-  const chip = document.getElementById('nav-token-chip');
-  if (chip) chip.title = 'Fetching…';
+// The token is NEVER stored in a JS variable at module scope.
+// • tokenReveal() fetches /api/token, shows it for 30 s then re-masks.
+// • tokenCopy()   fetches /api/token, writes to clipboard, token then goes
+//   out of scope — nothing persists in memory between clicks.
+// CSP connect-src 'self' means even if injected JS calls /api/token, it
+// cannot send the result anywhere external.
+
+let _tokenHideTimer = null;
+
+function tokenReveal() {
+  const val = document.getElementById('nav-token-val');
+  const btn = document.getElementById('token-reveal-btn');
+
+  // If already revealed, re-mask immediately
+  if (!val.classList.contains('masked')) {
+    _maskToken();
+    return;
+  }
 
   fetch('/api/token')
-    .then(r => { if (!r.ok) throw new Error('fetch failed'); return r.json(); })
+    .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+    .then(data => {
+      if (!data.token) return;
+      val.textContent = data.token;
+      val.classList.remove('masked');
+      btn.title = 'Hide';
+
+      // Auto-hide after 30 s
+      clearTimeout(_tokenHideTimer);
+      _tokenHideTimer = setTimeout(_maskToken, 30000);
+    })
+    .catch(() => {});
+}
+
+function _maskToken() {
+  const val = document.getElementById('nav-token-val');
+  const btn = document.getElementById('token-reveal-btn');
+  if (!val) return;
+  val.textContent = '••••••••';
+  val.classList.add('masked');
+  if (btn) btn.title = 'Reveal';
+  clearTimeout(_tokenHideTimer);
+}
+
+function tokenCopy() {
+  const chip = document.getElementById('nav-token-chip');
+
+  fetch('/api/token')
+    .then(r => { if (!r.ok) throw new Error(); return r.json(); })
     .then(data => {
       const tok = data.token;
       if (!tok) return;
-      const finishCopy = () => {
-        if (chip) {
-          chip.classList.add('ok');
-          chip.title = 'Copied!';
-          setTimeout(() => { chip.classList.remove('ok'); chip.title = 'Copy Token'; }, 1800);
-        }
+      const done = () => {
+        chip.classList.add('ok');
+        setTimeout(() => chip.classList.remove('ok'), 1800);
       };
       if (navigator.clipboard && window.isSecureContext) {
-        navigator.clipboard.writeText(tok).then(finishCopy).catch(() => fallbackCopy(tok, finishCopy));
+        navigator.clipboard.writeText(tok).then(done).catch(() => _fallbackCopy(tok, done));
       } else {
-        fallbackCopy(tok, finishCopy);
+        _fallbackCopy(tok, done);
       }
+      // tok goes out of scope here — never stored globally
     })
-    .catch(() => { if (chip) chip.title = 'Copy Token'; });
+    .catch(() => {});
+}
 
-  function fallbackCopy(tok, finishCopy) {
-    const ta = document.createElement('textarea');
-    ta.value = tok;
-    ta.setAttribute('readonly', '');
-    ta.style.cssText = 'position:absolute;left:-9999px';
-    document.body.appendChild(ta);
-    ta.select();
-    try { document.execCommand('copy'); finishCopy(); } catch (e) { console.error('Copy failed', e); }
-    document.body.removeChild(ta);
-  }
+function _fallbackCopy(tok, cb) {
+  const ta = document.createElement('textarea');
+  ta.value = tok;
+  ta.setAttribute('readonly', '');
+  ta.style.cssText = 'position:absolute;left:-9999px';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); cb(); } catch(e) {}
+  document.body.removeChild(ta);
+  // tok goes out of scope
+}
+
+// ── API Key ─────────────────────────────────────
+// Same security model as the server token:
+// - Never stored in a JS global variable
+// - Fetched from /api/tunnels/apikey?endpoint=X only on explicit user action
+// - Auto-hides after 30 s when revealed
+// - CSP connect-src 'self' blocks exfiltration even if injected JS calls the endpoint
+
+let _apikeyHideTimer = null;
+
+function _apikeyEndpoint() {
+  return encodeURIComponent(activeTunnel || '(default)');
 }
 
 function apiReveal() {
-  apiRevealed = !apiRevealed;
-  const btn = document.getElementById('api-reveal');
-  if (apiRevealed) {
-    $apiVal.textContent = rawApiKey || '(not loaded)';
-    $apiVal.classList.remove('masked');
-    btn.title = 'Hide';
-  } else {
-    $apiVal.textContent = '••••••••••••••••••••••••••••••••';
-    $apiVal.classList.add('masked');
-    btn.title = 'Reveal';
+  const val  = document.getElementById('api-val');
+  const btn  = document.getElementById('api-reveal');
+
+  // Already revealed → re-mask immediately
+  if (!val.classList.contains('masked')) {
+    _maskApiKey();
+    return;
   }
+
+  fetch('/api/tunnels/apikey?endpoint=' + _apikeyEndpoint())
+    .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+    .then(data => {
+      if (!data.apikey) return;
+      val.textContent = data.apikey;
+      val.classList.remove('masked');
+      if (btn) btn.title = 'Hide';
+
+      clearTimeout(_apikeyHideTimer);
+      _apikeyHideTimer = setTimeout(_maskApiKey, 30000);
+    })
+    .catch(() => {});
 }
+
+function _maskApiKey() {
+  const val = document.getElementById('api-val');
+  const btn = document.getElementById('api-reveal');
+  if (!val) return;
+  val.textContent = '••••••••••••••••••••••••••••••••';
+  val.classList.add('masked');
+  if (btn) btn.title = 'Reveal';
+  clearTimeout(_apikeyHideTimer);
+}
+
 function apiCopy() {
-  if (!rawApiKey) return;
-  
-  const finishCopy = () => {
-    const btn = document.getElementById('api-copy');
-    if (btn) {
-      btn.classList.add('ok');
-      setTimeout(() => btn.classList.remove('ok'), 1800);
-    }
-  };
+  fetch('/api/tunnels/apikey?endpoint=' + _apikeyEndpoint())
+    .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+    .then(data => {
+      const key = data.apikey;
+      if (!key) return;
+      const done = () => {
+        const btn = document.getElementById('api-copy');
+        if (btn) { btn.classList.add('ok'); setTimeout(() => btn.classList.remove('ok'), 1800); }
+      };
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(key).then(done).catch(() => _apikeyFallbackCopy(key, done));
+      } else {
+        _apikeyFallbackCopy(key, done);
+      }
+      // key goes out of scope here
+    })
+    .catch(() => {});
+}
 
-  if (navigator.clipboard && window.isSecureContext) {
-    navigator.clipboard.writeText(rawApiKey).then(finishCopy).catch(() => fallbackCopy());
-  } else {
-    fallbackCopy();
-  }
-
-  function fallbackCopy() {
-    const ta = document.createElement('textarea');
-    ta.value = rawApiKey;
-    ta.setAttribute('readonly', '');
-    ta.style.position = 'absolute';
-    ta.style.left = '-9999px';
-    document.body.appendChild(ta);
-    ta.select();
-    try {
-      document.execCommand('copy');
-      finishCopy();
-    } catch (e) {
-      console.error('Copy failed', e);
-    }
-    document.body.removeChild(ta);
-  }
+function _apikeyFallbackCopy(key, cb) {
+  const ta = document.createElement('textarea');
+  ta.value = key;
+  ta.setAttribute('readonly', '');
+  ta.style.cssText = 'position:absolute;left:-9999px';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); cb(); } catch(e) {}
+  document.body.removeChild(ta);
+  // key goes out of scope
 }
 
 // ── Request rendering ──────────────────────────

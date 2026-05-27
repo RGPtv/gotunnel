@@ -75,7 +75,7 @@ func pad(s string, n int) string {
 	return s + strings.Repeat(" ", n-len(r))
 }
 
-// rpad right-pads (left-aligns number) in n columns.
+// rpad right-aligns s in n columns.
 func rpad(s string, n int) string {
 	r := []rune(s)
 	if len(r) >= n {
@@ -94,9 +94,16 @@ func writeLine(b *strings.Builder, s string, _ int) {
 	b.WriteString("\x1b[0K\n")
 }
 
-// flush writes the entire buffer to stdout in a single syscall to minimise tearing.
+// flush writes the entire buffer to stdout in a single atomic write.
+// It wraps the content in DEC Synchronized Output escape sequences
+// (\x1b[?2026h / \x1b[?2026l) so the terminal renders the full frame
+// at once — eliminating flicker on Windows Terminal, xterm, iTerm2, etc.
+// Terminals that don't recognise the sequence silently ignore it.
 func flush(b *strings.Builder) {
-	os.Stdout.WriteString(b.String())
+	const syncBegin = "\x1b[?2026h"
+	const syncEnd   = "\x1b[?2026l"
+	payload := syncBegin + b.String() + syncEnd
+	os.Stdout.Write([]byte(payload))
 	b.Reset()
 }
 
@@ -126,18 +133,14 @@ func readInput(onCtrlC func(), onCtrlD func()) {
 
 // ── Shared widgets ────────────────────────────────────────────────────────────
 
-// renderHeader draws a full-width header bar that uses ONLY plain spaces for
-// padding (no ANSI in the pad region) so the visual width is always exact.
+// renderHeader draws a full-width header bar.
 func renderHeader(b *strings.Builder, w int, title, right, badge string) {
-	// Left side: "  ◈  GoTunnel Server"  — visible chars only
 	leftPlain := "  ◈  " + title + "  "
 	leftColored := bgTeal + white + bold + "  ◈  " + reset + bgTeal + white + bold + title + reset + bgTeal + white + "  "
 
-	// Right side: subtitle
 	rightPlain := "  " + right + "  "
 	rightColored := bgTeal + grey + "  " + right + "  "
 
-	// Badge: " SERVER "
 	badgePlain := " " + badge + " "
 	badgeColored := bgLblue + "\x1b[38;5;17m" + bold + " " + badge + " " + reset
 
@@ -184,8 +187,8 @@ func panelTop(b *strings.Builder, title string, w int) {
 
 func panelBottom(b *strings.Builder, w int) {
 	dashCount := w - 4
-	if dashCount < 0 {
-		dashCount = 0
+	if dashCount < 2 {
+		dashCount = 2
 	}
 	line := "  " + dim + "╰" + strings.Repeat("─", dashCount-2) + "╯" + reset + "  "
 	writeLine(b, line, w)
@@ -193,16 +196,22 @@ func panelBottom(b *strings.Builder, w int) {
 
 func panelSep(b *strings.Builder, w int) {
 	dashCount := w - 4
-	if dashCount < 0 {
-		dashCount = 0
+	if dashCount < 2 {
+		dashCount = 2
 	}
 	line := "  " + dim + "├" + strings.Repeat("─", dashCount-2) + "┤" + reset + "  "
 	writeLine(b, line, w)
 }
 
+// panelRow writes one content row inside a box. It measures the visible
+// width of `content` after stripping ANSI and right-pads to fill the box.
 func panelRow(b *strings.Builder, content string, w int) {
+	innerW := w - 8 // "  │ " (4) + " │  " (4)
+	if innerW < 0 {
+		innerW = 0
+	}
 	vis := len([]rune(stripANSI(content)))
-	padLen := (w - 8) - vis
+	padLen := innerW - vis
 	if padLen < 0 {
 		padLen = 0
 	}
@@ -212,10 +221,14 @@ func panelRow(b *strings.Builder, content string, w int) {
 
 // renderSplash renders a centered message on an empty screen.
 func renderSplash(b *strings.Builder, w, h int, msg string) {
-	for i := 0; i < h/2-1; i++ {
+	rows := h/2 - 1
+	if rows < 0 {
+		rows = 0
+	}
+	for i := 0; i < rows; i++ {
 		writeLine(b, "", w)
 	}
-	vis := len([]rune(stripANSI(msg))) 
+	vis := len([]rune(stripANSI(msg)))
 	padding := (w - vis) / 2
 	if padding < 0 {
 		padding = 0
@@ -224,13 +237,27 @@ func renderSplash(b *strings.Builder, w, h int, msg string) {
 }
 
 // cfgCell renders a label+value info cell padded to `width` visible chars.
+// Long values are truncated with an ellipsis so the box never overflows.
 func cfgCell(label, value string, width int) string {
 	if value == "" || value == "/" {
 		value = "—"
 	}
+	labelVis := len([]rune(label))
+	// +2 for the leading " " separator between label and value
+	maxValVis := width - labelVis - 1
+	if maxValVis < 1 {
+		maxValVis = 1
+	}
+	valRunes := []rune(value)
+	if len(valRunes) > maxValVis {
+		if maxValVis > 1 {
+			value = string(valRunes[:maxValVis-1]) + "…"
+		} else {
+			value = string(valRunes[:maxValVis])
+		}
+	}
 	content := dim + label + reset + " " + lteal + value + reset
-	// visual width = len(label) + 1 + len(value)
-	vis := len([]rune(label)) + 1 + len([]rune(value))
+	vis := labelVis + 1 + len([]rune(value))
 	padLen := width - vis
 	if padLen < 1 {
 		padLen = 1
@@ -238,7 +265,7 @@ func cfgCell(label, value string, width int) string {
 	return content + strings.Repeat(" ", padLen)
 }
 
-// statsBadge renders a stat item without the bar, for a cleaner look.
+// statsBadge renders a stat item for the stats strip.
 func statsBadge(label, value, valueColor string) string {
 	return dim + label + " " + reset + valueColor + bold + value + reset + "    "
 }

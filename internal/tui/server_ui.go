@@ -42,20 +42,25 @@ func RunServerUI(ipcPort int) error {
 
 func drawServerFrame(ipcClient *ipc.Client) {
 	w, h := termSize()
-	h-- // Prevent terminal scroll by leaving bottom row empty
+	// Leave the very last terminal row empty to prevent scroll.
+	h--
 	if w < 60 {
 		w = 60
+	}
+	if h < 10 {
+		h = 10
 	}
 
 	var b strings.Builder
 
-	// Move cursor to top-left without clearing — avoids the full-screen flash
+	// Home cursor without clearing — avoids full-screen flash.
+	// The synchronized-output sequences in flush() make this truly atomic.
 	b.WriteString("\x1b[H")
 
 	state, err := ipcClient.GetServerState()
 	if err != nil {
 		renderSplash(&b, w, h, red+"  ✗  Disconnected from server"+reset)
-		b.WriteString("\x1b[J") // clear rest of screen
+		b.WriteString("\x1b[J")
 		flush(&b)
 		return
 	}
@@ -69,7 +74,7 @@ func drawServerFrame(ipcClient *ipc.Client) {
 	uptime := serverUptime(state.Uptime)
 
 	// ── 1. Header ─────────────────────────────────────────────────────────────
-	renderHeader(&b, w, "GoTunnel Server", uptime, "SERVER")
+	renderHeader(&b, w, "GoTunnel Server", uptime, "SERVER") // 1 line
 
 	// ── 2. Stats strip ────────────────────────────────────────────────────────
 	statsLine := statsBadge("CONNS", fmt.Sprintf("%d", state.ActiveConns), lgreen) +
@@ -80,8 +85,8 @@ func drawServerFrame(ipcClient *ipc.Client) {
 	if padLen < 0 {
 		padLen = 0
 	}
-	writeLine(&b, strings.Repeat(" ", padLen)+statsLine, w)
-	writeLine(&b, "", w)
+	writeLine(&b, strings.Repeat(" ", padLen)+statsLine, w) // 1 line
+	writeLine(&b, "", w)                                     // 1 line (spacer)
 
 	// ── 3. Config panel ───────────────────────────────────────────────────────
 	inspectUrl := "—"
@@ -93,47 +98,59 @@ func drawServerFrame(ipcClient *ipc.Client) {
 		}
 	}
 
-	panelTop(&b, "Configuration", w)
-
 	col := (w - 8) / 2
-	panelRow(&b, cfgCell(" HTTP Proxy ", state.HTTPAddr, col)+cfgCell(" Tunnel Port", state.TunAddr, w-8-col), w)
-	panelRow(&b, cfgCell(" HTTPS      ", orDash(state.HTTPSAddr), col)+cfgCell(" Dashboard  ", inspectUrl, w-8-col), w)
-	panelRow(&b, cfgCell(" Token      ", maskSecret(state.Token), col)+cfgCell(" Login      ", state.DashUser+"/"+maskSecret(state.DashPass), w-8-col), w)
-	panelBottom(&b, w)
-	writeLine(&b, "", w)
+
+	panelTop(&b, "Configuration", w)                                                                                                  // 1 line
+	panelRow(&b, cfgCell(" HTTP Proxy ", state.HTTPAddr, col)+cfgCell(" Tunnel Port", state.TunAddr, w-8-col), w)                     // 1 line
+	panelRow(&b, cfgCell(" HTTPS      ", orDash(state.HTTPSAddr), col)+cfgCell(" Dashboard  ", inspectUrl, w-8-col), w)               // 1 line
+	panelRow(&b, cfgCell(" Token      ", maskSecret(state.Token), col)+cfgCell(" Login      ", state.DashUser+"/"+maskSecret(state.DashPass), w-8-col), w) // 1 line
+	panelBottom(&b, w)                                                                                                                 // 1 line
+	writeLine(&b, "", w)                                                                                                               // 1 line (spacer)
 
 	// ── 4. Tunnels table ──────────────────────────────────────────────────────
-	panelTop(&b, "Active Tunnels", w)
-
-	// Calculate remaining height for tunnels + log sections
-	// Lines used so far: 1(hdr)+1(stats)+1(spc)+1(cfgTop)+3(cfg-rows)+1(cfgBot)+1(spc)+1(tunTop) = 10
+	//
+	// Fixed lines drawn above this point:
+	//   header(1) + stats(1) + spacer(1) + cfgTop(1) + cfgRows(3) + cfgBot(1) + spacer(1) = 9
+	//
+	// Fixed lines inside the tunnels+log section (not counted in usedLines):
+	//   tunTop(1) + tunHdr(1) + tunSep(1) + tunBot(1)
+	//   + logSpacer(1) + logTop(1) + logBot(1) = 7
+	//
+	// Fixed lines after variable content:
+	//   footer(1) = 1
+	//
+	// So the budget for variable rows = h - 9 - 7 - 1 = h - 17
 	const (
-		usedLines = 10
-		footerH   = 1
+		fixedAbove  = 9  // lines drawn before panelTop("Active Tunnels")
+		fixedInside = 7  // fixed box-chrome lines inside the two panels
+		fixedBelow  = 1  // footer
 	)
-	
-	avail := h - usedLines - footerH - 6 // 3 for tunnel header/sep/bot, 3 for log spc/top/bot
-	if avail < 2 {
-		avail = 2
+
+	panelTop(&b, "Active Tunnels", w) // 1 line (counted in fixedInside)
+
+	varBudget := h - fixedAbove - fixedInside - fixedBelow
+	if varBudget < 4 {
+		varBudget = 4
 	}
-	
-	maxLogs := avail / 3
+
+	// Give logs 1/3 of the variable budget (min 3, max 15).
+	maxLogs := varBudget / 3
 	if maxLogs < 3 {
 		maxLogs = 3
 	} else if maxLogs > 15 {
 		maxLogs = 15
 	}
-	
-	tunnelH := avail - maxLogs
+	tunnelH := varBudget - maxLogs
 	if tunnelH < 1 {
 		tunnelH = 1
 	}
 
-	epW := 26
+	// Column widths for the tunnel table.
+	epW   := 26
 	typeW := 8
-	conW := 7
-	ipW := 18
-	urlW := (w - 8) - epW - typeW - conW - 1 - ipW
+	conW  := 7
+	ipW   := 18
+	urlW  := (w - 8) - epW - typeW - conW - 1 - ipW
 	if urlW < 8 {
 		urlW = 8
 	}
@@ -144,8 +161,8 @@ func drawServerFrame(ipcClient *ipc.Client) {
 		rpad("CONNS", conW) + " " +
 		pad("CLIENT IP", ipW) +
 		pad("PROXY URL", urlW) + reset
-	panelRow(&b, th, w)
-	panelSep(&b, w)
+	panelRow(&b, th, w) // 1 line (counted in fixedInside)
+	panelSep(&b, w)     // 1 line (counted in fixedInside)
 
 	shown := state.Tunnels
 	var overflow int
@@ -171,17 +188,18 @@ func drawServerFrame(ipcClient *ipc.Client) {
 		panelRow(&b, dim+"No active tunnels — waiting for clients…"+reset, w)
 	}
 	if overflow > 0 {
-		panelRow(&b, dim+fmt.Sprintf("... and %d more active tunnels", overflow)+reset, w)
+		panelRow(&b, dim+fmt.Sprintf("… and %d more active tunnels", overflow)+reset, w)
 	} else {
+		// Pad remaining rows so the box bottom is always at a fixed position.
 		for i := len(shown); i < tunnelH; i++ {
 			panelRow(&b, "", w)
 		}
 	}
-	panelBottom(&b, w)
+	panelBottom(&b, w) // 1 line (counted in fixedInside)
 
 	// ── 5. Event log ──────────────────────────────────────────────────────────
-	writeLine(&b, "", w)
-	panelTop(&b, "Event Log", w)
+	writeLine(&b, "", w)            // 1 line (counted in fixedInside)
+	panelTop(&b, "Event Log", w)   // 1 line (counted in fixedInside)
 
 	last := state.Logs
 	if len(last) > maxLogs {
@@ -201,15 +219,16 @@ func drawServerFrame(ipcClient *ipc.Client) {
 			msg)
 		panelRow(&b, line, w)
 	}
+	// Pad remaining log rows so the box bottom stays at a fixed position.
 	for i := len(last); i < maxLogs; i++ {
 		panelRow(&b, "", w)
 	}
-	panelBottom(&b, w)
+	panelBottom(&b, w) // 1 line (counted in fixedInside)
 
 	// ── 6. Footer ─────────────────────────────────────────────────────────────
-	renderFooter(&b, w, "ctrl+d  detach", "ctrl+c  stop server")
+	renderFooter(&b, w, "ctrl+d  detach", "ctrl+c  stop server") // 1 line (fixedBelow)
 
-	// Clear any leftover lines from a previous taller frame
+	// Clear any leftover lines from a previous taller frame.
 	b.WriteString("\x1b[J")
 
 	flush(&b)

@@ -42,14 +42,19 @@ func RunClientUI(ipcPort int) error {
 
 func drawClientFrame(ipcClient *ipc.Client) {
 	w, h := termSize()
-	h-- // Prevent terminal scroll by leaving bottom row empty
+	// Leave the very last terminal row empty to prevent scroll.
+	h--
 	if w < 60 {
 		w = 60
+	}
+	if h < 8 {
+		h = 8
 	}
 
 	var b strings.Builder
 
-	// Move cursor to top-left without clearing — avoids the full-screen flash
+	// Home cursor without clearing — avoids full-screen flash.
+	// The synchronized-output sequences in flush() make this truly atomic.
 	b.WriteString("\x1b[H")
 
 	state, err := ipcClient.GetClientState()
@@ -67,7 +72,7 @@ func drawClientFrame(ipcClient *ipc.Client) {
 	}
 
 	// ── 1. Header ─────────────────────────────────────────────────────────────
-	renderHeader(&b, w, "GoTunnel Client", state.ServerAddr, "CLIENT")
+	renderHeader(&b, w, "GoTunnel Client", state.ServerAddr, "CLIENT") // 1 line
 
 	// ── 2. Status strip ───────────────────────────────────────────────────────
 	statusColor := lgreen
@@ -95,12 +100,10 @@ func drawClientFrame(ipcClient *ipc.Client) {
 	if padLen < 0 {
 		padLen = 0
 	}
-	writeLine(&b, strings.Repeat(" ", padLen)+statsLine, w)
-	writeLine(&b, "", w)
+	writeLine(&b, strings.Repeat(" ", padLen)+statsLine, w) // 1 line
+	writeLine(&b, "", w)                                     // 1 line (spacer)
 
 	// ── 3. Forwarding panel ───────────────────────────────────────────────────
-	panelTop(&b, "Tunnel Configuration", w)
-
 	forwardingStr := ""
 	if state.TunnelType == "tcp" {
 		forwardingStr = fmt.Sprintf("tcp://%s → %s", state.ServerAddr+state.RemoteAddr, state.TargetAddr)
@@ -113,29 +116,43 @@ func drawClientFrame(ipcClient *ipc.Client) {
 	}
 
 	col := (w - 8) / 2
-	panelRow(&b, cfgCell(" Forwarding ", forwardingStr, w-8), w)
-	panelRow(&b, cfgCell(" Server     ", state.ServerAddr, col)+cfgCell(" Target     ", state.TargetAddr, w-8-col), w)
-	panelBottom(&b, w)
-	writeLine(&b, "", w)
+
+	panelTop(&b, "Tunnel Configuration", w)                                                                                // 1 line
+	panelRow(&b, cfgCell(" Forwarding ", forwardingStr, w-8), w)                                                           // 1 line
+	panelRow(&b, cfgCell(" Server     ", state.ServerAddr, col)+cfgCell(" Target     ", state.TargetAddr, w-8-col), w)    // 1 line
+	panelBottom(&b, w)                                                                                                     // 1 line
+	writeLine(&b, "", w)                                                                                                   // 1 line (spacer)
 
 	// ── 4. HTTP requests table ────────────────────────────────────────────────
-	panelTop(&b, "HTTP Request Log", w)
-
-	// Lines used: 1(hdr)+1(stats)+1(spc)+1(cfg-top)+2(cfg-rows)+1(cfg-bot)+1(spc)+1(req-top) = 9
-	// Footer = 1
+	//
+	// Fixed lines drawn above this point:
+	//   header(1) + stats(1) + spacer(1) + cfgTop(1) + cfgRows(2) + cfgBot(1) + spacer(1) = 8
+	//
+	// Fixed lines inside the requests panel (box chrome):
+	//   reqTop(1) + reqHdr(1) + reqSep(1) + reqBot(1) = 4
+	//
+	// Fixed lines after variable content:
+	//   footer(1) = 1
+	//
+	// Variable budget = h - 8 - 4 - 1 = h - 13
 	const (
-		usedLines = 9
-		footerH   = 1
+		fixedAbove  = 8  // lines drawn before panelTop("HTTP Request Log")
+		fixedInside = 4  // box chrome: top + header row + sep + bottom
+		fixedBelow  = 1  // footer
 	)
-	reqsH := h - usedLines - footerH - 3 // 3 = table header + sep + bottom
+
+	panelTop(&b, "HTTP Request Log", w) // 1 line (counted in fixedInside)
+
+	reqsH := h - fixedAbove - fixedInside - fixedBelow
 	if reqsH < 2 {
 		reqsH = 2
 	}
 
+	// Column widths for the request table.
 	methodW := 8
 	statusW := 8
-	durW := 10
-	pathW := (w - 8) - methodW - statusW - durW
+	durW    := 10
+	pathW   := (w - 8) - methodW - statusW - durW
 	if pathW < 8 {
 		pathW = 8
 	}
@@ -145,8 +162,8 @@ func drawClientFrame(ipcClient *ipc.Client) {
 		pad("PATH", pathW) +
 		pad("STATUS", statusW) +
 		pad("DURATION", durW) + reset
-	panelRow(&b, th, w)
-	panelSep(&b, w)
+	panelRow(&b, th, w) // 1 line (counted in fixedInside)
+	panelSep(&b, w)     // 1 line (counted in fixedInside)
 
 	shown := state.Requests
 	var overflow int
@@ -178,8 +195,8 @@ func drawClientFrame(ipcClient *ipc.Client) {
 		}
 
 		path := req.Path
-		if len(path) > pathW-1 {
-			path = path[:pathW-4] + "…"
+		if len([]rune(path)) > pathW-1 {
+			path = string([]rune(path)[:pathW-4]) + "…"
 		}
 
 		dur := fmt.Sprintf("%dms", req.Dur)
@@ -197,18 +214,20 @@ func drawClientFrame(ipcClient *ipc.Client) {
 	}
 
 	if overflow > 0 {
-		panelRow(&b, dim+fmt.Sprintf("... and %d older requests hidden", overflow)+reset, w)
+		panelRow(&b, dim+fmt.Sprintf("… and %d older requests hidden", overflow)+reset, w)
 	} else {
+		// Pad remaining rows so the box bottom stays at a fixed position.
 		for i := len(shown); i < reqsH; i++ {
 			panelRow(&b, "", w)
 		}
 	}
 
-	panelBottom(&b, w)
+	panelBottom(&b, w) // 1 line (counted in fixedInside)
 
 	// ── 5. Footer ─────────────────────────────────────────────────────────────
-	renderFooter(&b, w, "ctrl+d  detach", "ctrl+c  stop client")
+	renderFooter(&b, w, "ctrl+d  detach", "ctrl+c  stop client") // 1 line (fixedBelow)
 
+	// Clear any leftover lines from a previous taller frame.
 	b.WriteString("\x1b[J")
 	flush(&b)
 }

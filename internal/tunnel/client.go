@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"github.com/RGPtv/gotunnel/internal/ipc"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -222,7 +223,7 @@ func RunClient(cfg *ClientConfig) {
 				fmt.Fprintf(os.Stderr, "  %-14s disabled (skipTLSVerify: true)\n", "TLS Verify")
 			}
 			fmt.Fprintln(os.Stderr)
-			c.startUI()
+			c.startIPC()
 		} else {
 			// Multi-tunnel mode: compact per-tunnel summary line.
 			label := t.Name
@@ -540,77 +541,34 @@ func writeErrorResponse(w io.Writer, code int, msg string) error {
 	return resp.Write(w)
 }
 
-// ── TUI Dashboard ─────────────────────────────────────────────────────────────
+// ── IPC Dashboard ─────────────────────────────────────────────────────────────
 
-func (c *Client) startUI() {
-	// Clear the screen once on startup before the ticker starts.
-	// (Log setup is handled by RunClient before this is called.)
-	fmt.Print("\033[2J")
+func (c *Client) startIPC() {
+	ipc.StartIPCServer(41401, func() interface{} {
+		c.uiStatusMu.RLock()
+		uiStatus := c.uiStatus
+		c.uiStatusMu.RUnlock()
 
-	ticker := time.NewTicker(200 * time.Millisecond)
-	go func() {
-		for range ticker.C {
-			c.drawUI()
-		}
-	}()
-}
-
-func (c *Client) drawUI() {
-	uiMu.Lock()
-	defer uiMu.Unlock()
-
-	var b strings.Builder
-	// Move cursor to top-left (screen was cleared once at startup).
-	b.WriteString("\033[H")
-
-	b.WriteString("gotunnel by @RGPtv                                      (Ctrl+C to quit)\n\n")
-	c.uiStatusMu.RLock()
-	uiStatus := c.uiStatus
-	c.uiStatusMu.RUnlock()
-	statusColor := "\033[32m" // green
-	if uiStatus != "online" {
-		statusColor = "\033[33m" // yellow
-	}
-	b.WriteString(fmt.Sprintf("Session Status                %s%s\033[0m\033[K\n", statusColor, uiStatus))
-
-	if c.tunnelType == "tcp" {
-		b.WriteString(fmt.Sprintf("Forwarding                    tcp://%s -> %s\033[K\n", c.serverAddr+c.remoteAddr, c.targetAddr))
-	} else {
-		if c.remoteAddr != "" {
-			b.WriteString(fmt.Sprintf("Forwarding                    https://%s.%s -> %s\033[K\n", c.remoteAddr, c.serverAddr, c.targetAddr))
-		} else {
-			b.WriteString(fmt.Sprintf("Forwarding                    https://%s -> %s\033[K\n", c.serverAddr, c.targetAddr))
-		}
-	}
-	b.WriteString(fmt.Sprintf("Active Workers                %d\033[K\n\n", c.uiWorkers.Load()))
-
-	if c.tunnelType == "http" {
-		b.WriteString("HTTP Requests\033[K\n")
-		b.WriteString("-------------\033[K\n")
-		if len(uiReqs) == 0 {
-			b.WriteString("(No requests yet)\033[K\n")
-		} else {
-			for _, r := range uiReqs {
-				color := "\033[32m" // green
-				if r.status >= 500 {
-					color = "\033[31m" // red
-				} else if r.status >= 400 {
-					color = "\033[33m" // yellow
-				} else if r.status >= 300 {
-					color = "\033[36m" // cyan
-				}
-
-				path := r.path
-				if len(path) > 40 {
-					path = path[:37] + "..."
-				}
-
-				b.WriteString(fmt.Sprintf("%-6s %-42s %s%3d\033[0m  %s\033[K\n", r.method, path, color, r.status, r.dur.Round(time.Millisecond)))
+		uiMu.Lock()
+		reqs := make([]ipc.UIRequest, len(uiReqs))
+		for i, r := range uiReqs {
+			reqs[i] = ipc.UIRequest{
+				Method: r.method,
+				Path:   r.path,
+				Status: r.status,
+				Dur:    r.dur.Milliseconds(),
 			}
 		}
-	}
+		uiMu.Unlock()
 
-	// Clear any remaining lines from previous longer outputs.
-	b.WriteString("\033[J")
-	fmt.Print(b.String())
+		return ipc.ClientState{
+			Status:     uiStatus,
+			ServerAddr: c.serverAddr,
+			RemoteAddr: c.remoteAddr,
+			TargetAddr: c.targetAddr,
+			TunnelType: c.tunnelType,
+			Workers:    int(c.uiWorkers.Load()),
+			Requests:   reqs,
+		}
+	})
 }

@@ -26,7 +26,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/RGPtv/gotunnel/internal/tui"
+	"github.com/RGPtv/gotunnel/internal/ipc"
 )
 
 // poolConn pairs a raw net.Conn with its persistent buffered reader so we
@@ -52,6 +52,14 @@ type TunnelMeta struct {
 
 // Server accepts tunnel client connections and proxies incoming HTTP requests
 // through them to the target service on the other end.
+
+const (
+	LevelInfo = iota
+	LevelWarn
+	LevelError
+	LevelSuccess
+)
+
 type Server struct {
 	token        string
 	basicAuth    string
@@ -68,7 +76,9 @@ type Server struct {
 	inspector    *Inspector
 	tunnelMeta   map[string]TunnelMeta
 	tunnelMetaMu sync.RWMutex
-	ui           *tui.TUI
+	logs         []ipc.LogEntry
+	logsMu       sync.Mutex
+	startTime    time.Time
 }
 
 // hopByHopHeaders are headers that must not be forwarded through a proxy.
@@ -89,83 +99,54 @@ var hopByHopSet = func() map[string]struct{} {
 // srvLog sends a message to the TUI log if available, otherwise falls back to
 // the standard logger. This lets all server log lines flow through the TUI
 // without hard-coupling every call site to it.
-func (s *Server) srvLog(level tui.LogLevel, format string, args ...any) {
-	if s != nil && s.ui != nil {
-		s.ui.Logf(level, format, args...)
-		return
+func (s *Server) srvLog(level int, format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	log.Printf(msg)
+	if s != nil {
+		s.logsMu.Lock()
+		s.logs = append(s.logs, ipc.LogEntry{
+			Time:    time.Now(),
+			Level:   level,
+			Message: msg,
+		})
+		if len(s.logs) > 200 {
+			s.logs = s.logs[len(s.logs)-200:]
+		}
+		s.logsMu.Unlock()
 	}
-	log.Printf(format, args...)
 }
 
 func RunServer(cfg *ServerConfig) {
-	// Apply defaults for unset fields.
 	httpAddr := cfg.HTTPAddr
-	if httpAddr == "" {
-		httpAddr = ":8080"
-	}
+	if httpAddr == "" { httpAddr = ":8080" }
 	tunAddr := cfg.TunAddr
-	if tunAddr == "" {
-		tunAddr = ":2222"
-	}
+	if tunAddr == "" { tunAddr = ":2222" }
 	token := cfg.Token
 	inspectUser := cfg.InspectUser
-	if inspectUser == "" {
-		inspectUser = "admin"
-	}
+	if inspectUser == "" { inspectUser = "admin" }
 	inspectPass := cfg.InspectPass
 	inspect := cfg.Inspect
-	if inspect == "" {
-		inspect = ":4040"
-	}
+	if inspect == "" { inspect = ":4040" }
 	poolSize := cfg.PoolSize
-	if poolSize <= 0 {
-		poolSize = 512
-	}
-
-	// ── start TUI early so all subsequent output goes through it ─────────────
-	ui := tui.New()
-	ui.Start()
-	defer ui.Stop()
-
-	// redirect standard logger to TUI so any stray log.Printf calls appear there
-	log.SetOutput(&tuiWriter{ui: ui})
-	log.SetFlags(0)
+	if poolSize <= 0 { poolSize = 512 }
 
 	if token == "auto" {
 		b := make([]byte, 32)
-		if _, err := rand.Read(b); err != nil {
-			ui.Logf(tui.LevelError, "failed to generate token: %v", err)
-			ui.Stop()
-			os.Exit(1)
-		}
+		rand.Read(b)
 		token = hex.EncodeToString(b)
-		ui.Logf(tui.LevelSuccess, "auto-generated token saved to .gotunnel-admin")
 	}
 
 	if inspect != "" && inspectPass == "" {
 		b := make([]byte, 10)
-		if _, err := rand.Read(b); err != nil {
-			ui.Logf(tui.LevelError, "failed to generate dashboard password: %v", err)
-			ui.Stop()
-			os.Exit(1)
-		}
+		rand.Read(b)
 		inspectPass = hex.EncodeToString(b)
-		if err := os.WriteFile(".gotunnel-admin", []byte(fmt.Sprintf("username: %s\npassword: %s\n", inspectUser, inspectPass)), 0600); err != nil {
-			ui.Logf(tui.LevelWarn, "dashboard creds: user=%s pass=%s", inspectUser, inspectPass)
-		} else {
-			ui.Logf(tui.LevelSuccess, "dashboard credentials saved to .gotunnel-admin")
-		}
 	}
-
-	// Push config to TUI header once all values are resolved.
-	ui.SetConfig(token, httpAddr, cfg.HTTPSAddr, tunAddr, inspect, inspectUser, inspectPass)
-
+	
 	basicAuthEnc := ""
 	if cfg.Auth != "" {
 		basicAuthEnc = base64.StdEncoding.EncodeToString([]byte(cfg.Auth))
 	}
-
-	srv := &Server{
+srv := &Server{
 		token:        token,
 		basicAuth:    basicAuthEnc,
 		domain:       cfg.Domain,
@@ -177,42 +158,75 @@ func RunServer(cfg *ServerConfig) {
 		tcpPools:     make(map[string]chan *poolConn),
 		tcpListeners: make(map[string]net.Listener),
 		tunnelMeta:   make(map[string]TunnelMeta),
-		ui:           ui,
+		startTime: time.Now(),
 	}
 
-	var tunLn net.Listener
+	
+	ipc.StartIPCServer(41400, func() interface{} {
+		srv.tunnelMetaMu.RLock()
+		var tunnels []ipc.TunnelInfo
+		for _, tm := range srv.tunnelMeta {
+			tunnels = append(tunnels, ipc.TunnelInfo{
+				Endpoint:    tm.Endpoint,
+				Type:        tm.Type,
+				Connections: 0, // Simplified for now
+				ClientIP:    tm.ClientIP,
+				ProxyURL:    tm.ProxyURL,
+			})
+		}
+		srv.tunnelMetaMu.RUnlock()
+
+		srv.logsMu.Lock()
+		logs := make([]ipc.LogEntry, len(srv.logs))
+		copy(logs, srv.logs)
+		srv.logsMu.Unlock()
+
+		return ipc.ServerState{
+			Token:       token,
+			HTTPAddr:    httpAddr,
+			HTTPSAddr:   cfg.HTTPSAddr,
+			TunAddr:     tunAddr,
+			InspectAddr: inspect,
+			DashUser:    inspectUser,
+			DashPass:    inspectPass,
+			ActiveConns: srv.count.Load(),
+			TotalReqs:   0, // Simplified
+			Uptime:      int64(time.Since(srv.startTime).Seconds()),
+			Tunnels:     tunnels,
+			Logs:        logs,
+		}
+	})
+
+var tunLn net.Listener
 	var err error
 
 	if cfg.NoTLS {
 		tunLn, err = net.Listen("tcp", tunAddr)
 		if err != nil {
-			srv.srvLog(tui.LevelError, "tunnel listen %s: %v", tunAddr, err)
-			ui.Stop()
+			srv.srvLog(LevelError, "tunnel listen %s: %v", tunAddr, err)
 			os.Exit(1)
 		}
-		srv.srvLog(tui.LevelInfo, "tunnel listener %s (plain TCP)", tunAddr)
+		srv.srvLog(LevelInfo, "tunnel listener %s (plain TCP)", tunAddr)
 	} else {
 		tlsCfg, err := makeTLSConfig(cfg.CertFile, cfg.KeyFile)
 		if err != nil {
-			srv.srvLog(tui.LevelError, "TLS setup: %v", err)
-			ui.Stop()
+			srv.srvLog(LevelError, "TLS setup: %v", err)
 			os.Exit(1)
 		}
 		tunLn, err = tls.Listen("tcp", tunAddr, tlsCfg)
 		if err != nil {
-			srv.srvLog(tui.LevelError, "tunnel listen %s: %v", tunAddr, err)
-			ui.Stop()
+			srv.srvLog(LevelError, "tunnel listen %s: %v", tunAddr, err)
 			os.Exit(1)
 		}
-		srv.srvLog(tui.LevelSuccess, "tunnel listener %s (TLS)", tunAddr)
+		srv.srvLog(LevelSuccess, "tunnel listener %s (TLS)", tunAddr)
 		if cfg.CertFile == "" {
-			srv.srvLog(tui.LevelWarn, "self-signed cert — run client with skipTLSVerify: true")
+			srv.srvLog(LevelWarn, "self-signed cert — run client with skipTLSVerify: true")
 		}
 	}
 
-	srv.srvLog(tui.LevelSuccess, "HTTP proxy listening on %s", httpAddr)
+	srv.srvLog(LevelSuccess, "HTTP proxy listening on %s", httpAddr)
 	if cfg.HTTPSAddr != "" {
-		srv.srvLog(tui.LevelSuccess, "HTTPS proxy listening on %s", cfg.HTTPSAddr)
+		srv.srvLog(LevelSuccess, "HTTPS proxy listening on %s", cfg.HTTPSAddr)
 	}
 
 	// Start inspector web UI.
@@ -220,9 +234,9 @@ func RunServer(cfg *ServerConfig) {
 		srv.inspector = NewInspector(httpAddr, tunAddr, token, inspectUser, inspectPass, &srv.count, srv)
 		go func() {
 			isrv := &http.Server{Addr: inspect, Handler: srv.inspector}
-			srv.srvLog(tui.LevelSuccess, "dashboard at http://%s", inspect)
+			srv.srvLog(LevelSuccess, "dashboard at http://%s", inspect)
 			if err := isrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				srv.srvLog(tui.LevelError, "inspector: %v", err)
+				srv.srvLog(LevelError, "inspector: %v", err)
 			}
 		}()
 	}
@@ -231,7 +245,7 @@ func RunServer(cfg *ServerConfig) {
 	go srv.startJanitor()
 
 	// Live stats ticker — pushes counts + tunnel list to TUI every second.
-	go srv.tuiStatsTicker(ui)
+	
 
 	httpSrv := &http.Server{
 		Addr:              httpAddr,
@@ -253,8 +267,7 @@ func RunServer(cfg *ServerConfig) {
 		}
 		go func() {
 			if err := httpsSrv.ListenAndServeTLS(cfg.CertFile, cfg.KeyFile); err != nil && err != http.ErrServerClosed {
-				srv.srvLog(tui.LevelError, "HTTPS server: %v", err)
-				ui.Stop()
+				srv.srvLog(LevelError, "HTTPS server: %v", err)
 				os.Exit(1)
 			}
 		}()
@@ -265,7 +278,7 @@ func RunServer(cfg *ServerConfig) {
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		sig := <-sigCh
-		srv.srvLog(tui.LevelWarn, "received %v — shutting down", sig)
+		srv.srvLog(LevelWarn, "received %v — shutting down", sig)
 		tunLn.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
@@ -277,11 +290,10 @@ func RunServer(cfg *ServerConfig) {
 	}()
 
 	if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		srv.srvLog(tui.LevelError, "HTTP server: %v", err)
-		ui.Stop()
+		srv.srvLog(LevelError, "HTTP server: %v", err)
 		os.Exit(1)
 	}
-	srv.srvLog(tui.LevelInfo, "server stopped")
+	srv.srvLog(LevelInfo, "server stopped")
 }
 
 // acceptTunnelConns loops, accepting connections from tunnel clients.
@@ -292,7 +304,7 @@ func (s *Server) acceptTunnelConns(l net.Listener) {
 			if errors.Is(err, net.ErrClosed) {
 				return // listener closed during shutdown
 			}
-			s.srvLog(tui.LevelError, "tunnel accept: %v", err)
+			s.srvLog(LevelError, "tunnel accept: %v", err)
 			time.Sleep(time.Second)
 			continue
 		}
@@ -319,7 +331,7 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 	// ── Detect WebSocket Upgrade vs direct AUTH ───────────────────────────────
 	peek, err := r.Peek(4)
 	if err != nil {
-		s.srvLog(tui.LevelWarn, "auth peek: %v", err)
+		s.srvLog(LevelWarn, "auth peek: %v", err)
 		conn.Close()
 		return
 	}
@@ -352,7 +364,7 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 	// ── CHALLENGE ──────────────────────────────────────────────────────────────
 	nonce := make([]byte, 32)
 	if _, err := rand.Read(nonce); err != nil {
-		s.srvLog(tui.LevelError, "nonce generation failed: %v", err)
+		s.srvLog(LevelError, "nonce generation failed: %v", err)
 		conn.Close()
 		return
 	}
@@ -362,7 +374,7 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 	// ── AUTH ──────────────────────────────────────────────────────────────────
 	line, err := r.ReadString('\n')
 	if err != nil {
-		s.srvLog(tui.LevelError, "auth read: %v", err)
+		s.srvLog(LevelError, "auth read: %v", err)
 		conn.Close()
 		return
 	}
@@ -373,7 +385,7 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 	if len(parts) < 2 || parts[0] != "AUTH" {
 		fmt.Fprintf(conn, "ERROR unauthorized\n")
 		conn.Close()
-		s.srvLog(tui.LevelWarn, "auth format fail from %s", conn.RemoteAddr())
+		s.srvLog(LevelWarn, "auth format fail from %s", conn.RemoteAddr())
 		return
 	}
 
@@ -403,7 +415,7 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 	if subtle.ConstantTimeCompare([]byte(clientHmac), []byte(expectedHmac)) != 1 {
 		fmt.Fprintf(conn, "ERROR unauthorized\n")
 		conn.Close()
-		s.srvLog(tui.LevelWarn, "auth failed (bad token) from %s", conn.RemoteAddr())
+		s.srvLog(LevelWarn, "auth failed (bad token) from %s", conn.RemoteAddr())
 		return
 	}
 
@@ -433,7 +445,7 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 				s.tcpPools[remoteAddr] = pool
 				s.tcpListeners[remoteAddr] = ln
 				go s.acceptTCPConns(ln, remoteAddr)
-				s.srvLog(tui.LevelSuccess, "TCP listener opened on %s", remoteAddr)
+				s.srvLog(LevelSuccess, "TCP listener opened on %s", remoteAddr)
 			} else {
 				ln.Close() // lost race — discard the listener we just bound
 			}
@@ -442,7 +454,7 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 
 		fmt.Fprintf(conn, "OK\n")
 		n := s.count.Add(1)
-		s.srvLog(tui.LevelSuccess, "tunnel connected %s → tcp:%s (active: %d)", conn.RemoteAddr(), remoteAddr, n)
+		s.srvLog(LevelSuccess, "tunnel connected %s → tcp:%s (active: %d)", conn.RemoteAddr(), remoteAddr, n)
 
 		s.tunnelMetaMu.Lock()
 		s.tunnelMeta[remoteAddr] = TunnelMeta{
@@ -461,7 +473,7 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 		default:
 			conn.Close()
 			s.count.Add(-1)
-			s.srvLog(tui.LevelWarn, "pool full, rejected %s", conn.RemoteAddr())
+			s.srvLog(LevelWarn, "pool full, rejected %s", conn.RemoteAddr())
 		}
 		return
 	}
@@ -472,13 +484,13 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 		if !exists {
 			pool = make(chan *poolConn, s.poolSize)
 			s.httpPools[remoteAddr] = pool
-			s.srvLog(tui.LevelSuccess, "HTTP subdomain tunnel: %s", remoteAddr)
+			s.srvLog(LevelSuccess, "HTTP subdomain tunnel: %s", remoteAddr)
 		}
 		s.mu.Unlock()
 
 		fmt.Fprintf(conn, "OK\n")
 		n := s.count.Add(1)
-		s.srvLog(tui.LevelSuccess, "tunnel connected %s → http:%s (active: %d)", conn.RemoteAddr(), remoteAddr, n)
+		s.srvLog(LevelSuccess, "tunnel connected %s → http:%s (active: %d)", conn.RemoteAddr(), remoteAddr, n)
 
 		s.tunnelMetaMu.Lock()
 		s.tunnelMeta[remoteAddr] = TunnelMeta{
@@ -497,7 +509,7 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 		default:
 			conn.Close()
 			s.count.Add(-1)
-			s.srvLog(tui.LevelWarn, "pool full, rejected %s", conn.RemoteAddr())
+			s.srvLog(LevelWarn, "pool full, rejected %s", conn.RemoteAddr())
 		}
 		return
 	}
@@ -505,7 +517,7 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 	// Default HTTP pool.
 	fmt.Fprintf(conn, "OK\n")
 	n := s.count.Add(1)
-	s.srvLog(tui.LevelSuccess, "tunnel connected %s → http:(default) (active: %d)", conn.RemoteAddr(), n)
+	s.srvLog(LevelSuccess, "tunnel connected %s → http:(default) (active: %d)", conn.RemoteAddr(), n)
 
 	s.tunnelMetaMu.Lock()
 	s.tunnelMeta["(default)"] = TunnelMeta{
@@ -524,7 +536,7 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 	default:
 		conn.Close()
 		s.count.Add(-1)
-		s.srvLog(tui.LevelWarn, "pool full, rejected %s", conn.RemoteAddr())
+		s.srvLog(LevelWarn, "pool full, rejected %s", conn.RemoteAddr())
 	}
 }
 
@@ -536,7 +548,7 @@ func (s *Server) acceptTCPConns(l net.Listener, remoteAddr string) {
 			if errors.Is(err, net.ErrClosed) {
 				return
 			}
-			s.srvLog(tui.LevelError, "tcp accept %s: %v", remoteAddr, err)
+			s.srvLog(LevelError, "tcp accept %s: %v", remoteAddr, err)
 			time.Sleep(time.Second)
 			continue
 		}
@@ -720,7 +732,7 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, reqBody *capp
 		if err := out.Write(pc.conn); err != nil {
 			s.closeConn(pc, "write request")
 			if attempt < maxAttempts {
-				s.srvLog(tui.LevelWarn, "tunnel write failed (attempt %d/%d), retrying", attempt, maxAttempts)
+				s.srvLog(LevelWarn, "tunnel write failed (attempt %d/%d), retrying", attempt, maxAttempts)
 				continue
 			}
 			http.Error(w, "tunnel write error", http.StatusBadGateway)
@@ -731,7 +743,7 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, reqBody *capp
 		if err != nil {
 			s.closeConn(pc, "read response")
 			if attempt < maxAttempts {
-				s.srvLog(tui.LevelWarn, "tunnel read failed (attempt %d/%d), retrying", attempt, maxAttempts)
+				s.srvLog(LevelWarn, "tunnel read failed (attempt %d/%d), retrying", attempt, maxAttempts)
 				continue
 			}
 			http.Error(w, "tunnel read error", http.StatusBadGateway)
@@ -741,7 +753,7 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, reqBody *capp
 		// Success — stream the response.
 		s.streamResponse(w, resp, pc)
 		elapsed := time.Since(start)
-		s.srvLog(tui.LevelInfo, "%s %s → %d (%s)", r.Method, r.URL.Path, resp.StatusCode, elapsed.Round(time.Millisecond))
+		s.srvLog(LevelInfo, "%s %s → %d (%s)", r.Method, r.URL.Path, resp.StatusCode, elapsed.Round(time.Millisecond))
 		if s.inspector != nil {
 			var capturedBody []byte
 			if reqBody != nil {
@@ -858,7 +870,7 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request) {
 	resp.Write(brw)
 	brw.Flush()
 
-	s.srvLog(tui.LevelInfo, "ws tunnel open: %s %s", r.Method, r.URL.Path)
+	s.srvLog(LevelInfo, "ws tunnel open: %s %s", r.Method, r.URL.Path)
 
 	// Pipe both directions concurrently until either side closes.
 	// FIX: write to browserConn directly (not brw.Writer) so WebSocket frames
@@ -877,7 +889,7 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	// WebSocket connections are never returned to the pool.
 	s.closeConn(pc, "ws closed")
-	s.srvLog(tui.LevelInfo, "ws tunnel closed: %s", r.URL.Path)
+	s.srvLog(LevelInfo, "ws tunnel closed: %s", r.URL.Path)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1012,7 +1024,7 @@ func (s *Server) closeConn(pc *poolConn, reason string) {
 	if atomic.CompareAndSwapInt32(&pc.closed, 0, 1) {
 		pc.conn.Close()
 		n := s.count.Add(-1)
-		s.srvLog(tui.LevelInfo, "tunnel- (%s)  (active: %d)", reason, n)
+		s.srvLog(LevelInfo, "tunnel- (%s)  (active: %d)", reason, n)
 	}
 }
 
@@ -1057,7 +1069,7 @@ func (s *Server) startJanitor() {
 			if len(p) == 0 {
 				delete(s.httpPools, sub)
 				deletedSubs = append(deletedSubs, sub)
-				s.srvLog(tui.LevelInfo, "subdomain pool removed: %s (no active clients)", sub)
+				s.srvLog(LevelInfo, "subdomain pool removed: %s (no active clients)", sub)
 			}
 		}
 		for addr, p := range s.tcpPools {
@@ -1068,7 +1080,7 @@ func (s *Server) startJanitor() {
 				if ln, ok := s.tcpListeners[addr]; ok {
 					ln.Close()
 					delete(s.tcpListeners, addr)
-					s.srvLog(tui.LevelInfo, "TCP listener closed: %s (no active clients)", addr)
+					s.srvLog(LevelInfo, "TCP listener closed: %s (no active clients)", addr)
 				}
 			}
 		}
@@ -1166,76 +1178,3 @@ func scheme(r *http.Request) string {
 	return "http"
 }
 
-// tuiStatsTicker pushes live stats and tunnel snapshots to the TUI every second.
-func (s *Server) tuiStatsTicker(ui *tui.TUI) {
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-	for range ticker.C {
-		if ui == nil {
-			return
-		}
-		// Build tunnel snapshot.
-		s.mu.RLock()
-		s.tunnelMetaMu.RLock()
-		var tunnels []tui.TunnelInfo
-
-		if dc := len(s.pool); dc > 0 {
-			meta := s.tunnelMeta["(default)"]
-			tunnels = append(tunnels, tui.TunnelInfo{
-				Endpoint:    "(default)",
-				Type:        "http",
-				Connections: dc,
-				ClientIP:    meta.ClientIP,
-				ProxyURL:    meta.ProxyURL,
-			})
-		}
-		for sub, pool := range s.httpPools {
-			meta := s.tunnelMeta[sub]
-			tunnels = append(tunnels, tui.TunnelInfo{
-				Endpoint:    sub,
-				Type:        "http",
-				Connections: len(pool),
-				ClientIP:    meta.ClientIP,
-				ProxyURL:    meta.ProxyURL,
-			})
-		}
-		for port, pool := range s.tcpPools {
-			meta := s.tunnelMeta[port]
-			tunnels = append(tunnels, tui.TunnelInfo{
-				Endpoint:    port,
-				Type:        "tcp",
-				Connections: len(pool),
-				ClientIP:    meta.ClientIP,
-				ProxyURL:    meta.ProxyURL,
-			})
-		}
-		s.tunnelMetaMu.RUnlock()
-		s.mu.RUnlock()
-
-		ui.UpdateTunnels(tunnels)
-
-		var total int64
-		if s.inspector != nil {
-			s.inspector.mu.RLock()
-			total = int64(s.inspector.nextID)
-			s.inspector.mu.RUnlock()
-		}
-		ui.UpdateStats(tui.Stats{
-			ActiveConns: s.count.Load(),
-			TotalReqs:   total,
-		})
-	}
-}
-
-// tuiWriter implements io.Writer so the standard log package routes through TUI.
-type tuiWriter struct {
-	ui *tui.TUI
-}
-
-func (w *tuiWriter) Write(p []byte) (int, error) {
-	msg := strings.TrimRight(string(p), "\n")
-	if w.ui != nil {
-		w.ui.Log(tui.LevelInfo, msg)
-	}
-	return len(p), nil
-}

@@ -3,7 +3,12 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
+	"syscall"
+	"time"
 
+	"github.com/RGPtv/gotunnel/internal/ipc"
+	"github.com/RGPtv/gotunnel/internal/tui"
 	"github.com/RGPtv/gotunnel/internal/tunnel"
 )
 
@@ -54,6 +59,8 @@ func main() {
 		case "-h", "--help", "help":
 			fmt.Print(usage)
 			os.Exit(0)
+		case "-daemon":
+			// Handled later
 		default:
 			fmt.Fprintf(os.Stderr, "gotunnel: unexpected argument %q\n\n", os.Args[1])
 			fmt.Fprintf(os.Stderr, "gotunnel reads all configuration from config.yml or config.yaml.\n")
@@ -68,9 +75,66 @@ func main() {
 		os.Exit(1)
 	}
 
-	if cfg.ServerConfig != nil {
-		tunnel.RunServer(cfg.ServerConfig)
+	isServer := cfg.ServerConfig != nil
+	ipcPort := 41400
+	if !isServer {
+		ipcPort = 41401
+	}
+
+	isDaemon := false
+	for _, arg := range os.Args {
+		if arg == "-daemon" {
+			isDaemon = true
+			break
+		}
+	}
+
+	if isDaemon {
+		if isServer {
+			tunnel.RunServer(cfg.ServerConfig)
+		} else {
+			tunnel.RunClient(cfg.ClientConfig)
+		}
+		return
+	}
+
+	// Try to attach
+	ipcClient := ipc.NewClient(ipcPort)
+	if !ipcClient.Ping() {
+		// Start daemon
+		cmd := exec.Command(os.Args[0], "-daemon")
+		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		err := cmd.Start()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "failed to start daemon: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Wait for daemon to become ready
+		ready := false
+		for i := 0; i < 20; i++ {
+			time.Sleep(100 * time.Millisecond)
+			if ipcClient.Ping() {
+				ready = true
+				break
+			}
+		}
+		if !ready {
+			fmt.Fprintln(os.Stderr, "failed to attach to daemon")
+			os.Exit(1)
+		}
+	}
+
+	// Start UI
+	if isServer {
+		if err := tui.RunServerUI(ipcPort); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 	} else {
-		tunnel.RunClient(cfg.ClientConfig)
+		if err := tui.RunClientUI(ipcPort); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 	}
 }

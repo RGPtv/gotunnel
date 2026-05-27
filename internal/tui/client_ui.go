@@ -9,7 +9,6 @@ import (
 )
 
 func RunClientUI(ipcPort int) error {
-	initTerminal()
 	ipcClient := ipc.NewClient(ipcPort)
 	quit := make(chan struct{})
 
@@ -43,8 +42,6 @@ func RunClientUI(ipcPort int) error {
 
 func drawClientFrame(ipcClient *ipc.Client) {
 	w, h := termSize()
-	w -= 1 // Prevent Windows cmd auto-wrap
-	h -= 1 // Prevent bottom row scroll
 	if w < 60 {
 		w = 60
 	}
@@ -134,6 +131,9 @@ func drawClientFrame(ipcClient *ipc.Client) {
 	statusW := 8
 	durW := 10
 	pathW := w - methodW - statusW - durW - 4
+	if pathW < 8 {
+		pathW = 8
+	}
 
 	th := dim + "  " +
 		pad("METHOD", methodW) +
@@ -144,8 +144,10 @@ func drawClientFrame(ipcClient *ipc.Client) {
 	writeLine(&b, dim+hline(w, "·")+reset, w)
 
 	shown := state.Requests
+	var overflow int
 	if len(shown) > reqsH {
-		shown = shown[len(shown)-reqsH:]
+		overflow = len(shown) - (reqsH - 1)
+		shown = shown[len(shown)-(reqsH-1):]
 	}
 
 	for _, req := range shown {
@@ -190,8 +192,12 @@ func drawClientFrame(ipcClient *ipc.Client) {
 		writeLine(&b, dim+"  Waiting for requests…"+reset, w)
 	}
 
-	for i := len(shown); i < reqsH; i++ {
-		writeLine(&b, "", w)
+	if overflow > 0 {
+		writeLine(&b, dim+fmt.Sprintf("  ... and %d older requests hidden", overflow)+reset, w)
+	} else {
+		for i := len(shown); i < reqsH; i++ {
+			writeLine(&b, "", w)
+		}
 	}
 
 	writeLine(&b, dim+hline(w, "─")+reset, w)

@@ -3,10 +3,17 @@ package tui
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	"golang.org/x/term"
 )
+
+var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+
+func stripANSI(s string) string {
+	return ansiRe.ReplaceAllString(s, "")
+}
 
 // ── ANSI codes ────────────────────────────────────────────────────────────────
 const (
@@ -165,7 +172,7 @@ func renderSplash(b *strings.Builder, w, h int, msg string) {
 	for i := 0; i < h/2-1; i++ {
 		writeLine(b, "", w)
 	}
-	vis := len([]rune(msg)) // approximate — ANSI not counted
+	vis := len([]rune(stripANSI(msg))) 
 	padding := (w - vis) / 2
 	if padding < 0 {
 		padding = 0

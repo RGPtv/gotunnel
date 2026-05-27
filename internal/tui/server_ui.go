@@ -9,7 +9,6 @@ import (
 )
 
 func RunServerUI(ipcPort int) error {
-	initTerminal()
 	ipcClient := ipc.NewClient(ipcPort)
 	quit := make(chan struct{})
 
@@ -43,8 +42,6 @@ func RunServerUI(ipcPort int) error {
 
 func drawServerFrame(ipcClient *ipc.Client) {
 	w, h := termSize()
-	w -= 1 // Prevent Windows cmd auto-wrap
-	h -= 1 // Prevent bottom row scroll
 	if w < 60 {
 		w = 60
 	}
@@ -105,14 +102,25 @@ func drawServerFrame(ipcClient *ipc.Client) {
 	writeLine(&b, " "+dim+"Active Tunnels"+reset, w)
 
 	// Calculate remaining height for tunnels + log sections
-	// Lines used so far: 1(hdr)+1(stats)+1(sep)+1(cfg-label)+1(cfg-dot)+3(cfg-rows)+1(sep) = 9
-	// Footer = 1, log section = logH lines. Tunnel section = rest.
+	// Lines used so far: 1(hdr)+1(stats)+1(sep)+1(cfg-label)+1(cfg-dot)+3(cfg-rows)+1(sep)+1(tun-label) = 10
 	const (
-		usedLines = 9
+		usedLines = 10
 		footerH   = 1
-		logSectH  = 9 // label+dot+entries
 	)
-	tunnelH := h - usedLines - logSectH - footerH - 3 // 3 = table header + dot + sep
+	
+	avail := h - usedLines - footerH - 5 // 3 for tunnel header/sep, 2 for log header
+	if avail < 2 {
+		avail = 2
+	}
+	
+	maxLogs := avail / 3
+	if maxLogs < 3 {
+		maxLogs = 3
+	} else if maxLogs > 15 {
+		maxLogs = 15
+	}
+	
+	tunnelH := avail - maxLogs
 	if tunnelH < 1 {
 		tunnelH = 1
 	}
@@ -136,8 +144,10 @@ func drawServerFrame(ipcClient *ipc.Client) {
 	writeLine(&b, dim+hline(w, "·")+reset, w)
 
 	shown := state.Tunnels
+	var overflow int
 	if len(shown) > tunnelH {
-		shown = shown[:tunnelH]
+		overflow = len(shown) - (tunnelH - 1)
+		shown = shown[:tunnelH-1]
 	}
 	for _, tun := range shown {
 		typeColor := lblue
@@ -157,8 +167,12 @@ func drawServerFrame(ipcClient *ipc.Client) {
 	if len(shown) == 0 {
 		writeLine(&b, dim+"  No active tunnels — waiting for clients…"+reset, w)
 	}
-	for i := len(shown); i < tunnelH; i++ {
-		writeLine(&b, "", w)
+	if overflow > 0 {
+		writeLine(&b, dim+fmt.Sprintf("  ... and %d more active tunnels", overflow)+reset, w)
+	} else {
+		for i := len(shown); i < tunnelH; i++ {
+			writeLine(&b, "", w)
+		}
 	}
 	writeLine(&b, dim+hline(w, "─")+reset, w)
 
@@ -166,7 +180,6 @@ func drawServerFrame(ipcClient *ipc.Client) {
 	writeLine(&b, " "+dim+"Event Log"+reset, w)
 	writeLine(&b, dim+hline(w, "·")+reset, w)
 
-	maxLogs := logSectH - 2
 	last := state.Logs
 	if len(last) > maxLogs {
 		last = last[len(last)-maxLogs:]

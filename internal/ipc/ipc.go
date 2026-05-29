@@ -122,6 +122,10 @@ func StartIPCServer(port int, getState func() interface{}) (net.Listener, error)
 		_, _ = w.Write([]byte("ok"))
 	})
 	mux.HandleFunc("/state", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(getState())
 	})
@@ -131,9 +135,12 @@ func StartIPCServer(port int, getState func() interface{}) (net.Listener, error)
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		// Trigger hard shutdown after the response is flushed.
+		// Flush before exiting so the client receives the 200.
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
 		go func() {
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(50 * time.Millisecond)
 			os.Exit(0)
 		}()
 	})
@@ -143,8 +150,17 @@ func StartIPCServer(port int, getState func() interface{}) (net.Listener, error)
 		return nil, err
 	}
 
+	srv := &http.Server{
+		Handler:      mux,
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 5 * time.Second,
+		IdleTimeout:  30 * time.Second,
+	}
 	go func() {
-		http.Serve(ln, mux)
+		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
+			// Only log unexpected errors; ErrServerClosed is normal on shutdown.
+			fmt.Fprintf(os.Stderr, "ipc server: %v\n", err)
+		}
 	}()
 
 	return ln, nil

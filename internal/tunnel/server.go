@@ -144,6 +144,29 @@ func RunServer(cfg *ServerConfig) {
 			log.Fatalf("failed to generate inspect password: %v", err)
 		}
 		inspectPass = hex.EncodeToString(b)
+
+		// Persist credentials to .gotunnel-admin so the operator can retrieve
+		// the auto-generated password without needing the TUI or dashboard.
+		adminFile := ".gotunnel-admin"
+		inspectURL := inspect
+		if strings.HasPrefix(inspectURL, ":") {
+			inspectURL = "http://localhost" + inspectURL
+		} else {
+			inspectURL = "http://" + inspectURL
+		}
+		contents := fmt.Sprintf(
+			"# GoTunnel dashboard credentials (auto-generated)\n"+
+				"# Delete this file and restart to rotate the password.\n"+
+				"url:      %s\n"+
+				"username: %s\n"+
+				"password: %s\n",
+			inspectURL, inspectUser, inspectPass,
+		)
+		if err := os.WriteFile(adminFile, []byte(contents), 0600); err != nil {
+			log.Printf("warning: could not write %s: %v", adminFile, err)
+		} else {
+			log.Printf("dashboard credentials saved to %s", adminFile)
+		}
 	}
 	
 	basicAuthEnc := ""
@@ -623,6 +646,10 @@ func (s *Server) handleExternalTCPConn(conn net.Conn, remoteAddr string) {
 	go cp(pc.conn, conn)
 	go cp(conn, pc.r) // Use buffered reader from poolConn!
 	<-done
+	// Close both sides so the second goroutine unblocks immediately instead of
+	// waiting for the remote peer to close — prevents a goroutine leak on half-close.
+	pc.conn.Close()
+	conn.Close()
 	<-done
 
 	s.closeConn(pc, "tcp session closed")

@@ -563,6 +563,8 @@ func (ins *Inspector) handleReplay(w http.ResponseWriter, r *http.Request) {
 			log.Printf("replay error: %v", err)
 			return
 		}
+		// Drain and close body to return the connection to the pool.
+		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
 	}()
 

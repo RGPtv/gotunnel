@@ -337,7 +337,7 @@ func (ins *Inspector) buildTunnelList() []TunnelEntry {
 	defer ins.srv.tunnelMetaMu.RUnlock()
 	defer ins.srv.mu.RUnlock()
 
-	if dc := len(ins.srv.pool); dc > 0 {
+	if dc := len(ins.srv.pool.conns); dc > 0 {
 		meta := ins.srv.tunnelMeta["(default)"]
 		tunnels = append(tunnels, TunnelEntry{
 			Type:        "http",
@@ -353,7 +353,7 @@ func (ins *Inspector) buildTunnelList() []TunnelEntry {
 		tunnels = append(tunnels, TunnelEntry{
 			Type:        "http",
 			Endpoint:    sub,
-			Connections: len(pool),
+			Connections: len(pool.conns),
 			HasAPIKey:   meta.APIKey != "",
 			ProxyURL:    meta.ProxyURL,
 			ClientIP:    meta.ClientIP,
@@ -364,7 +364,7 @@ func (ins *Inspector) buildTunnelList() []TunnelEntry {
 		tunnels = append(tunnels, TunnelEntry{
 			Type:        "tcp",
 			Endpoint:    port,
-			Connections: len(pool),
+			Connections: len(pool.conns),
 			HasAPIKey:   meta.APIKey != "",
 			ProxyURL:    meta.ProxyURL,
 			ClientIP:    meta.ClientIP,

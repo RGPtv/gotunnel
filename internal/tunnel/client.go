@@ -296,15 +296,10 @@ func (c *Client) connectAndServe(id int) error {
 	if err != nil {
 		return err
 	}
-	hijacked := false
 	watchDone := make(chan struct{})
 	defer func() {
-		if watchDone != nil {
-			close(watchDone)
-		}
-		if !hijacked {
-			conn.Close()
-		}
+		close(watchDone)
+		conn.Close()
 	}()
 	go func() {
 		select {
@@ -321,6 +316,7 @@ func (c *Client) connectAndServe(id int) error {
 		return fmt.Errorf("ws key: %w", err)
 	}
 	wsKey := base64.StdEncoding.EncodeToString(wsRaw)
+	conn.SetDeadline(time.Now().Add(15 * time.Second))
 	fmt.Fprintf(conn,
 		"GET /_tunnel/connect HTTP/1.1\r\n"+
 			"Host: %s\r\n"+
@@ -365,6 +361,7 @@ func (c *Client) connectAndServe(id int) error {
 	fmt.Fprintf(conn, "AUTH %s %s %s %s\n", clientHmac, c.tunnelType, remote, key)
 
 	line, err := reader.ReadString('\n')
+	conn.SetDeadline(time.Time{})
 	if err != nil {
 		return err
 	}
@@ -378,17 +375,7 @@ func (c *Client) connectAndServe(id int) error {
 	defer c.uiWorkers.Add(-1)
 
 	if c.tunnelType == "tcp" {
-		hijacked = true
-		// Transfer ownership of watchDone to the goroutine so the context
-		// watcher stays active for the full duration of the TCP session.
-		wd := watchDone
-		watchDone = nil // prevent the deferred close from firing
-		go func() {
-			defer close(wd)
-			c.handleTCPWorker(id, conn, reader)
-			conn.Close()
-		}()
-		return nil
+		return c.handleTCPWorker(id, conn, reader)
 	}
 
 	for {
@@ -398,15 +385,7 @@ func (c *Client) connectAndServe(id int) error {
 		}
 
 		if strings.ToLower(req.Header.Get("Upgrade")) == "websocket" {
-			hijacked = true
-			wd := watchDone
-			watchDone = nil // prevent deferred close; keep ctx watcher alive for WS session
-			go func() {
-				defer close(wd)
-				c.handleWebSocket(id, conn, reader, req)
-				conn.Close()
-			}()
-			return nil
+			return c.handleWebSocket(id, conn, reader, req)
 		}
 
 		start := time.Now()
@@ -537,9 +516,7 @@ func (c *Client) forwardToTarget(req *http.Request) (*http.Response, error) {
 		req.URL.Scheme = "http"
 		req.URL.Host = strings.TrimPrefix(c.targetAddr, "http://")
 	}
-	if req.Host == "" {
-		req.Host = req.URL.Host
-	}
+	req.Host = req.URL.Host
 	req.RequestURI = "" 
 
 	return c.httpClient.Do(req)

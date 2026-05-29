@@ -19,7 +19,8 @@ Local machine                       Public VPS
 - **Multiple Tunnels**: Define any number of tunnels in one config file — all start concurrently.
 - **Protocol Support**: HTTP, WebSockets, and raw TCP tunnels.
 - **Subdomain Routing**: Route traffic to multiple local services using subdomains.
-- **Terminal UI**: Real-time traffic monitoring in the client terminal (single-tunnel mode).
+- **Rich Terminal UI**: Beautiful, real-time traffic monitoring and event logs for both the Server and Client.
+- **Background Daemon**: Runs as a background daemon automatically. Detach from the UI (`ctrl+d`) while keeping tunnels alive, and re-attach anytime.
 - **Modern Web Dashboard**: Tabbed inspector at `localhost:4040` with metrics, token display, and request replay.
 - **Security**: HTTP Basic Auth, auto-generated TLS certificates, per-tunnel API key authentication.
 - **Minimal Dependencies**: Only `gopkg.in/yaml.v3` beyond the Go standard library.
@@ -49,6 +50,11 @@ GoTunnel reads **`config.yml`** or **`config.yaml`** from the current working di
 ```
 
 That's it. No subcommands. No flags.
+
+When you run `./gotunnel`, it starts the background daemon and attaches a real-time Terminal UI.
+- Press `ctrl+d` to detach from the UI and leave the tunnel running in the background.
+- Press `ctrl+c` to stop the background daemon entirely.
+- Run `./gotunnel` again anytime to re-attach to the running daemon.
 
 ---
 
@@ -388,3 +394,4 @@ clientConfig:
 3. **HTTP/WS Proxying**: The server reads each incoming HTTP request, dequeues an idle tunnel connection from the pool, forwards the request, and streams the response back. WebSocket connections are spliced bidirectionally at the TCP level.
 4. **TCP Tunneling**: The server opens a dedicated TCP listener per `remote` port. When an external connection arrives, it signals a pooled tunnel worker to start a raw bidirectional pipe to the local target.
 5. **Pool Management**: A background janitor probes idle connections every 5 seconds and evicts dead ones. Named pools (per subdomain or TCP remote) are cleaned up automatically when all clients disconnect.
+6. **Daemon & IPC**: `gotunnel` automatically runs as a background process. The frontend CLI attaches to the daemon via local IPC (port 41400 for server, 41401 for client) to render the real-time Terminal UI, allowing you to seamlessly detach and re-attach without dropping connections.

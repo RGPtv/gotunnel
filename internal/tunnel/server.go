@@ -132,13 +132,17 @@ func RunServer(cfg *ServerConfig) {
 
 	if token == "auto" {
 		b := make([]byte, 32)
-		rand.Read(b)
+		if _, err := rand.Read(b); err != nil {
+			log.Fatalf("failed to generate token: %v", err)
+		}
 		token = hex.EncodeToString(b)
 	}
 
 	if inspect != "" && inspectPass == "" {
 		b := make([]byte, 10)
-		rand.Read(b)
+		if _, err := rand.Read(b); err != nil {
+			log.Fatalf("failed to generate inspect password: %v", err)
+		}
 		inspectPass = hex.EncodeToString(b)
 	}
 	
@@ -247,12 +251,13 @@ func RunServer(cfg *ServerConfig) {
 	}
 
 	// Start inspector web UI.
+	var inspSrv *http.Server
 	if inspect != "" {
 		srv.inspector = NewInspector(httpAddr, tunAddr, token, inspectUser, inspectPass, &srv.count, srv)
+		inspSrv = &http.Server{Addr: inspect, Handler: srv.inspector}
 		go func() {
-			isrv := &http.Server{Addr: inspect, Handler: srv.inspector}
 			srv.srvLog(LevelSuccess, "dashboard at http://%s", inspect)
-			if err := isrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			if err := inspSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 				srv.srvLog(LevelError, "inspector: %v", err)
 			}
 		}()
@@ -260,9 +265,6 @@ func RunServer(cfg *ServerConfig) {
 
 	go srv.acceptTunnelConns(tunLn)
 	go srv.startJanitor()
-
-	// Live stats ticker — pushes counts + tunnel list to TUI every second.
-	
 
 	httpSrv := &http.Server{
 		Addr:              httpAddr,
@@ -299,10 +301,24 @@ func RunServer(cfg *ServerConfig) {
 		tunLn.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		httpSrv.Shutdown(ctx)
-		if httpsSrv != nil {
-			httpsSrv.Shutdown(ctx)
+		if err := httpSrv.Shutdown(ctx); err != nil {
+			srv.srvLog(LevelWarn, "HTTP shutdown: %v", err)
 		}
+		if httpsSrv != nil {
+			if err := httpsSrv.Shutdown(ctx); err != nil {
+				srv.srvLog(LevelWarn, "HTTPS shutdown: %v", err)
+			}
+		}
+		if inspSrv != nil {
+			inspSrv.Shutdown(ctx)
+		}
+		// Close all TCP port listeners registered by tunnel clients.
+		srv.mu.Lock()
+		for addr, ln := range srv.tcpListeners {
+			ln.Close()
+			delete(srv.tcpListeners, addr)
+		}
+		srv.mu.Unlock()
 		srv.drainPool()
 	}()
 
@@ -878,6 +894,9 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request) {
 	// Read the 101 back from the client and relay it to the browser.
 	resp, err := http.ReadResponse(pc.r, out)
 	if err != nil || resp.StatusCode != http.StatusSwitchingProtocols {
+		if err == nil {
+			resp.Body.Close()
+		}
 		s.closeConn(pc, "ws upgrade response")
 		fmt.Fprintf(browserConn, "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
 		return
@@ -1073,50 +1092,67 @@ func (s *Server) drainPool() {
 // When a named pool (subdomain or TCP) becomes empty after cleaning, it is
 // removed from the map so future requests immediately get a 503 instead of
 // waiting 10 s for a connection that will never come.
+//
+// Both s.mu and s.tunnelMetaMu are held simultaneously during map cleanup so
+// that handleTunnelConn cannot insert new metadata for an endpoint between
+// the moment we decide to delete its pool and the moment we delete its meta
+// (TOCTOU fix). Blocking I/O (listener close) and logging are deferred until
+// after the locks are released to avoid holding the write mutex during syscalls.
 func (s *Server) startJanitor() {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	for range ticker.C {
+		// Clean the default pool without any lock — channel ops are goroutine-safe.
 		s.cleanPool(s.pool)
 
+		type listenerClose struct {
+			addr string
+			ln   net.Listener
+		}
+		var toClose []listenerClose
 		var deletedSubs, deletedTCPs []string
-		deletedDefault := len(s.pool) == 0
 
+		// Acquire both locks together so pool-empty detection and meta deletion
+		// are atomic with respect to handleTunnelConn.
 		s.mu.Lock()
+		s.tunnelMetaMu.Lock()
+
+		// Re-evaluate default pool emptiness while holding both locks.
+		if len(s.pool) == 0 {
+			delete(s.tunnelMeta, "(default)")
+		}
+
 		for sub, p := range s.httpPools {
 			s.cleanPool(p)
 			if len(p) == 0 {
 				delete(s.httpPools, sub)
+				delete(s.tunnelMeta, sub)
 				deletedSubs = append(deletedSubs, sub)
-				s.srvLog(LevelInfo, "subdomain pool removed: %s (no active clients)", sub)
 			}
 		}
 		for addr, p := range s.tcpPools {
 			s.cleanPool(p)
 			if len(p) == 0 {
 				delete(s.tcpPools, addr)
+				delete(s.tunnelMeta, addr)
 				deletedTCPs = append(deletedTCPs, addr)
 				if ln, ok := s.tcpListeners[addr]; ok {
-					ln.Close()
 					delete(s.tcpListeners, addr)
-					s.srvLog(LevelInfo, "TCP listener closed: %s (no active clients)", addr)
+					toClose = append(toClose, listenerClose{addr: addr, ln: ln})
 				}
 			}
 		}
+
+		s.tunnelMetaMu.Unlock()
 		s.mu.Unlock()
 
-		if len(deletedSubs) > 0 || len(deletedTCPs) > 0 || deletedDefault {
-			s.tunnelMetaMu.Lock()
-			if deletedDefault {
-				delete(s.tunnelMeta, "(default)")
-			}
-			for _, sub := range deletedSubs {
-				delete(s.tunnelMeta, sub)
-			}
-			for _, addr := range deletedTCPs {
-				delete(s.tunnelMeta, addr)
-			}
-			s.tunnelMetaMu.Unlock()
+		// Perform blocking I/O and logging outside the lock.
+		for _, op := range toClose {
+			op.ln.Close()
+			s.srvLog(LevelInfo, "TCP listener closed: %s (no active clients)", op.addr)
+		}
+		for _, sub := range deletedSubs {
+			s.srvLog(LevelInfo, "subdomain pool removed: %s (no active clients)", sub)
 		}
 	}
 }

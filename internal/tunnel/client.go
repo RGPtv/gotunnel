@@ -195,7 +195,7 @@ func RunClient(cfg *ClientConfig) {
 					MaxIdleConns:          200,
 					MaxIdleConnsPerHost:   50,
 					IdleConnTimeout:       90 * time.Second,
-					ResponseHeaderTimeout: 0,
+					ResponseHeaderTimeout: 60 * time.Second,
 				},
 				CheckRedirect: func(*http.Request, []*http.Request) error {
 					return http.ErrUseLastResponse
@@ -290,7 +290,8 @@ func (c *Client) connectAndServe(id int) error {
 	if c.noTLS {
 		conn, err = dialer.DialContext(c.ctx, "tcp", c.serverAddr)
 	} else {
-		conn, err = tls.DialWithDialer(dialer, "tcp", c.serverAddr, c.tlsConfig)
+		tlsDialer := &tls.Dialer{NetDialer: dialer, Config: c.tlsConfig}
+		conn, err = tlsDialer.DialContext(c.ctx, "tcp", c.serverAddr)
 	}
 	if err != nil {
 		return err
@@ -411,7 +412,17 @@ func (c *Client) connectAndServe(id int) error {
 		start := time.Now()
 		resp, proxyErr := c.forwardToTarget(req)
 		if proxyErr != nil {
-			writeErrorResponse(conn, 502, proxyErr.Error())
+			// Drain the request body fully before sending the error response.
+			// forwardToTarget may have failed before consuming the body; if we
+			// continue without draining, unconsumed body bytes remain at the
+			// head of `reader` and corrupt the next http.ReadRequest parse.
+			if req.Body != nil {
+				io.Copy(io.Discard, req.Body)
+				req.Body.Close()
+			}
+			if werr := writeErrorResponse(conn, 502, proxyErr.Error()); werr != nil {
+				return werr // tunnel conn is broken; let worker reconnect
+			}
 			continue
 		}
 
@@ -445,7 +456,8 @@ func (c *Client) handleTCPWorker(id int, tunnelConn net.Conn, tunnelReader *bufi
 		return fmt.Errorf("unexpected command: %s", line)
 	}
 
-	targetConn, err := net.DialTimeout("tcp", targetHost(c.targetAddr), 10*time.Second)
+	dialer := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
+	targetConn, err := dialer.DialContext(c.ctx, "tcp", targetHost(c.targetAddr))
 	if err != nil {
 		log.Printf("[w%d] tcp dial target failed: %v", id, err)
 		tunnelConn.Close() // forces server-side external client to get a clean reset
@@ -460,8 +472,8 @@ func (c *Client) handleTCPWorker(id int, tunnelConn net.Conn, tunnelReader *bufi
 		io.Copy(dst, src)
 		done <- struct{}{}
 	}
-	go cp(targetConn, tunnelReader) 
-	go cp(tunnelConn, targetConn)   
+	go cp(targetConn, tunnelReader)
+	go cp(tunnelConn, targetConn)
 	<-done
 	tunnelConn.Close()
 	targetConn.Close()
@@ -472,7 +484,8 @@ func (c *Client) handleTCPWorker(id int, tunnelConn net.Conn, tunnelReader *bufi
 }
 
 func (c *Client) handleWebSocket(id int, tunnelConn net.Conn, tunnelReader *bufio.Reader, req *http.Request) error {
-	targetConn, err := net.DialTimeout("tcp", targetHost(c.targetAddr), 10*time.Second)
+	dialer := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
+	targetConn, err := dialer.DialContext(c.ctx, "tcp", targetHost(c.targetAddr))
 	if err != nil {
 		writeErrorResponse(tunnelConn, 502, err.Error())
 		return fmt.Errorf("dial target for ws: %w", err)

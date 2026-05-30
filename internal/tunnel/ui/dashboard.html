@@ -5,46 +5,54 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Gotunnel · Dashboard</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
 :root {
-  --bg: #0a0a0a;
-  --surface: #111111;
-  --surface-2: #161616;
-  --border: #1f1f1f;
-  --border-2: #2a2a2a;
-  --text: #ededed;
-  --text-2: #a1a1a1;
-  --text-3: #555555;
-  --accent: #ededed;
-  --blue: #3b82f6;
-  --green: #22c55e;
-  --amber: #f59e0b;
-  --red: #ef4444;
-  --purple: #a78bfa;
-  --cyan: #22d3ee;
-  --r: 8px;
-  --r-lg: 10px;
+  --bg: #080c10;
+  --surface: #0d1117;
+  --surface-2: #161b22;
+  --surface-3: #1c2230;
+  --border: #21262d;
+  --border-2: #30363d;
+  --text: #e6edf3;
+  --text-2: #8b949e;
+  --text-3: #484f58;
+  --accent: #58a6ff;
+  --accent-dim: rgba(88,166,255,.1);
+  --accent-border: rgba(88,166,255,.25);
+  --green: #3fb950;
+  --green-dim: rgba(63,185,80,.1);
+  --green-border: rgba(63,185,80,.25);
+  --amber: #d29922;
+  --red: #f85149;
+  --red-dim: rgba(248,81,73,.1);
+  --purple: #bc8cff;
+  --cyan: #39d353;
+  --r: 6px;
+  --r-lg: 8px;
+  --nav-h: 52px;
+  --font-mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+  --font-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
 
-  --method-get: #22c55e;
-  --method-post: #3b82f6;
-  --method-put: #f59e0b;
-  --method-delete: #ef4444;
-  --method-patch: #a78bfa;
-  --method-head: #6b7280;
-  --method-options: #6b7280;
+  --method-get:    #3fb950;
+  --method-post:   #58a6ff;
+  --method-put:    #d29922;
+  --method-delete: #f85149;
+  --method-patch:  #bc8cff;
+  --method-head:   #484f58;
+  --method-options:#484f58;
 
-  --status-2: #22c55e;
-  --status-3: #3b82f6;
-  --status-4: #f59e0b;
-  --status-5: #ef4444;
+  --status-2: #3fb950;
+  --status-3: #58a6ff;
+  --status-4: #d29922;
+  --status-5: #f85149;
 }
 
 html { height: 100%; }
 body {
-  font-family: 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-sans);
   background: var(--bg);
   color: var(--text);
   height: 100%;
@@ -52,712 +60,626 @@ body {
   display: flex;
   flex-direction: column;
   -webkit-font-smoothing: antialiased;
-  font-size: 14px;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
-/* Scrollbars */
-::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 99px; }
 
-/* ── Top Nav ─────────────────────────────────── */
+/* ── Nav ─────────────────────────────── */
 nav {
-  height: 60px;
-  min-height: 60px;
+  height: var(--nav-h);
+  min-height: var(--nav-h);
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
-  padding: 0 20px;
+  padding: 0 16px;
   gap: 0;
-  background: var(--bg);
+  background: var(--surface);
   z-index: 50;
 }
 
-
 .nav-brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-right: 24px;
-  cursor: pointer;
-  position: relative;
-  user-select: none;
+  display: flex; align-items: center; gap: 8px;
+  margin-right: 20px; cursor: pointer;
+  position: relative; user-select: none;
 }
-.nav-brand:hover .nav-name { color: var(--text); }
+.nav-logo {
+  width: 28px; height: 28px;
+  background: linear-gradient(135deg, #1f4a7a, #0d3155);
+  border: 1px solid var(--accent-border);
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.nav-logo svg { width: 14px; height: 14px; color: var(--accent); }
+.nav-wordmark {
+  font-family: var(--font-mono);
+  font-size: 13px; font-weight: 600;
+  color: var(--text);
+  letter-spacing: -.3px;
+}
+.nav-wordmark span { color: var(--accent); }
+.nav-chevron { color: var(--text-3); transition: transform .15s; }
+.nav-brand:hover .nav-chevron { color: var(--text-2); }
+
 .brand-menu {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  margin-top: 14px;
+  position: absolute; top: calc(100% + 8px); left: 0;
   background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--r);
-  padding: 6px;
-  display: none;
-  flex-direction: column;
-  min-width: 150px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-  z-index: 100;
-  cursor: default;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-lg);
+  padding: 4px;
+  display: none; flex-direction: column;
+  min-width: 160px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.6);
+  z-index: 200;
 }
 .brand-menu.open { display: flex; }
 .menu-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  font-size: 13px;
-  color: var(--text-2);
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all .15s;
-  text-decoration: none;
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px; font-size: 12px;
+  color: var(--text-2); border-radius: 4px;
+  cursor: pointer; transition: all .12s;
+  text-decoration: none; font-family: var(--font-sans);
 }
-.menu-item:hover { color: var(--text); background: var(--surface); }
+.menu-item:hover { color: var(--text); background: var(--surface-3); }
+.menu-item svg { width: 13px; height: 13px; flex-shrink: 0; }
 
+.nav-divider { width: 1px; height: 18px; background: var(--border); margin: 0 12px; }
 
-.nav-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-}
-.nav-icon svg { width: 13px; height: 13px; }
+.nav-right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 
-.nav-name {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text);
-  letter-spacing: -.2px;
-}
-
-.nav-sep {
-  width: 1px;
-  height: 20px;
-  background: var(--border);
-  margin: 0 16px;
-}
-
-.sub-nav {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 20px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg);
-  flex-shrink: 0;
-}
-
-.nav-tab {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-3);
-  padding: 6px 12px;
-  border-radius: var(--r);
-  cursor: pointer;
-  border: none;
-  background: none;
-  font-family: inherit;
-  transition: color .15s, background .15s;
-}
-.nav-tab:hover { color: var(--text-2); background: var(--surface); }
-.nav-tab.active { color: var(--text); background: var(--surface-2); }
-
-.nav-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-left: auto;
-}
-
+/* Token chip */
 .token-chip {
-  display: flex; align-items: center; gap: 6px; font-size: 12px;
-  font-family: 'Geist Mono', monospace; color: var(--text-2);
-  background: var(--surface-2); border: 1px solid var(--border);
-  padding: 5px 10px; border-radius: 99px; transition: all .15s;
+  display: flex; align-items: center; gap: 5px;
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-3);
+  background: var(--bg); border: 1px solid var(--border);
+  padding: 4px 8px; border-radius: 5px;
+  transition: all .15s; cursor: default;
 }
+.token-chip:hover { border-color: var(--border-2); color: var(--text-2); }
+.token-chip.ok { color: var(--green); border-color: var(--green-border); background: var(--green-dim); }
 #nav-token-val {
-  display: inline-block;
-  max-width: 70px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: bottom;
-  transition: max-width 0.3s ease;
-  letter-spacing: 0.04em;
+  display: inline-block; max-width: 64px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  vertical-align: bottom; transition: max-width .25s ease;
 }
-#nav-token-val.masked { letter-spacing: 0.12em; }
-.token-chip:hover #nav-token-val { max-width: 320px; color: var(--text); }
-.token-chip:hover { border-color: var(--border-2); color: var(--text); }
-.token-chip.ok { color: var(--green); border-color: rgba(34,197,94,.4); background: rgba(34,197,94,.1); }
+#nav-token-val.masked { letter-spacing: .08em; }
+.token-chip:hover #nav-token-val { max-width: 280px; color: var(--text); }
 .chip-btn {
-  background: none; border: none; cursor: pointer; padding: 0 2px;
-  color: var(--text-2); font-size: 13px; line-height: 1;
-  opacity: 0.6; transition: opacity .15s;
+  background: none; border: none; cursor: pointer; padding: 0 1px;
+  color: var(--text-3); font-size: 12px; line-height: 1;
+  opacity: .6; transition: opacity .12s;
 }
 .chip-btn:hover { opacity: 1; }
 
-
 .live-badge {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 500;
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11px; font-weight: 500; font-family: var(--font-mono);
   color: var(--green);
-  background: rgba(34,197,94,.07);
-  border: 1px solid rgba(34,197,94,.15);
-  padding: 5px 12px;
-  border-radius: 99px;
+  background: var(--green-dim);
+  border: 1px solid var(--green-border);
+  padding: 4px 10px; border-radius: 5px;
 }
 .live-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
+  width: 6px; height: 6px; border-radius: 50%;
   background: var(--green);
-  animation: blink 2s ease infinite;
+  animation: pulse 2s ease infinite;
 }
-@keyframes blink {
-  0%,100% { opacity: 1; }
-  50%      { opacity: .4; }
+@keyframes pulse {
+  0%,100% { opacity: 1; box-shadow: 0 0 0 0 rgba(63,185,80,.4); }
+  50%      { opacity: .7; box-shadow: 0 0 0 3px rgba(63,185,80,0); }
 }
 
 .nav-uptime {
-  font-size: 13px;
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-3); font-variant-numeric: tabular-nums;
+}
+
+/* Sub-nav tabs */
+.sub-nav {
+  display: flex; align-items: center; gap: 2px;
+  padding: 0 16px;
+  height: 40px; min-height: 40px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.nav-tab {
+  font-size: 12px; font-weight: 500; font-family: var(--font-sans);
   color: var(--text-3);
-  font-variant-numeric: tabular-nums;
-  font-family: 'Geist Mono', monospace;
+  padding: 5px 10px; border-radius: var(--r);
+  cursor: pointer; border: none; background: none;
+  transition: color .12s, background .12s;
+  position: relative;
 }
+.nav-tab:hover { color: var(--text-2); background: var(--surface-2); }
+.nav-tab.active { color: var(--text); background: var(--surface-3); }
 
-.btn-ghost {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-2);
-  background: none;
-  border: 1px solid var(--border);
-  padding: 6px 14px;
-  border-radius: var(--r);
-  cursor: pointer;
-  font-family: inherit;
-  transition: color .15s, border-color .15s, background .15s;
-}
-.btn-ghost:hover { color: var(--text); border-color: var(--border-2); background: var(--surface); }
+/* ── Layout ─────────────────────────── */
+.layout { display: flex; flex: 1; overflow: hidden; }
 
-
-.status-footer {
-  position: fixed;
-  bottom: 24px;
-  right: 24px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  z-index: 50;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  padding: 6px 12px 6px 6px;
-  border-radius: 99px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-}
-
-/* ── Layout ──────────────────────────────────── */
-.layout {
-  display: flex;
-  flex: 1;
-  overflow: hidden;
-}
-
-/* ── Sidebar ─────────────────────────────────── */
+/* ── Sidebar ────────────────────────── */
 .sidebar {
-  width: 260px;
-  min-width: 260px;
+  width: 240px; min-width: 240px;
   border-right: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
+  display: flex; flex-direction: column;
   overflow-y: auto;
-  padding: 20px 14px;
-  gap: 28px;
+  background: var(--surface);
 }
 
-.sidebar-section { }
+.sidebar-section { padding: 16px 12px 8px; }
+.sidebar-section + .sidebar-section { border-top: 1px solid var(--border); }
+
 .sidebar-label {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: .6px;
-  color: var(--text-3);
-  padding: 0 8px;
-  margin-bottom: 8px;
+  font-size: 10px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .7px;
+  color: var(--text-3); padding: 0 6px; margin-bottom: 6px;
+  font-family: var(--font-sans);
 }
-
-.stat-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 9px 8px;
-  border-radius: var(--r);
-}
-.stat-label {
-  font-size: 13px;
-  color: var(--text-2);
-}
-.stat-value {
-  font-family: 'Geist Mono', monospace;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text);
-}
-.stat-value.green { color: var(--green); }
-.stat-value.blue  { color: var(--cyan); }
 
 .tunnel-entry {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 8px;
-  border-radius: var(--r);
-  cursor: pointer;
-  transition: background .12s;
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 8px; border-radius: var(--r);
+  cursor: pointer; transition: background .1s;
   border: 1px solid transparent;
+  margin-bottom: 2px;
 }
-.tunnel-entry:hover { background: var(--surface); }
+.tunnel-entry:hover { background: var(--surface-2); }
 .tunnel-entry.active {
-  background: var(--surface-2);
-  border-color: var(--border);
+  background: var(--surface-3);
+  border-color: var(--border-2);
 }
-
 .t-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex-shrink: 0;
+  width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
 }
-.t-dot.http  { background: var(--green); box-shadow: 0 0 6px rgba(34,197,94,.4); }
-.t-dot.tcp   { background: var(--purple); box-shadow: 0 0 6px rgba(167,139,250,.4); }
-
+.t-dot.http  { background: var(--green); box-shadow: 0 0 4px rgba(63,185,80,.5); }
+.t-dot.tcp   { background: var(--purple); box-shadow: 0 0 4px rgba(188,140,255,.5); }
 .t-name {
-  flex: 1;
-  font-size: 13px;
-  color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  flex: 1; font-size: 12px; font-family: var(--font-mono);
+  color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.t-workers {
-  font-family: 'Geist Mono', monospace;
-  font-size: 12px;
-  color: var(--text-3);
+.t-badge {
+  font-family: var(--font-mono); font-size: 10px; color: var(--text-3);
+  background: var(--surface); border: 1px solid var(--border);
+  padding: 1px 5px; border-radius: 3px;
 }
-
 .tunnel-empty-msg {
-  font-size: 13px;
-  color: var(--text-3);
-  padding: 4px 8px;
+  font-size: 12px; color: var(--text-3); padding: 4px 8px;
 }
 
-/* Token section */
+/* Stat items in sidebar */
+.stat-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 5px 6px; border-radius: var(--r);
+}
+.stat-label { font-size: 12px; color: var(--text-2); }
+.stat-value {
+  font-family: var(--font-mono); font-size: 12px;
+  font-weight: 500; color: var(--text);
+}
+.stat-value.green { color: var(--green); }
+.stat-value.blue  { color: var(--accent); }
+
+/* Token box */
 .token-box {
-  border: 1px solid var(--border);
-  border-radius: var(--r);
-  overflow: hidden;
+  border: 1px solid var(--border); border-radius: var(--r); overflow: hidden;
 }
 .token-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  background: var(--surface-2);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 10px; background: var(--surface-3);
   border-bottom: 1px solid var(--border);
 }
-.token-header-label {
-  font-size: 12px;
-  color: var(--text-3);
-  font-weight: 500;
-}
-.token-actions { display: flex; gap: 4px; }
+.token-header-label { font-size: 11px; color: var(--text-3); font-weight: 500; }
+.token-actions { display: flex; gap: 3px; }
 .token-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  background: none;
-  color: var(--text-3);
-  cursor: pointer;
-  transition: all .15s;
+  display: flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px;
+  border: 1px solid var(--border); border-radius: 4px;
+  background: none; color: var(--text-3); cursor: pointer;
+  transition: all .12s;
 }
-.token-btn:hover { color: var(--text-2); border-color: var(--border-2); background: var(--surface); }
-.token-btn.ok { color: var(--green); border-color: rgba(34,197,94,.3); background: rgba(34,197,94,.06); }
-/* Auth toggle (pill switch) */
-.auth-toggle { position:relative; display:inline-block; width:32px; height:18px; cursor:pointer; flex-shrink:0; }
-.auth-toggle input { opacity:0; width:0; height:0; }
-.auth-toggle-slider { position:absolute; inset:0; border-radius:18px; background:var(--border-2); transition:background .2s; }
-.auth-toggle-slider::before { content:''; position:absolute; width:12px; height:12px; left:3px; top:3px; border-radius:50%; background:#fff; transition:transform .2s; }
-.auth-toggle input:checked + .auth-toggle-slider { background:var(--blue); }
-.auth-toggle input:checked + .auth-toggle-slider::before { transform:translateX(14px); }
-/* Auth input controls */
-.auth-input { width:100%; box-sizing:border-box; padding:6px 8px; border-radius:6px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:12px; margin-bottom:6px; outline:none; font-family:'Geist Mono',monospace; }
-.auth-input:focus { border-color:var(--blue); }
-.auth-save-btn { width:100%; padding:6px 0; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--text-2); font-size:12px; cursor:pointer; transition:background .15s,color .15s; font-family:inherit; }
-.auth-save-btn:hover { background:var(--blue); color:#fff; border-color:var(--blue); }
-/* Credential field row */
-.cred-row { position:relative; display:flex; align-items:center; gap:4px; margin-bottom:6px; }
-.cred-row .auth-input { margin-bottom:0; flex:1; padding-right:60px; }
-.cred-btns { position:absolute; right:4px; display:flex; gap:2px; }
-.cred-btn { display:flex; align-items:center; justify-content:center; width:24px; height:24px; border:none; border-radius:4px; background:none; color:var(--text-3); cursor:pointer; transition:color .15s,background .15s; font-size:11px; }
-.cred-btn:hover { color:var(--text-2); background:var(--surface); }
-.cred-btn svg { width:11px; height:11px; }
-/* Gen password button */
-.gen-pass-btn { width:100%; padding:5px 0; border-radius:6px; border:1px dashed var(--border); background:none; color:var(--text-3); font-size:11px; cursor:pointer; transition:all .15s; font-family:inherit; margin-bottom:6px; }
-.gen-pass-btn:hover { color:var(--cyan); border-color:var(--cyan); background:rgba(34,211,238,.04); }
-/* Credential display box */
-.cred-display { display:none; background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:8px 10px; margin-bottom:6px; }
-.cred-display.visible { display:block; }
-.cred-display-row { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-.cred-display-label { font-size:11px; color:var(--text-3); flex-shrink:0; min-width:56px; }
-.cred-display-val { font-family:'Geist Mono',monospace; font-size:11px; color:var(--text-2); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.token-btn:hover { color: var(--text-2); border-color: var(--border-2); background: var(--surface-2); }
+.token-btn.ok { color: var(--green); border-color: var(--green-border); background: var(--green-dim); }
 .token-value {
-  font-family: 'Geist Mono', monospace;
-  font-size: 11px;
-  color: var(--text-2);
-  padding: 10px 12px;
-  word-break: break-all;
-  line-height: 1.7;
-  user-select: all;
-  cursor: text;
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--text-2); padding: 8px 10px;
+  word-break: break-all; line-height: 1.6; cursor: text; user-select: all;
 }
 .token-value.masked {
-  color: var(--text-3);
-  letter-spacing: 3px;
-  cursor: default;
-  user-select: none;
+  color: var(--text-3); letter-spacing: 3px; cursor: default; user-select: none;
 }
 
-/* ── Main content ────────────────────────────── */
-.main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
+/* ── Main ───────────────────────────── */
+.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+/* ── Empty state ────────────────────── */
+.view-empty-wrap {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  height: 100%; gap: 10px; color: var(--text-3);
+}
+.view-empty-wrap svg { width: 32px; height: 32px; opacity: .25; }
+.view-empty-wrap p { font-size: 13px; }
+.view-empty-wrap span { font-size: 12px; opacity: .6; }
+
+/* ── Overview cards ─────────────────── */
+.overview-grid {
+  padding: 24px;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(3, 1fr);
+  align-content: start;
+  overflow-y: auto;
+  height: 100%;
+}
+@media (max-width: 960px) { .overview-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 640px) { .overview-grid { grid-template-columns: 1fr; } }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
   overflow: hidden;
 }
-
-/* ── Inspector toolbar ───────────────────────── */
-.toolbar {
-  height: 44px;
-  min-height: 44px;
+.card-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  padding: 0 20px;
-  gap: 12px;
-  background: var(--bg);
+  background: var(--surface-2);
+}
+.card-title {
+  font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .6px;
+  color: var(--text-2); font-family: var(--font-sans);
+  display: flex; align-items: center; gap: 6px;
+}
+.card-title svg { width: 12px; height: 12px; color: var(--text-3); }
+.card-body { padding: 12px 14px; }
+
+/* Card stat rows */
+.card-stat {
+  display: flex; align-items: center;
+  justify-content: space-between;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+}
+.card-stat:last-child { border-bottom: none; }
+.cs-label { font-size: 12px; color: var(--text-2); }
+.cs-val {
+  font-family: var(--font-mono); font-size: 12px;
+  font-weight: 500; color: var(--text);
+}
+.cs-val.green { color: var(--green); }
+.cs-val.blue  { color: var(--accent); }
+.cs-val.url {
+  color: var(--accent); font-size: 11px;
+  max-width: 160px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+  cursor: pointer;
+}
+.cs-val.url:hover { text-decoration: underline; }
+
+/* Toggle switch */
+.toggle-wrap {
+  display: flex; align-items: center; gap: 8px;
+}
+.toggle {
+  position: relative; display: inline-block;
+  width: 30px; height: 16px; cursor: pointer; flex-shrink: 0;
+}
+.toggle input { opacity: 0; width: 0; height: 0; }
+.toggle-track {
+  position: absolute; inset: 0;
+  border-radius: 16px; background: var(--border-2);
+  transition: background .2s;
+  border: 1px solid transparent;
+}
+.toggle-track::before {
+  content: ''; position: absolute;
+  width: 10px; height: 10px; left: 2px; top: 2px;
+  border-radius: 50%; background: var(--text-3);
+  transition: transform .2s, background .2s;
+}
+.toggle input:checked + .toggle-track { background: rgba(88,166,255,.2); border-color: var(--accent-border); }
+.toggle input:checked + .toggle-track::before { transform: translateX(14px); background: var(--accent); }
+.toggle-label { font-size: 11px; color: var(--text-3); }
+
+/* Status pill */
+.status-pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 500; font-family: var(--font-mono);
+  padding: 2px 8px; border-radius: 4px;
+}
+.status-pill.enabled {
+  color: var(--green); background: var(--green-dim);
+  border: 1px solid var(--green-border);
+}
+.status-pill.disabled {
+  color: var(--text-3); background: var(--surface-3);
+  border: 1px solid var(--border);
 }
 
-.req-count {
-  font-size: 13px;
-  color: var(--text-3);
-  font-variant-numeric: tabular-nums;
+/* Auth form */
+.auth-form { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.input-row { position: relative; }
+.auth-input {
+  width: 100%; padding: 7px 32px 7px 10px;
+  border-radius: var(--r); border: 1px solid var(--border);
+  background: var(--bg); color: var(--text);
+  font-family: var(--font-mono); font-size: 12px;
+  outline: none; transition: border-color .15s;
 }
+.auth-input::placeholder { color: var(--text-3); font-family: var(--font-sans); }
+.auth-input:focus { border-color: var(--accent-border); background: var(--surface); }
+.input-action {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  display: flex; gap: 2px;
+}
+.icon-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px;
+  background: none; border: none; cursor: pointer;
+  color: var(--text-3); border-radius: 3px;
+  transition: color .12s, background .12s;
+}
+.icon-btn:hover { color: var(--text-2); background: var(--surface-2); }
+.icon-btn svg { width: 12px; height: 12px; }
+
+.gen-btn {
+  display: flex; align-items: center; justify-content: center; gap: 5px;
+  width: 100%; padding: 6px;
+  background: none; border: 1px dashed var(--border-2);
+  color: var(--text-3); font-size: 11px; font-family: var(--font-sans);
+  border-radius: var(--r); cursor: pointer;
+  transition: all .15s;
+}
+.gen-btn:hover { color: var(--accent); border-color: var(--accent-border); background: var(--accent-dim); }
+.gen-btn svg { width: 11px; height: 11px; }
+
+.apply-btn {
+  width: 100%; padding: 7px;
+  background: var(--surface-3); border: 1px solid var(--border-2);
+  color: var(--text); font-size: 12px; font-weight: 500;
+  font-family: var(--font-sans);
+  border-radius: var(--r); cursor: pointer;
+  transition: all .15s;
+}
+.apply-btn:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+.apply-btn:active { transform: scale(.98); }
+
+.form-msg {
+  font-size: 11px; font-family: var(--font-mono);
+  padding: 5px 8px; border-radius: var(--r);
+  display: none;
+}
+.form-msg.ok { color: var(--green); background: var(--green-dim); }
+.form-msg.err { color: var(--red); background: var(--red-dim); }
+
+/* Saved credentials display */
+.cred-saved {
+  display: none; flex-direction: column; gap: 0;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--r); overflow: hidden; margin-bottom: 8px;
+}
+.cred-saved.show { display: flex; }
+.cred-row {
+  display: flex; align-items: center;
+  padding: 6px 10px; gap: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.cred-row:last-child { border-bottom: none; }
+.cred-key {
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .5px; color: var(--text-3); width: 44px; flex-shrink: 0;
+}
+.cred-val {
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-2);
+  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cred-val.masked { letter-spacing: 3px; color: var(--text-3); }
+.cred-actions { display: flex; gap: 2px; margin-left: auto; }
+
+/* ── Inspector ─────────────────────── */
+.toolbar {
+  height: 40px; min-height: 40px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center;
+  padding: 0 16px; gap: 10px;
+  background: var(--surface);
+}
+.req-count { font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; }
 .req-count strong { color: var(--text-2); font-weight: 600; }
 
 .filter-chip {
-  display: none;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--cyan);
-  background: rgba(34,211,238,.06);
-  border: 1px solid rgba(34,211,238,.15);
-  padding: 3px 8px;
-  border-radius: 99px;
+  display: none; align-items: center; gap: 4px;
+  font-size: 10px; font-weight: 500; font-family: var(--font-mono);
+  color: var(--accent);
+  background: var(--accent-dim); border: 1px solid var(--accent-border);
+  padding: 2px 7px; border-radius: 4px;
 }
 .filter-chip.show { display: flex; }
 .filter-chip button {
-  background: none;
-  border: none;
-  color: inherit;
-  cursor: pointer;
-  font-size: 12px;
-  line-height: 1;
-  opacity: .7;
-  padding: 0;
+  background: none; border: none; color: inherit;
+  cursor: pointer; font-size: 11px; line-height: 1; opacity: .7; padding: 0;
 }
 .filter-chip button:hover { opacity: 1; }
-
 .ml-auto { margin-left: auto; }
-
 .btn-clear {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-3);
-  background: none;
-  border: 1px solid var(--border);
-  padding: 5px 12px;
-  border-radius: 5px;
-  cursor: pointer;
-  font-family: inherit;
-  transition: all .15s;
+  font-size: 11px; font-weight: 500; color: var(--text-3);
+  background: none; border: 1px solid var(--border);
+  padding: 4px 10px; border-radius: 4px;
+  cursor: pointer; font-family: var(--font-sans);
+  transition: all .12s;
 }
 .btn-clear:hover { color: var(--text-2); border-color: var(--border-2); }
 
-/* ── Table ───────────────────────────────────── */
-.table-wrap {
-  flex: 1;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
+.table-wrap { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
 .table-head {
   display: grid;
-  grid-template-columns: 80px 100px 72px 1fr 64px 90px 88px;
-  padding: 0 20px;
-  height: 36px;
-  align-items: center;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg);
-  position: sticky;
-  top: 0;
-  z-index: 10;
+  grid-template-columns: 72px 108px 68px 1fr 60px 84px 84px;
+  padding: 0 16px; height: 32px;
+  align-items: center; border-bottom: 1px solid var(--border);
+  background: var(--surface); position: sticky; top: 0; z-index: 10;
 }
 .th {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-3);
-  text-transform: uppercase;
-  letter-spacing: .4px;
+  font-size: 10px; font-weight: 600; color: var(--text-3);
+  text-transform: uppercase; letter-spacing: .5px;
 }
 .th:last-child { text-align: right; }
+.table-body { flex: 1; overflow-y: auto; }
 
-.table-body {
-  flex: 1;
-  overflow-y: auto;
-}
-
-/* Empty state */
 .empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  gap: 8px;
-  color: var(--text-3);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  height: 100%; gap: 8px; color: var(--text-3);
 }
-.empty svg { width: 28px; height: 28px; opacity: .4; }
-.empty p { font-size: 14px; }
-.empty span { font-size: 13px; opacity: .7; }
+.empty svg { width: 24px; height: 24px; opacity: .3; }
+.empty p { font-size: 13px; }
+.empty span { font-size: 12px; opacity: .6; }
 
-/* Request rows */
 .req-row {
   display: grid;
-  grid-template-columns: 80px 100px 72px 1fr 64px 90px 88px;
-  align-items: center;
-  padding: 0 20px;
-  height: 42px;
-  border-bottom: 1px solid rgba(31,31,31,.6);
-  cursor: pointer;
-  transition: background .1s;
+  grid-template-columns: 72px 108px 68px 1fr 60px 84px 84px;
+  align-items: center; padding: 0 16px; height: 38px;
+  border-bottom: 1px solid rgba(33,38,45,.8);
+  cursor: pointer; transition: background .08s;
 }
 .req-row:hover { background: var(--surface); }
-.req-row.is-new { animation: flash .5s ease; }
-@keyframes flash {
-  0%   { background: rgba(34,211,238,.05); }
+.req-row.is-new { animation: rowflash .4s ease; }
+@keyframes rowflash {
+  0%   { background: rgba(88,166,255,.06); }
   100% { background: transparent; }
 }
 
-.r-time {
-  font-family: 'Geist Mono', monospace;
-  font-size: 12px;
-  color: var(--text-3);
-  font-variant-numeric: tabular-nums;
-}
+.r-time { font-family: var(--font-mono); font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.r-ip   { font-family: var(--font-mono); font-size: 11px; color: var(--text-3); }
 .r-method {
-  font-family: 'Geist Mono', monospace;
-  font-size: 11px;
-  font-weight: 600;
-  width: 52px;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 4px;
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+  width: 48px; height: 20px; display: flex;
+  align-items: center; justify-content: center; border-radius: 3px;
 }
-.r-method.GET     { color: var(--method-get);     background: rgba(34,197,94,.08); }
-.r-method.POST    { color: var(--method-post);    background: rgba(59,130,246,.08); }
-.r-method.PUT     { color: var(--method-put);     background: rgba(245,158,11,.08); }
-.r-method.DELETE  { color: var(--method-delete);  background: rgba(239,68,68,.08); }
-.r-method.PATCH   { color: var(--method-patch);   background: rgba(167,139,250,.08); }
-.r-method.HEAD,
-.r-method.OPTIONS { color: var(--method-head);    background: rgba(107,114,128,.08); }
+.r-method.GET     { color: var(--method-get);    background: rgba(63,185,80,.08); }
+.r-method.POST    { color: var(--method-post);   background: rgba(88,166,255,.08); }
+.r-method.PUT     { color: var(--method-put);    background: rgba(210,153,34,.08); }
+.r-method.DELETE  { color: var(--method-delete); background: rgba(248,81,73,.08); }
+.r-method.PATCH   { color: var(--method-patch);  background: rgba(188,140,255,.08); }
+.r-method.HEAD, .r-method.OPTIONS { color: var(--method-head); background: rgba(72,79,88,.08); }
 
 .r-path {
-  font-family: 'Geist Mono', monospace;
-  font-size: 13px;
-  color: var(--text-2);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding-right: 16px;
+  font-family: var(--font-mono); font-size: 12px; color: var(--text-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 12px;
 }
-
-.r-status {
-  font-family: 'Geist Mono', monospace;
-  font-size: 13px;
-  font-weight: 600;
-}
+.r-status { font-family: var(--font-mono); font-size: 12px; font-weight: 600; }
 .r-status.s2 { color: var(--status-2); }
 .r-status.s3 { color: var(--status-3); }
 .r-status.s4 { color: var(--status-4); }
 .r-status.s5 { color: var(--status-5); }
-
-.r-dur {
-  font-family: 'Geist Mono', monospace;
-  font-size: 12px;
-  color: var(--text-3);
-  font-variant-numeric: tabular-nums;
-}
-
-.r-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-}
-
+.r-dur { font-family: var(--font-mono); font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.r-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
 .replay-btn {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-3);
-  background: none;
-  border: 1px solid var(--border);
-  padding: 4px 10px;
-  border-radius: 5px;
-  cursor: pointer;
-  font-family: inherit;
-  transition: all .15s;
-  opacity: 0;
+  font-size: 11px; font-weight: 500; color: var(--text-3);
+  background: none; border: 1px solid var(--border);
+  padding: 3px 8px; border-radius: 4px;
+  cursor: pointer; font-family: var(--font-sans);
+  transition: all .12s; opacity: 0;
 }
 .req-row:hover .replay-btn { opacity: 1; }
 .replay-btn:hover { color: var(--text-2); border-color: var(--border-2); background: var(--surface); }
-
 .expand-icon {
-  width: 16px;
-  height: 16px;
-  color: var(--text-3);
-  transition: transform .18s, color .15s;
-  flex-shrink: 0;
+  width: 14px; height: 14px; color: var(--text-3);
+  transition: transform .15s, color .12s; flex-shrink: 0;
 }
 .req-row:hover .expand-icon { color: var(--text-2); }
 .expand-icon.open { transform: rotate(90deg); color: var(--text-2); }
 
-/* Detail panel */
 .req-detail {
-  display: none;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  padding: 16px 20px;
+  display: none; background: var(--surface);
+  border-bottom: 1px solid var(--border); padding: 14px 16px;
 }
-.req-detail.open { display: block; animation: fadeIn .15s ease; }
+.req-detail.open { display: block; animation: fadeIn .12s ease; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-
-.detail-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 24px;
-}
-
+.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 .detail-section-title {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: .5px;
-  color: var(--text-3);
-  margin-bottom: 10px;
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .5px; color: var(--text-3); margin-bottom: 8px;
 }
-
 .detail-headers {
-  font-family: 'Geist Mono', monospace;
-  font-size: 12px;
-  line-height: 2;
-  color: var(--text-3);
+  font-family: var(--font-mono); font-size: 11px;
+  line-height: 1.9; color: var(--text-3);
 }
 .hdr-k { color: var(--text-2); }
-
-/* Body preview */
 .detail-body {
-  font-family: 'Geist Mono', monospace;
-  font-size: 12px;
-  line-height: 1.7;
-  color: var(--text-2);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--r);
-  padding: 12px 14px;
-  max-height: 140px;
-  overflow-y: auto;
-  white-space: pre-wrap;
-  word-break: break-all;
-  margin-top: 10px;
+  font-family: var(--font-mono); font-size: 11px; line-height: 1.6;
+  color: var(--text-2); background: var(--bg);
+  border: 1px solid var(--border); border-radius: var(--r);
+  padding: 10px 12px; max-height: 120px; overflow-y: auto;
+  white-space: pre-wrap; word-break: break-all; margin-top: 8px;
 }
 
-/* ── Responsive ─────────────────────────────── */
-@media (max-width: 1024px) {
-  .sidebar { width: 220px; min-width: 220px; }
+/* Status footer */
+.status-footer {
+  position: fixed; bottom: 16px; right: 16px;
+  display: flex; align-items: center; gap: 8px;
+  z-index: 100; background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  padding: 5px 10px 5px 6px; border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.5);
 }
-@media (max-width: 900px) {
-  /* Stack overview columns on narrower screens */
-  #view-overview > div { grid-template-columns: 1fr 1fr !important; }
-}
+
 @media (max-width: 700px) {
   .sidebar { display: none; }
-  .table-head,
-  .req-row {
-    grid-template-columns: 70px 80px 60px 1fr 52px 72px 72px;
-    padding: 0 14px;
+  .table-head, .req-row {
+    grid-template-columns: 60px 72px 56px 1fr 48px 68px 68px;
+    padding: 0 10px;
   }
-  #view-overview > div { grid-template-columns: 1fr !important; }
 }
 </style>
 </head>
 <body>
 
-<!-- ── Nav ─────────────────────────────────── -->
+<!-- ── Nav ──────────────────────────────────── -->
 <nav>
   <div class="nav-brand" onclick="document.getElementById('brand-menu').classList.toggle('open'); event.stopPropagation();">
-    <div class="nav-icon">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" color="#ededed">
+    <div class="nav-logo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12 2L2 7l10 5 10-5-10-5z"/>
         <path d="M2 17l10 5 10-5"/>
         <path d="M2 12l10 5 10-5"/>
       </svg>
     </div>
-    <span class="nav-name">GoTunnel</span>
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text-3); margin-left:4px;"><polyline points="6 9 12 15 18 9"/></svg>
-    
+    <span class="nav-wordmark">Go<span>Tunnel</span></span>
+    <svg class="nav-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+
     <div class="brand-menu" id="brand-menu" onclick="event.stopPropagation()">
       <div class="menu-item" onclick="selectTunnel(null); document.getElementById('brand-menu').classList.remove('open')">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-        Home
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        Dashboard
       </div>
       <a class="menu-item" href="/logout">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
         Logout
       </a>
     </div>
   </div>
 
   <div class="nav-right">
-    <div class="token-chip" id="nav-token-chip" title="Token">
-      Token: <span id="nav-token-val" class="masked">••••••••</span>
-      <button class="chip-btn" id="token-reveal-btn" onclick="tokenReveal()" title="Reveal">👁</button>
-      <button class="chip-btn" id="token-copy-btn"   onclick="tokenCopy()"   title="Copy">⎘</button>
+    <span class="nav-uptime" id="uptime">—</span>
+    <div class="nav-divider"></div>
+    <div class="token-chip" id="nav-token-chip" title="Server token">
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      <span id="nav-token-val" class="masked">••••••••</span>
+      <button class="chip-btn" id="token-reveal-btn" onclick="tokenReveal()" title="Reveal">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+      </button>
+      <button class="chip-btn" id="token-copy-btn" onclick="tokenCopy()" title="Copy">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      </button>
+    </div>
+    <div class="live-badge">
+      <div class="live-dot"></div>
+      Live
     </div>
   </div>
 </nav>
@@ -765,11 +687,10 @@ nav {
 <!-- ── Body ──────────────────────────────────── -->
 <div class="layout">
 
-  <!-- ── Sidebar ─────────────────────────────── -->
+  <!-- ── Sidebar ──────────────────────────────── -->
   <aside class="sidebar">
-    <!-- Tunnels -->
     <div class="sidebar-section">
-      <div class="sidebar-label">Tunnels</div>
+      <div class="sidebar-label">Active Tunnels</div>
       <div id="tunnel-list">
         <div class="tunnel-empty-msg">No active tunnels</div>
       </div>
@@ -779,216 +700,252 @@ nav {
   <!-- ── Main ─────────────────────────────────── -->
   <div class="main">
 
-    <div class="sub-nav" id="nav-tabs" style="display:none;">
+    <!-- Sub nav tabs -->
+    <div class="sub-nav" id="nav-tabs" style="display:none">
       <button class="nav-tab active" id="tab-overview" onclick="switchTab('overview')">Overview</button>
-      <button class="nav-tab" id="tab-inspector" onclick="switchTab('inspector')">Traffic Inspector</button>
+      <button class="nav-tab" id="tab-inspector" onclick="switchTab('inspector')">
+        Traffic Inspector
+      </button>
     </div>
 
-    <!-- Empty View -->
-    <div id="view-empty" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-3);">
-       <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity:0.4;margin-bottom:12px"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-       <p style="font-size:14px">Select a tunnel from the sidebar</p>
+    <!-- Empty state -->
+    <div id="view-empty" class="view-empty-wrap">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+      <p>Select a tunnel</p>
+      <span>Choose a tunnel from the sidebar to view details</span>
     </div>
 
-    <!-- Overview View -->
-    <div id="view-overview" style="display: none; flex-direction: column; overflow-y: auto; width: 100%; height: 100%;">
-      <div style="padding: 28px 32px; display: grid; gap: 24px; grid-template-columns: 1fr 1fr 1fr; align-content: start;">
-        
-        <!-- Stats -->
-        <div class="sidebar-section">
-          <div class="sidebar-label" style="font-size: 13px; margin-bottom:12px;">Tunnel Info</div>
-          <div style="background:var(--surface-2); border:1px solid var(--border); border-radius:var(--r); padding:12px">
-            <div class="stat-item">
-              <span class="stat-label">Public URL</span>
-              <span class="stat-value blue" id="tun-proxyurl">—</span>
+    <!-- Overview -->
+    <div id="view-overview" style="display:none; height:100%; overflow:hidden;">
+      <div class="overview-grid">
+
+        <!-- Tunnel Info Card -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+              Tunnel Info
+            </span>
+          </div>
+          <div class="card-body">
+            <div class="card-stat">
+              <span class="cs-label">Public URL</span>
+              <span class="cs-val url" id="tun-proxyurl" onclick="window.open(this.dataset.url,'_blank')" title="Open in new tab">—</span>
             </div>
-            <div class="stat-item">
-              <span class="stat-label">Client IP</span>
-              <span class="stat-value" id="tun-clientip">—</span>
+            <div class="card-stat">
+              <span class="cs-label">Client IP</span>
+              <span class="cs-val" id="tun-clientip">—</span>
             </div>
-            <div class="stat-item">
-              <span class="stat-label">Type</span>
-              <span class="stat-value" id="tun-type" style="text-transform:uppercase">—</span>
+            <div class="card-stat">
+              <span class="cs-label">Protocol</span>
+              <span class="cs-val" id="tun-type" style="text-transform:uppercase">—</span>
             </div>
-            <div class="stat-item">
-              <span class="stat-label">Active Connections</span>
-              <span class="stat-value green" id="tun-conns">0</span>
+            <div class="card-stat">
+              <span class="cs-label">Connections</span>
+              <span class="cs-val green" id="tun-conns">0</span>
             </div>
           </div>
         </div>
 
-        <!-- API Key section -->
-        <div class="sidebar-section" id="tunnel-auth-section" style="display:none">
-          <div class="sidebar-label" style="font-size:13px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
-            <span>API Key</span>
-            <label class="auth-toggle" title="Enable / disable API key protection">
+        <!-- API Key Card -->
+        <div class="card" id="apikey-card" style="display:none">
+          <div class="card-header">
+            <span class="card-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+              API Key
+            </span>
+            <label class="toggle" title="Enable / disable API key protection">
               <input type="checkbox" id="apikey-toggle" onchange="apikeyToggleChanged()">
-              <span class="auth-toggle-slider"></span>
+              <span class="toggle-track"></span>
             </label>
           </div>
-          <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);padding:12px">
-            <div class="stat-item" style="padding-top:0">
-              <span class="stat-label">Protection</span>
-              <span class="stat-value" id="apikey-status-text" style="color:var(--text-3)">Disabled</span>
+          <div class="card-body">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+              <span class="cs-label">Protection</span>
+              <span class="status-pill disabled" id="apikey-status-pill">Disabled</span>
             </div>
             <div id="apikey-controls" style="display:none">
-              <div class="stat-item" style="padding-bottom:0;flex-direction:column;align-items:stretch;gap:6px">
-                <div class="token-box" style="margin:0">
-                  <div class="token-header">
-                    <span class="token-header-label">Secret key</span>
-                    <div class="token-actions">
-                      <button class="token-btn" id="api-reveal" title="Reveal" onclick="apiReveal()">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                      </button>
-                      <button class="token-btn" id="api-copy" title="Copy" onclick="apiCopy()">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                      </button>
-                      <button class="token-btn" id="api-regen" title="Regenerate" onclick="apiRegenerate()">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-                      </button>
-                    </div>
+              <div class="token-box">
+                <div class="token-header">
+                  <span class="token-header-label">Secret key</span>
+                  <div class="token-actions">
+                    <button class="token-btn" id="api-reveal" title="Reveal" onclick="apiReveal()">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    </button>
+                    <button class="token-btn" id="api-copy" title="Copy" onclick="apiCopy()">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    </button>
+                    <button class="token-btn" id="api-regen" title="Regenerate" onclick="apiRegenerate()">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                    </button>
                   </div>
-                  <div class="token-value masked" id="api-val">••••••••••••••••••••••••••••••••</div>
                 </div>
-                <div style="font-size:11px;color:var(--text-3,#888)">Send as <code style="font-size:10px">X-API-Key</code> header or <code style="font-size:10px">Bearer</code> token</div>
+                <div class="token-value masked" id="api-val">••••••••••••••••••••••••••••••••</div>
+              </div>
+              <div style="font-size:11px;color:var(--text-3);margin-top:8px;font-family:var(--font-mono)">
+                Header: <code style="color:var(--text-2)">X-API-Key: &lt;key&gt;</code>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Basic Auth section -->
-        <div class="sidebar-section" id="basicauth-section-col" style="display:none">
-          <div class="sidebar-label" style="font-size:13px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
-            <span>Basic Auth</span>
-            <label class="auth-toggle" title="Enable / disable Basic Auth protection">
+        <!-- Basic Auth Card -->
+        <div class="card" id="basicauth-card" style="display:none">
+          <div class="card-header">
+            <span class="card-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              Basic Auth
+            </span>
+            <label class="toggle" title="Enable / disable Basic Auth">
               <input type="checkbox" id="basicauth-toggle" onchange="basicAuthToggleChanged()">
-              <span class="auth-toggle-slider"></span>
+              <span class="toggle-track"></span>
             </label>
           </div>
-          <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);padding:12px">
-            <div class="stat-item" style="padding-top:0">
-              <span class="stat-label">Protection</span>
-              <span class="stat-value" id="basicauth-status-text" style="color:var(--text-3)">Disabled</span>
+          <div class="card-body">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+              <span class="cs-label">Protection</span>
+              <span class="status-pill disabled" id="basicauth-status-pill">Disabled</span>
             </div>
-            <div id="basicauth-controls" style="display:none">
-              <div style="display:flex;flex-direction:column;gap:0;margin-top:8px">
 
-                <!-- Saved credentials display -->
-                <div class="cred-display" id="cred-display">
-                  <div class="cred-display-row" style="margin-bottom:5px">
-                    <span class="cred-display-label">User</span>
-                    <span class="cred-display-val" id="cred-show-user">—</span>
-                    <button class="cred-btn" title="Copy username" onclick="credCopy('user')">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                    </button>
-                  </div>
-                  <div class="cred-display-row">
-                    <span class="cred-display-label">Pass</span>
-                    <span class="cred-display-val masked" id="cred-show-pass" style="letter-spacing:3px">••••••••</span>
-                    <button class="cred-btn" id="cred-reveal-btn" title="Reveal password" onclick="credRevealToggle()">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                    </button>
-                    <button class="cred-btn" title="Copy password" onclick="credCopy('pass')">
+            <div id="basicauth-controls" style="display:none">
+              <!-- Saved credentials (persisted via sessionStorage) -->
+              <div class="cred-saved" id="cred-saved">
+                <div class="cred-row">
+                  <span class="cred-key">User</span>
+                  <span class="cred-val" id="cred-user-val">—</span>
+                  <div class="cred-actions">
+                    <button class="icon-btn" title="Copy username" onclick="credCopy('user')">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                     </button>
                   </div>
                 </div>
-
-                <!-- Input fields -->
                 <div class="cred-row">
+                  <span class="cred-key">Pass</span>
+                  <span class="cred-val masked" id="cred-pass-val" data-plain="">••••••••</span>
+                  <div class="cred-actions">
+                    <button class="icon-btn" id="cred-reveal-btn" title="Reveal password" onclick="credRevealToggle()">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    </button>
+                    <button class="icon-btn" title="Copy password" onclick="credCopy('pass')">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Input form -->
+              <div class="auth-form">
+                <div class="input-row">
                   <input class="auth-input" type="text" id="basicauth-user" placeholder="Username" autocomplete="off">
                 </div>
-                <div class="cred-row" style="margin-bottom:6px">
-                  <input class="auth-input" type="password" id="basicauth-pass" placeholder="Password" autocomplete="new-password" id="basicauth-pass">
-                  <div class="cred-btns">
-                    <button class="cred-btn" title="Show / hide" onclick="togglePassVis()" id="pass-vis-btn">
+                <div class="input-row">
+                  <input class="auth-input" type="password" id="basicauth-pass" placeholder="Password" autocomplete="new-password" style="padding-right:36px">
+                  <div class="input-action">
+                    <button class="icon-btn" title="Show / hide" onclick="togglePassVis()">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                     </button>
                   </div>
                 </div>
-
-                <button class="gen-pass-btn" onclick="generatePassword()">
-                  ⚡ Generate strong password
+                <button class="gen-btn" onclick="generatePassword()">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                  Generate strong password
                 </button>
-
-                <button class="auth-save-btn" onclick="basicAuthSave()">Apply credentials</button>
-                <div id="basicauth-msg" style="font-size:11px;margin-top:4px;display:none"></div>
+                <button class="apply-btn" onclick="basicAuthSave()">Apply credentials</button>
+                <div class="form-msg" id="basicauth-msg"></div>
               </div>
             </div>
           </div>
         </div>
 
-
       </div>
     </div>
 
-    <!-- Inspector View -->
-    <div id="view-inspector" style="display: none; flex-direction: column; width: 100%; height: 100%;">
-      <!-- Toolbar -->
+    <!-- Inspector -->
+    <div id="view-inspector" style="display:none; flex-direction:column; width:100%; height:100%;">
       <div class="toolbar">
-      <span class="req-count"><strong id="t-count">0</strong> requests</span>
-      <div class="filter-chip show" id="filter-chip">
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-        <span id="filter-label">all</span>
-      </div>
-      <div class="ml-auto"></div>
-      <button class="btn-clear" onclick="clearReqs()">Clear</button>
-    </div>
-
-    <!-- Table -->
-    <div class="table-wrap">
-      <div class="table-head">
-        <span class="th">Time</span>
-        <span class="th">Source IP</span>
-        <span class="th">Method</span>
-        <span class="th">Path</span>
-        <span class="th">Status</span>
-        <span class="th">Duration</span>
-        <span class="th" style="text-align:right">Actions</span>
-      </div>
-      <div class="table-body" id="table-body">
-        <div class="empty" id="empty-state">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.42 2 2 0 0 1 3.58 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.53a16 16 0 0 0 6 6l.92-.92a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 21.5 16l.42.92z"/></svg>
-          <p>Waiting for requests</p>
-          <span>Requests will appear here in real time</span>
+        <span class="req-count"><strong id="t-count">0</strong> requests</span>
+        <div class="filter-chip show" id="filter-chip">
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+          <span id="filter-label">all</span>
         </div>
-        <div id="req-list"></div>
+        <div class="ml-auto"></div>
+        <button class="btn-clear" onclick="clearReqs()">Clear</button>
+      </div>
+      <div class="table-wrap">
+        <div class="table-head">
+          <span class="th">Time</span>
+          <span class="th">Source</span>
+          <span class="th">Method</span>
+          <span class="th">Path</span>
+          <span class="th">Status</span>
+          <span class="th">Duration</span>
+          <span class="th" style="text-align:right">Actions</span>
+        </div>
+        <div class="table-body" id="table-body">
+          <div class="empty" id="empty-state">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.42 2 2 0 0 1 3.58 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.53a16 16 0 0 0 6 6l.92-.92a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 21.5 16l.42.92z"/></svg>
+            <p>Waiting for requests</p>
+            <span>Traffic will appear here in real time</span>
+          </div>
+          <div id="req-list"></div>
+        </div>
       </div>
     </div>
 
-    </div>
   </div>
 </div>
 
-
+<!-- Status footer -->
 <div class="status-footer">
-  <div class="live-badge">
+  <div class="live-badge" style="padding:3px 8px">
     <div class="live-dot"></div>
     Live
   </div>
-  <span class="nav-uptime" id="uptime">—</span>
+  <span class="nav-uptime" id="uptime-footer">—</span>
 </div>
+
 <script>
 'use strict';
 
 // ── State ──────────────────────────────────────
 let activeTunnel = null;
-let currentTab = 'overview';
-let allReqs    = [];
-let tunnelsMap = {};
-let totalEver  = 0;
+let currentTab   = 'overview';
+let allReqs      = [];
+let tunnelsMap   = {};
+let totalEver    = 0;
 
-// ── DOM refs ───────────────────────────────────
+// ── DOM ────────────────────────────────────────
 const $list     = document.getElementById('req-list');
 const $empty    = document.getElementById('empty-state');
 const $tCount   = document.getElementById('t-count');
 const $tunConns = document.getElementById('tun-conns');
 const $tunType  = document.getElementById('tun-type');
 const $tunProxy = document.getElementById('tun-proxyurl');
-const $uptime   = document.getElementById('uptime');
+const $uptime   = document.getElementById('uptime-footer');
 const $tunList  = document.getElementById('tunnel-list');
 const $apiVal   = document.getElementById('api-val');
 const $chipLbl  = document.getElementById('filter-label');
+
+// ── sessionStorage helpers for credential persistence ──
+const CRED_KEY = (ep) => 'gtcred__' + ep;
+
+function saveCredsToSession(ep, user, pass) {
+  try {
+    sessionStorage.setItem(CRED_KEY(ep), JSON.stringify({ user, pass }));
+  } catch(e) {}
+}
+
+function loadCredsFromSession(ep) {
+  try {
+    const raw = sessionStorage.getItem(CRED_KEY(ep));
+    if (raw) return JSON.parse(raw);
+  } catch(e) {}
+  return null;
+}
+
+function clearCredsFromSession(ep) {
+  try { sessionStorage.removeItem(CRED_KEY(ep)); } catch(e) {}
+}
 
 // ── Navigation ─────────────────────────────────
 function switchTab(tab) {
@@ -996,33 +953,29 @@ function switchTab(tab) {
   currentTab = tab;
   document.getElementById('tab-overview').classList.toggle('active', tab === 'overview');
   document.getElementById('tab-inspector').classList.toggle('active', tab === 'inspector');
-  
-  document.getElementById('view-overview').style.display = tab === 'overview' ? 'flex' : 'none';
-  document.getElementById('view-inspector').style.display = tab === 'inspector' ? 'flex' : 'none';
+  document.getElementById('view-overview').style.display  = tab === 'overview'  ? 'block' : 'none';
+  document.getElementById('view-inspector').style.display = tab === 'inspector' ? 'flex'  : 'none';
 }
 
 function selectTunnel(ep) {
-  _maskApiKey(); // re-mask key from previous tunnel before switching
+  _maskApiKey();
   activeTunnel = ep;
   document.querySelectorAll('.tunnel-entry').forEach(el => {
     el.classList.toggle('active', el.dataset.ep === ep);
   });
-
   if (!ep) {
-    document.getElementById('nav-tabs').style.display = 'none';
+    document.getElementById('nav-tabs').style.display   = 'none';
     document.getElementById('view-empty').style.display = 'flex';
-    document.getElementById('view-overview').style.display = 'none';
+    document.getElementById('view-overview').style.display  = 'none';
     document.getElementById('view-inspector').style.display = 'none';
-    document.getElementById('tunnel-auth-section').style.display = 'none';
-    document.getElementById('basicauth-section-col').style.display = 'none';
+    document.getElementById('apikey-card').style.display    = 'none';
+    document.getElementById('basicauth-card').style.display = 'none';
     return;
   }
-
-  document.getElementById('nav-tabs').style.display = 'flex';
+  document.getElementById('nav-tabs').style.display   = 'flex';
   document.getElementById('view-empty').style.display = 'none';
   switchTab(currentTab);
   renderTunnelOverview();
-
   $chipLbl.textContent = ep;
   renderAll();
 }
@@ -1030,29 +983,39 @@ function selectTunnel(ep) {
 function renderTunnelOverview() {
   const t = tunnelsMap[activeTunnel];
   if (!t) return;
-  $tunProxy.textContent = t.proxy_url || '—';
-  $tunType.textContent = t.type || '—';
+
+  // Tunnel info
+  const url = t.proxy_url || '—';
+  $tunProxy.textContent = url;
+  $tunProxy.dataset.url = url;
+  $tunType.textContent  = t.type || '—';
   $tunConns.textContent = t.connections;
-  document.getElementById('tun-clientip').textContent = (t.client_ip || '—').replace(/(:\d+)$/, '').replace(/^\[|\]$/g, '');
+  document.getElementById('tun-clientip').textContent =
+    (t.client_ip || '—').replace(/(:\d+)$/, '').replace(/^\[|\]$/g, '');
 
-  document.getElementById('tunnel-auth-section').style.display = 'block';
-  document.getElementById('basicauth-section-col').style.display = 'block';
+  // Show auth cards
+  document.getElementById('apikey-card').style.display    = 'block';
+  document.getElementById('basicauth-card').style.display = 'block';
 
-  // Sync toggles, control panels and status text from tunnelsMap.
-  // tunnelsMap is patched optimistically by toggle handlers so these
-  // assignments reflect any pending user change, not stale server state.
-  const apikeyEnabled  = !!t.apikey_enabled;
-  document.getElementById('apikey-toggle').checked            = apikeyEnabled;
-  document.getElementById('apikey-controls').style.display   = apikeyEnabled ? 'block' : 'none';
-  document.getElementById('apikey-status-text').textContent  = apikeyEnabled ? 'Enabled' : 'Disabled';
-  document.getElementById('apikey-status-text').style.color  = apikeyEnabled ? 'var(--green)' : 'var(--text-3)';
-  if (!apikeyEnabled) _maskApiKey();
+  // Sync API key state
+  const akEnabled = !!t.apikey_enabled;
+  document.getElementById('apikey-toggle').checked = akEnabled;
+  document.getElementById('apikey-controls').style.display = akEnabled ? 'block' : 'none';
+  _setStatusPill('apikey-status-pill', akEnabled);
+  if (!akEnabled) _maskApiKey();
 
+  // Sync Basic Auth state
   const baEnabled = !!t.basicauth_enabled;
-  document.getElementById('basicauth-toggle').checked            = baEnabled;
-  document.getElementById('basicauth-controls').style.display   = baEnabled ? 'block' : 'none';
-  document.getElementById('basicauth-status-text').textContent  = baEnabled ? 'Enabled' : 'Disabled';
-  document.getElementById('basicauth-status-text').style.color  = baEnabled ? 'var(--green)' : 'var(--text-3)';
+  document.getElementById('basicauth-toggle').checked = baEnabled;
+  document.getElementById('basicauth-controls').style.display = baEnabled ? 'block' : 'none';
+  _setStatusPill('basicauth-status-pill', baEnabled);
+
+  // Restore saved credentials from sessionStorage
+  if (baEnabled) {
+    const saved = loadCredsFromSession(activeTunnel);
+    if (saved) _showSavedCreds(saved.user, saved.pass);
+    else document.getElementById('cred-saved').classList.remove('show');
+  }
 }
 
 // ── Helpers ────────────────────────────────────
@@ -1082,32 +1045,26 @@ function esc(s) {
   return d.innerHTML;
 }
 function hdrsHtml(h) {
-  if (!h || !Object.keys(h).length) return '<span style="opacity:.4">none</span>';
+  if (!h || !Object.keys(h).length) return '<span style="opacity:.3">none</span>';
   return Object.entries(h).map(([k, vs]) =>
     vs.map(v => `<span class="hdr-k">${esc(k)}</span>: ${esc(v)}`).join('<br>')
   ).join('<br>');
 }
 
-// ── Token ──────────────────────────────────────
-// The token is NEVER stored in a JS variable at module scope.
-// • tokenReveal() fetches /api/token, shows it for 30 s then re-masks.
-// • tokenCopy()   fetches /api/token, writes to clipboard, token then goes
-//   out of scope — nothing persists in memory between clicks.
-// CSP connect-src 'self' means even if injected JS calls /api/token, it
-// cannot send the result anywhere external.
+function _setStatusPill(id, enabled) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = enabled ? 'Enabled' : 'Disabled';
+  el.className   = 'status-pill ' + (enabled ? 'enabled' : 'disabled');
+}
 
+// ── Token ──────────────────────────────────────
 let _tokenHideTimer = null;
 
 function tokenReveal() {
   const val = document.getElementById('nav-token-val');
   const btn = document.getElementById('token-reveal-btn');
-
-  // If already revealed, re-mask immediately
-  if (!val.classList.contains('masked')) {
-    _maskToken();
-    return;
-  }
-
+  if (!val.classList.contains('masked')) { _maskToken(); return; }
   fetch('/api/token')
     .then(r => { if (!r.ok) throw new Error(); return r.json(); })
     .then(data => {
@@ -1115,14 +1072,10 @@ function tokenReveal() {
       val.textContent = data.token;
       val.classList.remove('masked');
       btn.title = 'Hide';
-
-      // Auto-hide after 30 s
       clearTimeout(_tokenHideTimer);
       _tokenHideTimer = setTimeout(_maskToken, 30000);
-    })
-    .catch(() => {});
+    }).catch(() => {});
 }
-
 function _maskToken() {
   const val = document.getElementById('nav-token-val');
   const btn = document.getElementById('token-reveal-btn');
@@ -1132,93 +1085,55 @@ function _maskToken() {
   if (btn) btn.title = 'Reveal';
   clearTimeout(_tokenHideTimer);
 }
-
 function tokenCopy() {
   const chip = document.getElementById('nav-token-chip');
-
   fetch('/api/token')
     .then(r => { if (!r.ok) throw new Error(); return r.json(); })
     .then(data => {
-      const tok = data.token;
-      if (!tok) return;
-      const done = () => {
-        chip.classList.add('ok');
-        setTimeout(() => chip.classList.remove('ok'), 1800);
-      };
+      if (!data.token) return;
+      const done = () => { chip.classList.add('ok'); setTimeout(() => chip.classList.remove('ok'), 1800); };
       if (navigator.clipboard && window.isSecureContext) {
-        navigator.clipboard.writeText(tok).then(done).catch(() => _fallbackCopy(tok, done));
-      } else {
-        _fallbackCopy(tok, done);
-      }
-      // tok goes out of scope here — never stored globally
-    })
-    .catch(() => {});
+        navigator.clipboard.writeText(data.token).then(done).catch(() => _fallbackCopy(data.token, done));
+      } else { _fallbackCopy(data.token, done); }
+    }).catch(() => {});
 }
-
-function _fallbackCopy(tok, cb) {
-  const ta = document.createElement('textarea');
-  ta.value = tok;
-  ta.setAttribute('readonly', '');
-  ta.style.cssText = 'position:absolute;left:-9999px';
-  document.body.appendChild(ta);
-  ta.select();
+function _fallbackCopy(text, cb) {
+  const ta = Object.assign(document.createElement('textarea'), { value: text });
+  ta.setAttribute('readonly',''); ta.style.cssText = 'position:absolute;left:-9999px';
+  document.body.appendChild(ta); ta.select();
   try { document.execCommand('copy'); cb(); } catch(e) {}
   document.body.removeChild(ta);
-  // tok goes out of scope
 }
 
-// ── API Key ─────────────────────────────────────
-// Same security model as the server token:
-// - Never stored in a JS global variable
-// - Fetched from /api/tunnels/apikey?endpoint=X only on explicit user action
-// - Auto-hides after 30 s when revealed
-// - CSP connect-src 'self' blocks exfiltration even if injected JS calls the endpoint
-
+// ── API Key ────────────────────────────────────
 let _apikeyHideTimer = null;
+const _apikeyEp = () => encodeURIComponent(activeTunnel || '(default)');
 
-function _apikeyEndpoint() {
-  return encodeURIComponent(activeTunnel || '(default)');
-}
-
-function _setApikeyStatus(enabled) {
-  const el = document.getElementById('apikey-status-text');
-  if (!el) return;
-  el.textContent = enabled ? 'Enabled' : 'Disabled';
-  el.style.color = enabled ? 'var(--green)' : 'var(--text-3)';
-}
-
-// ── API Key ─────────────────────────────────────────────
 function apikeyToggleChanged() {
   const enabled = document.getElementById('apikey-toggle').checked;
   const ep = activeTunnel || '(default)';
-  if (tunnelsMap[ep]) {
-    tunnelsMap[ep].apikey_enabled = enabled;
-  }
+  if (tunnelsMap[ep]) tunnelsMap[ep].apikey_enabled = enabled;
   document.getElementById('apikey-controls').style.display = enabled ? 'block' : 'none';
-  _setApikeyStatus(enabled);
+  _setStatusPill('apikey-status-pill', enabled);
   if (!enabled) _maskApiKey();
 
   fetch('/api/tunnels/auth', {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
+    method: 'POST', headers: {'Content-Type':'application/json'},
     body: JSON.stringify({ endpoint: ep, enabled })
   })
   .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
   .then(data => {
-    if (tunnelsMap[ep]) {
-      tunnelsMap[ep].apikey_enabled = data.enabled;
-      tunnelsMap[ep].has_apikey = !!data.apikey;
-    }
+    if (tunnelsMap[ep]) { tunnelsMap[ep].apikey_enabled = data.enabled; tunnelsMap[ep].has_apikey = !!data.apikey; }
     document.getElementById('apikey-controls').style.display = data.enabled ? 'block' : 'none';
-    _setApikeyStatus(data.enabled);
+    _setStatusPill('apikey-status-pill', data.enabled);
     if (!data.enabled) _maskApiKey();
   })
   .catch(() => {
-    const reverted = !enabled;
-    document.getElementById('apikey-toggle').checked = reverted;
-    if (tunnelsMap[ep]) tunnelsMap[ep].apikey_enabled = reverted;
-    document.getElementById('apikey-controls').style.display = reverted ? 'block' : 'none';
-    _setApikeyStatus(reverted);
+    const rev = !enabled;
+    document.getElementById('apikey-toggle').checked = rev;
+    if (tunnelsMap[ep]) tunnelsMap[ep].apikey_enabled = rev;
+    document.getElementById('apikey-controls').style.display = rev ? 'block' : 'none';
+    _setStatusPill('apikey-status-pill', rev);
   });
 }
 
@@ -1226,19 +1141,16 @@ function apiReveal() {
   const val = document.getElementById('api-val');
   const btn = document.getElementById('api-reveal');
   if (!val.classList.contains('masked')) { _maskApiKey(); return; }
-  fetch('/api/tunnels/apikey?endpoint=' + _apikeyEndpoint())
+  fetch('/api/tunnels/apikey?endpoint=' + _apikeyEp())
     .then(r => { if (!r.ok) throw new Error(); return r.json(); })
     .then(data => {
       if (!data.apikey) return;
-      val.textContent = data.apikey;
-      val.classList.remove('masked');
+      val.textContent = data.apikey; val.classList.remove('masked');
       if (btn) btn.title = 'Hide';
       clearTimeout(_apikeyHideTimer);
       _apikeyHideTimer = setTimeout(_maskApiKey, 30000);
-    })
-    .catch(() => {});
+    }).catch(() => {});
 }
-
 function _maskApiKey() {
   const val = document.getElementById('api-val');
   const btn = document.getElementById('api-reveal');
@@ -1248,76 +1160,41 @@ function _maskApiKey() {
   if (btn) btn.title = 'Reveal';
   clearTimeout(_apikeyHideTimer);
 }
-
 function apiCopy() {
-  fetch('/api/tunnels/apikey?endpoint=' + _apikeyEndpoint())
+  fetch('/api/tunnels/apikey?endpoint=' + _apikeyEp())
     .then(r => { if (!r.ok) throw new Error(); return r.json(); })
     .then(data => {
-      const key = data.apikey;
-      if (!key) return;
-      const done = () => {
-        const btn = document.getElementById('api-copy');
-        if (btn) { btn.classList.add('ok'); setTimeout(() => btn.classList.remove('ok'), 1800); }
-      };
+      if (!data.apikey) return;
+      const btn = document.getElementById('api-copy');
+      const done = () => { if (btn) { btn.classList.add('ok'); setTimeout(() => btn.classList.remove('ok'), 1800); } };
       if (navigator.clipboard && window.isSecureContext) {
-        navigator.clipboard.writeText(key).then(done).catch(() => _apikeyFallbackCopy(key, done));
-      } else {
-        _apikeyFallbackCopy(key, done);
-      }
-    })
-    .catch(() => {});
+        navigator.clipboard.writeText(data.apikey).then(done).catch(() => _fallbackCopy(data.apikey, done));
+      } else { _fallbackCopy(data.apikey, done); }
+    }).catch(() => {});
 }
-
 function apiRegenerate() {
   const btn = document.getElementById('api-regen');
-  if (!confirm('Regenerate API key for this tunnel? Existing clients will need the new key.')) return;
+  if (!confirm('Regenerate API key? Existing clients will need the new key.')) return;
   btn.disabled = true;
   fetch('/api/tunnels/auth', {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
+    method: 'POST', headers: {'Content-Type':'application/json'},
     body: JSON.stringify({ endpoint: activeTunnel || '(default)', enabled: true, regenerate: true })
   })
   .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
   .then(data => {
-    // Show new key immediately
     const val = document.getElementById('api-val');
-    val.textContent = data.apikey;
-    val.classList.remove('masked');
+    val.textContent = data.apikey; val.classList.remove('masked');
     document.getElementById('api-reveal').title = 'Hide';
     clearTimeout(_apikeyHideTimer);
     _apikeyHideTimer = setTimeout(_maskApiKey, 30000);
-    if (tunnelsMap[activeTunnel || '(default)']) {
-      tunnelsMap[activeTunnel || '(default)'].has_apikey = true;
-      tunnelsMap[activeTunnel || '(default)'].apikey_enabled = true;
-    }
-    _setApikeyStatus(true);
+    const ep = activeTunnel || '(default)';
+    if (tunnelsMap[ep]) { tunnelsMap[ep].has_apikey = true; tunnelsMap[ep].apikey_enabled = true; }
+    _setStatusPill('apikey-status-pill', true);
   })
-  .catch(() => {})
-  .finally(() => { btn.disabled = false; });
+  .catch(() => {}).finally(() => { btn.disabled = false; });
 }
 
-function _apikeyFallbackCopy(key, cb) {
-  const ta = document.createElement('textarea');
-  ta.value = key;
-  ta.setAttribute('readonly', '');
-  ta.style.cssText = 'position:absolute;left:-9999px';
-  document.body.appendChild(ta);
-  ta.select();
-  try { document.execCommand('copy'); cb(); } catch(e) {}
-  document.body.removeChild(ta);
-}
-
-function _setBasicAuthStatus(enabled) {
-  const el = document.getElementById('basicauth-status-text');
-  if (!el) return;
-  el.textContent = enabled ? 'Enabled' : 'Disabled';
-  el.style.color = enabled ? 'var(--green)' : 'var(--text-3)';
-}
-
-// ── Basic Auth ──────────────────────────────────────────
-// Saved credentials (in-memory only, never stored globally across page loads)
-let _baCredentials = { user: '', pass: '' };
-
+// ── Basic Auth ─────────────────────────────────
 function basicAuthToggleChanged() {
   const enabled = document.getElementById('basicauth-toggle').checked;
   const controls = document.getElementById('basicauth-controls');
@@ -1325,35 +1202,33 @@ function basicAuthToggleChanged() {
 
   if (enabled) {
     controls.style.display = 'block';
-    _setBasicAuthStatus(true);
+    _setStatusPill('basicauth-status-pill', true);
     if (tunnelsMap[ep]) tunnelsMap[ep].basicauth_enabled = true;
-    // Auto-apply: if we have saved credentials, push them immediately
-    if (_baCredentials.user && _baCredentials.pass) {
-      _pushBasicAuth(ep, _baCredentials.user, _baCredentials.pass, true);
+    // Restore persisted credentials and auto-apply them
+    const saved = loadCredsFromSession(ep);
+    if (saved && saved.user && saved.pass) {
+      _pushBasicAuth(ep, saved.user, saved.pass, true);
     } else {
-      // Just enable the toggle server-side without creds yet
+      // No creds saved yet — just mark enabled, wait for user to enter creds
       fetch('/api/tunnels/basicauth', {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
+        method: 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({ endpoint: ep, enabled: true })
       }).catch(() => {});
     }
   } else {
     controls.style.display = 'none';
-    _setBasicAuthStatus(false);
+    _setStatusPill('basicauth-status-pill', false);
     if (tunnelsMap[ep]) tunnelsMap[ep].basicauth_enabled = false;
-    // Hide credential display on disable
-    document.getElementById('cred-display').classList.remove('visible');
+    document.getElementById('cred-saved').classList.remove('show');
     fetch('/api/tunnels/basicauth', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
+      method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ endpoint: ep, enabled: false })
     })
     .then(r => { if (!r.ok) throw new Error(r.status); })
     .catch(() => {
       document.getElementById('basicauth-toggle').checked = true;
       controls.style.display = 'block';
-      _setBasicAuthStatus(true);
+      _setStatusPill('basicauth-status-pill', true);
       if (tunnelsMap[ep]) tunnelsMap[ep].basicauth_enabled = true;
     });
   }
@@ -1361,91 +1236,89 @@ function basicAuthToggleChanged() {
 
 function _pushBasicAuth(ep, user, pass, silent) {
   return fetch('/api/tunnels/basicauth', {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
+    method: 'POST', headers: {'Content-Type':'application/json'},
     body: JSON.stringify({ endpoint: ep, enabled: true, username: user, password: pass })
   })
   .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
   .then(() => {
-    _baCredentials = { user, pass };
-    // Show credential display
-    document.getElementById('cred-show-user').textContent = user;
-    document.getElementById('cred-show-pass').textContent = '••••••••';
-    document.getElementById('cred-show-pass').classList.add('masked');
-    document.getElementById('cred-show-pass').dataset.plain = pass;
-    document.getElementById('cred-display').classList.add('visible');
+    // Persist to sessionStorage so refresh restores them
+    saveCredsToSession(ep, user, pass);
+    _showSavedCreds(user, pass);
     if (tunnelsMap[ep]) tunnelsMap[ep].basicauth_enabled = true;
-    _setBasicAuthStatus(true);
+    _setStatusPill('basicauth-status-pill', true);
     if (!silent) {
-      const msg = document.getElementById('basicauth-msg');
-      msg.style.color = 'var(--green)';
-      msg.textContent = '✓ Applied';
-      msg.style.display = 'block';
-      setTimeout(() => { msg.style.display = 'none'; }, 2500);
+      _showMsg('basicauth-msg', 'ok', '✓ Credentials applied');
     }
   });
+}
+
+function _showSavedCreds(user, pass) {
+  document.getElementById('cred-user-val').textContent = user;
+  const passEl = document.getElementById('cred-pass-val');
+  passEl.textContent = '••••••••';
+  passEl.classList.add('masked');
+  passEl.dataset.plain = pass;
+  document.getElementById('cred-saved').classList.add('show');
+  // Pre-fill the form fields
+  document.getElementById('basicauth-user').value = user;
+  document.getElementById('basicauth-pass').value = '';
 }
 
 function basicAuthSave() {
   const user = document.getElementById('basicauth-user').value.trim();
   const pass = document.getElementById('basicauth-pass').value;
-  const msg  = document.getElementById('basicauth-msg');
   const ep   = activeTunnel || '(default)';
   if (!user || !pass) {
-    msg.style.color = 'var(--red, #ef4444)';
-    msg.textContent = 'Username and password required';
-    msg.style.display = 'block';
+    _showMsg('basicauth-msg', 'err', 'Username and password required');
     return;
   }
   _pushBasicAuth(ep, user, pass, false)
     .then(() => {
       document.getElementById('basicauth-pass').value = '';
     })
-    .catch(() => {
-      msg.style.color = 'var(--red, #ef4444)';
-      msg.textContent = 'Failed to save';
-      msg.style.display = 'block';
-    });
+    .catch(() => { _showMsg('basicauth-msg', 'err', 'Failed to save — check server'); });
 }
 
-// ── Basic Auth credential helpers ──────────────────────
+function _showMsg(id, type, text) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = text;
+  el.className = 'form-msg ' + type;
+  el.style.display = 'block';
+  setTimeout(() => { el.style.display = 'none'; }, 3000);
+}
+
+// ── Basic Auth credential helpers ──────────────
+let _credHideTimer = null;
+
 function credRevealToggle() {
-  const el = document.getElementById('cred-show-pass');
+  const el  = document.getElementById('cred-pass-val');
   const btn = document.getElementById('cred-reveal-btn');
   if (el.classList.contains('masked')) {
     el.textContent = el.dataset.plain || '';
     el.classList.remove('masked');
     el.style.letterSpacing = '';
     btn.title = 'Hide password';
-    // Auto-hide after 15s
-    setTimeout(() => {
-      el.textContent = '••••••••';
-      el.classList.add('masked');
-      el.style.letterSpacing = '3px';
+    clearTimeout(_credHideTimer);
+    _credHideTimer = setTimeout(() => {
+      el.textContent = '••••••••'; el.classList.add('masked'); el.style.letterSpacing = '3px';
       btn.title = 'Reveal password';
     }, 15000);
   } else {
-    el.textContent = '••••••••';
-    el.classList.add('masked');
-    el.style.letterSpacing = '3px';
+    clearTimeout(_credHideTimer);
+    el.textContent = '••••••••'; el.classList.add('masked'); el.style.letterSpacing = '3px';
     btn.title = 'Reveal password';
   }
 }
 
 function credCopy(field) {
-  let text = '';
-  if (field === 'user') {
-    text = document.getElementById('cred-show-user').textContent;
-  } else {
-    text = document.getElementById('cred-show-pass').dataset.plain || '';
-  }
-  if (!text) return;
-  const done = () => {};
+  let text = field === 'user'
+    ? document.getElementById('cred-user-val').textContent
+    : document.getElementById('cred-pass-val').dataset.plain || '';
+  if (!text || text === '—') return;
   if (navigator.clipboard && window.isSecureContext) {
-    navigator.clipboard.writeText(text).catch(() => _fallbackCopy(text, done));
-  } else {
-    _fallbackCopy(text, done);
-  }
+    navigator.clipboard.writeText(text).catch(() => _fallbackCopy(text, ()=>{}));
+  } else { _fallbackCopy(text, ()=>{}); }
 }
 
 function togglePassVis() {
@@ -1454,16 +1327,16 @@ function togglePassVis() {
 }
 
 function generatePassword() {
-  const chars = 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%^&*';
-  let pwd = '';
-  const arr = new Uint8Array(16);
+  const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%^&*';
+  const arr = new Uint8Array(18);
   crypto.getRandomValues(arr);
+  let pwd = '';
   arr.forEach(b => { pwd += chars[b % chars.length]; });
   const inp = document.getElementById('basicauth-pass');
   inp.value = pwd;
-  inp.type = 'text';
-  // Auto-hide after 10s
-  setTimeout(() => { inp.type = 'password'; }, 10000);
+  inp.type  = 'text';
+  inp.focus();
+  setTimeout(() => { inp.type = 'password'; }, 12000);
 }
 
 // ── Request rendering ──────────────────────────
@@ -1471,25 +1344,17 @@ function renderAll() {
   const list = activeTunnel ? allReqs.filter(r => r.endpoint === activeTunnel) : [];
   $tCount.textContent = list.length;
   $list.innerHTML = '';
-
-  if (list.length === 0) {
-    $empty.style.display = 'flex';
-    return;
-  }
+  if (list.length === 0) { $empty.style.display = 'flex'; return; }
   $empty.style.display = 'none';
-
-  // newest first
-  for (let i = list.length - 1; i >= 0; i--) {
-    appendRow(list[i], false);
-  }
+  for (let i = list.length - 1; i >= 0; i--) appendRow(list[i], false);
 }
 
-function appendRow(r, isNew) {
+function _buildRow(r, isNew) {
   const row = document.createElement('div');
   row.className = 'req-row' + (isNew ? ' is-new' : '');
   row.innerHTML = `
     <span class="r-time">${fmtTime(r.ts)}</span>
-    <span class="r-clientip" style="font-family:'Geist Mono', monospace; font-size:12px; color:var(--text-3);">${esc(r.client_ip || '—')}</span>
+    <span class="r-ip">${esc(r.client_ip || '—')}</span>
     <span class="r-method ${r.method}">${r.method}</span>
     <span class="r-path" title="${esc(r.path)}">${esc(r.path)}</span>
     <span class="r-status ${statusCls(r.status)}">${r.status}</span>
@@ -1499,16 +1364,12 @@ function appendRow(r, isNew) {
       <svg class="expand-icon" id="exp-${r.id}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
     </div>
   `;
-
-  // body decode attempt
   let bodyHtml = '';
   if (r.req_body && r.req_body.length) {
     try {
-      const txt = atob(r.req_body);
-      bodyHtml = `<div class="detail-section-title" style="margin-top:12px">Request Body</div><div class="detail-body">${esc(txt)}</div>`;
+      bodyHtml = `<div class="detail-section-title" style="margin-top:10px">Request Body</div><div class="detail-body">${esc(atob(r.req_body))}</div>`;
     } catch(e) {}
   }
-
   const detail = document.createElement('div');
   detail.className = 'req-detail';
   detail.innerHTML = `
@@ -1524,12 +1385,15 @@ function appendRow(r, isNew) {
       </div>
     </div>
   `;
-
   row.addEventListener('click', () => {
     detail.classList.toggle('open');
     document.getElementById('exp-' + r.id)?.classList.toggle('open');
   });
+  return [row, detail];
+}
 
+function appendRow(r, isNew) {
+  const [row, detail] = _buildRow(r, isNew);
   $list.appendChild(row);
   $list.appendChild(detail);
 }
@@ -1538,103 +1402,39 @@ function addReq(r, isNew) {
   if (allReqs.find(x => x.id === r.id)) return;
   allReqs.push(r);
   if (allReqs.length > 500) allReqs.shift();
-
   totalEver = Math.max(totalEver, r.id);
-
   if (activeTunnel && r.endpoint !== activeTunnel) {
     $tCount.textContent = allReqs.filter(x => x.endpoint === activeTunnel).length;
     return;
   }
-
   $empty.style.display = 'none';
-
   if (isNew) {
-    // Build row + detail and prepend to the top of the list.
-    const row = document.createElement('div');
-    row.className = 'req-row is-new';
-    row.innerHTML = `
-      <span class="r-time">${fmtTime(r.ts)}</span>
-      <span class="r-clientip" style="font-family:'Geist Mono', monospace; font-size:12px; color:var(--text-3);">${esc(r.client_ip || '—')}</span>
-      <span class="r-method ${r.method}">${r.method}</span>
-      <span class="r-path" title="${esc(r.path)}">${esc(r.path)}</span>
-      <span class="r-status ${statusCls(r.status)}">${r.status}</span>
-      <span class="r-dur">${fmtDur(r.duration_ms)}</span>
-      <div class="r-actions">
-        <button class="replay-btn" onclick="replayReq(${r.id});event.stopPropagation()">Replay</button>
-        <svg class="expand-icon" id="exp-${r.id}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-      </div>
-    `;
-
-    let bodyHtml = '';
-    if (r.req_body && r.req_body.length) {
-      try { bodyHtml = `<div class="detail-section-title" style="margin-top:12px">Request Body</div><div class="detail-body">${esc(atob(r.req_body))}</div>`; } catch(_) {}
-    }
-
-    const detail = document.createElement('div');
-    detail.className = 'req-detail';
-    detail.innerHTML = `
-      <div class="detail-grid">
-        <div>
-          <div class="detail-section-title">Request Headers</div>
-          <div class="detail-headers">${hdrsHtml(r.req_headers)}</div>
-          ${bodyHtml}
-        </div>
-        <div>
-          <div class="detail-section-title">Response Headers</div>
-          <div class="detail-headers">${hdrsHtml(r.resp_headers)}</div>
-        </div>
-      </div>
-    `;
-
-    row.addEventListener('click', () => {
-      detail.classList.toggle('open');
-      document.getElementById('exp-' + r.id)?.classList.toggle('open');
-    });
-
-    // Insert at top (newest first).
-    $list.prepend(detail);
-    $list.prepend(row);
+    const [row, detail] = _buildRow(r, true);
+    $list.prepend(detail); $list.prepend(row);
   }
-
   $tCount.textContent = (activeTunnel ? allReqs.filter(x => x.endpoint === activeTunnel) : []).length;
 }
-
 
 function clearReqs() {
   allReqs = allReqs.filter(r => r.endpoint !== activeTunnel);
   renderAll();
 }
 
-// ── Replay ─────────────────────────────────────
 function replayReq(id) {
   fetch('/api/replay', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ id })
   });
 }
 
 // ── Tunnels ────────────────────────────────────
 function renderTunnels(tunnels) {
-  // Merge server data into tunnelsMap instead of replacing it wholesale.
-  // This preserves optimistic auth-toggle state set by the user while
-  // still updating connection counts, proxy_url, client_ip, etc.
   const incoming = {};
   tunnels.forEach(t => { incoming[t.endpoint] = t; });
-
-  // Remove endpoints that are no longer present.
-  Object.keys(tunnelsMap).forEach(ep => {
-    if (!incoming[ep]) delete tunnelsMap[ep];
-  });
-
-  // Merge each incoming entry: keep client-side auth fields if already patched.
+  Object.keys(tunnelsMap).forEach(ep => { if (!incoming[ep]) delete tunnelsMap[ep]; });
   tunnels.forEach(t => {
     const existing = tunnelsMap[t.endpoint];
     if (existing) {
-      // Preserve fields the user may have toggled (optimistic patches).
-      // Only accept server values when they differ from the default (false),
-      // meaning the server actually has the feature enabled — in that case
-      // the server is the source of truth.
       tunnelsMap[t.endpoint] = Object.assign({}, t, {
         apikey_enabled:    t.apikey_enabled    || existing.apikey_enabled,
         basicauth_enabled: t.basicauth_enabled || existing.basicauth_enabled,
@@ -1655,30 +1455,24 @@ function renderTunnels(tunnels) {
   $tunList.innerHTML = tunnels.map(t => {
     if (t.endpoint === activeTunnel) found = true;
     return `
-    <div class="tunnel-entry${activeTunnel === t.endpoint ? ' active' : ''}"
-         data-ep="${esc(t.endpoint)}"
-         onclick="selectTunnel('${t.endpoint.replace(/'/g,"\\'")}')">
-      <div class="t-dot ${t.type}"></div>
-      <span class="t-name" title="${esc(t.endpoint)}">${esc(t.endpoint)}</span>
-      <span class="t-workers">${t.connections}</span>
-    </div>
-  `}).join('');
+      <div class="tunnel-entry${activeTunnel === t.endpoint ? ' active' : ''}"
+           data-ep="${esc(t.endpoint)}"
+           onclick="selectTunnel('${t.endpoint.replace(/'/g,"\\'")}')">
+        <div class="t-dot ${t.type}"></div>
+        <span class="t-name" title="${esc(t.endpoint)}">${esc(t.endpoint)}</span>
+        <span class="t-badge">${t.connections}</span>
+      </div>`;
+  }).join('');
 
-  if (activeTunnel && !found) {
-    selectTunnel(null);
-  } else if (activeTunnel) {
-    renderTunnelOverview();
-  }
+  if (activeTunnel && !found) selectTunnel(null);
+  else if (activeTunnel) renderTunnelOverview();
 }
 
 // ── Boot ───────────────────────────────────────
-document.addEventListener('click', (e) => {
-  const menu = document.getElementById('brand-menu');
-  if (menu && menu.classList.contains('open')) {
-    menu.classList.remove('open');
-  }
+document.addEventListener('click', () => {
+  document.getElementById('brand-menu')?.classList.remove('open');
 });
-// 1. Load existing requests
+
 fetch('/api/requests').then(r => r.json()).then(data => {
   if (data && data.length) {
     allReqs = data;
@@ -1686,19 +1480,17 @@ fetch('/api/requests').then(r => r.json()).then(data => {
   }
 }).catch(() => {});
 
-// 2. Real-time SSE for new requests
 const sse = new EventSource('/api/requests/stream');
-sse.onmessage = e => {
-  try { addReq(JSON.parse(e.data), true); } catch(_) {}
-};
-sse.onerror = () => {};
+sse.onmessage = e => { try { addReq(JSON.parse(e.data), true); } catch(_) {} };
+sse.onerror   = () => {};
 
-// 3. Real-time SSE for status + tunnels (server pushes every ~1s)
 const statusSse = new EventSource('/api/status/stream');
 statusSse.onmessage = e => {
   try {
     const s = JSON.parse(e.data);
-    $uptime.textContent = fmtUptime(s.uptime_sec);
+    const fmt = fmtUptime(s.uptime_sec);
+    $uptime.textContent = fmt;
+    document.getElementById('uptime').textContent = fmt;
     renderTunnels(s.tunnels || []);
   } catch(_) {}
 };

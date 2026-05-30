@@ -42,15 +42,29 @@ type poolConn struct {
 
 // TunnelMeta stores per-tunnel metadata surfaced in the dashboard.
 type TunnelMeta struct {
-	APIKey         string
-	APIKeyEnabled  bool   // dashboard toggle — false means no API key check even if APIKey is set
-	BasicAuth      string // base64(user:pass), dashboard-managed per-tunnel basic auth
-	BasicAuthEnabled bool // dashboard toggle
-	Type        string
-	Endpoint    string
-	ProxyURL    string
-	ConnectedAt time.Time
-	ClientIP    string
+	APIKey           string
+	APIKeyEnabled    bool   // dashboard toggle — false means no API key check even if APIKey is set
+	BasicAuth        string // base64(user:pass), dashboard-managed per-tunnel basic auth
+	BasicAuthEnabled bool   // dashboard toggle
+	AIMode           bool   // optimise for AI/Ollama: no body cap, small flush buffer, CORS, long timeouts
+	Type             string
+	Endpoint         string
+	ProxyURL         string
+	ConnectedAt      time.Time
+	ClientIP         string
+}
+
+// SetTunnelAIMode enables or disables AI/Ollama optimisations for a tunnel.
+func (s *Server) SetTunnelAIMode(endpoint string, enabled bool) error {
+	s.tunnelMetaMu.Lock()
+	defer s.tunnelMetaMu.Unlock()
+	meta, ok := s.tunnelMeta[endpoint]
+	if !ok {
+		return fmt.Errorf("tunnel %q not found", endpoint)
+	}
+	meta.AIMode = enabled
+	s.tunnelMeta[endpoint] = meta
+	return nil
 }
 
 // SetTunnelAuth updates (or removes) the API key for a tunnel from the dashboard.
@@ -326,6 +340,7 @@ func RunServer(cfg *ServerConfig) {
 		Addr:              httpAddr,
 		Handler:           srv,
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       60 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
 
@@ -336,6 +351,7 @@ func RunServer(cfg *ServerConfig) {
 			Addr:              cfg.HTTPSAddr,
 			Handler:           srv,
 			ReadHeaderTimeout: 10 * time.Second,
+			ReadTimeout:       60 * time.Second,
 			IdleTimeout:       120 * time.Second,
 		}
 		go func() {
@@ -542,6 +558,7 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 			APIKeyEnabled:    prev.APIKeyEnabled,
 			BasicAuth:        prev.BasicAuth,
 			BasicAuthEnabled: prev.BasicAuthEnabled,
+			AIMode:           prev.AIMode,
 			Type:             "tcp",
 			Endpoint:         remoteAddr,
 			ProxyURL:         "tcp://" + remoteAddr,
@@ -582,6 +599,7 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 			APIKeyEnabled:    prev.APIKeyEnabled,
 			BasicAuth:        prev.BasicAuth,
 			BasicAuthEnabled: prev.BasicAuthEnabled,
+			AIMode:           prev.AIMode,
 			Type:             "http",
 			Endpoint:         remoteAddr,
 			ProxyURL:         s.buildProxyURL("http", remoteAddr),
@@ -613,6 +631,7 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 		APIKeyEnabled:    prev.APIKeyEnabled,
 		BasicAuth:        prev.BasicAuth,
 		BasicAuthEnabled: prev.BasicAuthEnabled,
+		AIMode:           prev.AIMode,
 		Type:             "http",
 		Endpoint:         "(default)",
 		ProxyURL:         s.buildProxyURL("http", "(default)"),
@@ -764,6 +783,16 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, reqBody *capp
 	start := time.Now()
 	pool, sub := s.getHTTPPool(r.Host)
 
+	// Look up AI mode for this tunnel.
+	epKey := sub
+	if epKey == "" {
+		epKey = "(default)"
+	}
+	s.tunnelMetaMu.RLock()
+	tMeta := s.tunnelMeta[epKey]
+	s.tunnelMetaMu.RUnlock()
+	aiMode := tMeta.AIMode
+
 	out := r.Clone(r.Context())
 	out.RequestURI = ""
 	out.URL.Scheme = "http"
@@ -784,13 +813,14 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, reqBody *capp
 	removeHopByHop(out.Header)
 
 	// Buffer the request body upfront so that the retry attempt can replay it.
-	// Without this, out.Body is drained on the first write and the retry sends
-	// an empty body for POST/PUT/PATCH requests.
-	// We read up to maxBodyBuf+1 bytes: if we get more than maxBodyBuf, the
-	// body exceeds the limit and we return 413 instead of silently truncating.
+	// In AI mode the cap is lifted to 100 MB to support base64 image payloads
+	// and large context windows sent to Ollama.
+	maxBodyBuf := int64(10 * 1024 * 1024) // 10 MB default
+	if aiMode {
+		maxBodyBuf = 100 * 1024 * 1024 // 100 MB for AI payloads
+	}
 	var bodyBuf []byte
 	if out.Body != nil {
-		const maxBodyBuf = 100 * 1024 * 1024 // 100 MB
 		var rerr error
 		bodyBuf, rerr = io.ReadAll(io.LimitReader(out.Body, maxBodyBuf+1))
 		out.Body.Close()
@@ -799,10 +829,36 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, reqBody *capp
 			return
 		}
 		if int64(len(bodyBuf)) > maxBodyBuf {
-			http.Error(w, "request body too large (max 100 MB)", http.StatusRequestEntityTooLarge)
+			limit := "10 MB"
+			if aiMode {
+				limit = "100 MB"
+			}
+			http.Error(w, "request body too large (max "+limit+")", http.StatusRequestEntityTooLarge)
 			return
 		}
 		out.ContentLength = int64(len(bodyBuf))
+	}
+
+	// In AI mode, tell upstream proxies (nginx, CDN) not to buffer the response
+	// so streaming tokens reach the browser immediately.
+	if aiMode {
+		w.Header().Set("X-Accel-Buffering", "no")
+		w.Header().Set("Cache-Control", "no-cache, no-store")
+		// CORS — Open WebUI and similar browser clients call the API directly.
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			origin = "*"
+		}
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key")
+		// Handle CORS preflight so the browser doesn't block the actual request.
+		if r.Method == http.MethodOptions {
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS")
+			w.Header().Set("Access-Control-Max-Age", "86400")
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 	}
 
 	// Try up to 2 tunnel connections — the first may be stale.
@@ -841,7 +897,7 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, reqBody *capp
 		}
 
 		// Success — stream the response.
-		s.streamResponse(w, resp, pc)
+		s.streamResponse(w, resp, pc, aiMode)
 		elapsed := time.Since(start)
 		s.srvLog(LevelInfo, "%s %s → %d (%s)", r.Method, r.URL.Path, resp.StatusCode, elapsed.Round(time.Millisecond))
 		if s.inspector != nil {
@@ -864,7 +920,11 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, reqBody *capp
 
 // streamResponse writes the upstream response to the HTTP client and returns
 // the tunnel connection to the pool when possible.
-func (s *Server) streamResponse(w http.ResponseWriter, resp *http.Response, pc *poolConn) {
+// streamResponse writes the upstream response to the HTTP client and returns
+// the tunnel connection to the pool when possible.
+// aiMode enables per-chunk flushing with a small read buffer so LLM streaming
+// tokens reach the browser immediately instead of waiting for a 32 KB fill.
+func (s *Server) streamResponse(w http.ResponseWriter, resp *http.Response, pc *poolConn, aiMode bool) {
 	defer resp.Body.Close()
 
 	reuse := keepAlive(resp)
@@ -879,7 +939,15 @@ func (s *Server) streamResponse(w http.ResponseWriter, resp *http.Response, pc *
 	w.WriteHeader(resp.StatusCode)
 
 	flusher, canFlush := w.(http.Flusher)
-	buf := make([]byte, 32*1024)
+
+	// AI mode: 512-byte buffer so each small chunk (a few tokens) is flushed
+	// immediately instead of waiting for a 32 KB fill. Regular mode keeps the
+	// larger 32 KB buffer for throughput efficiency.
+	bufSize := 32 * 1024
+	if aiMode {
+		bufSize = 512
+	}
+	buf := make([]byte, bufSize)
 	for {
 		n, rerr := resp.Body.Read(buf)
 		if n > 0 {

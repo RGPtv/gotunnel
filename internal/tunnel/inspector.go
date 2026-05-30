@@ -51,6 +51,7 @@ type TunnelEntry struct {
 	HasAPIKey        bool   `json:"has_apikey"`
 	APIKeyEnabled    bool   `json:"apikey_enabled"`
 	BasicAuthEnabled bool   `json:"basicauth_enabled"`
+	AIModeEnabled    bool   `json:"aimode_enabled"`
 	ProxyURL         string `json:"proxy_url"`
 	ClientIP         string `json:"client_ip"`
 }
@@ -261,6 +262,10 @@ func (ins *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ins.handleTunnelAuth(w, r)
 	case "/api/tunnels/basicauth":
 		ins.handleTunnelBasicAuth(w, r)
+	case "/api/tunnels/basicauth/creds":
+		ins.handleTunnelBasicAuthCreds(w, r)
+	case "/api/tunnels/aimode":
+		ins.handleTunnelAIMode(w, r)
 	case "/api/tunnels":
 		ins.handleTunnels(w, r)
 	case "/api/requests/stream":
@@ -357,6 +362,7 @@ func (ins *Inspector) buildTunnelList() []TunnelEntry {
 			HasAPIKey:        meta.APIKey != "",
 			APIKeyEnabled:    meta.APIKeyEnabled,
 			BasicAuthEnabled: meta.BasicAuthEnabled,
+			AIModeEnabled:    meta.AIMode,
 			ProxyURL:         meta.ProxyURL,
 			ClientIP:         meta.ClientIP,
 		})
@@ -370,6 +376,7 @@ func (ins *Inspector) buildTunnelList() []TunnelEntry {
 			HasAPIKey:        meta.APIKey != "",
 			APIKeyEnabled:    meta.APIKeyEnabled,
 			BasicAuthEnabled: meta.BasicAuthEnabled,
+			AIModeEnabled:    meta.AIMode,
 			ProxyURL:         meta.ProxyURL,
 			ClientIP:         meta.ClientIP,
 		})
@@ -383,11 +390,43 @@ func (ins *Inspector) buildTunnelList() []TunnelEntry {
 			HasAPIKey:        meta.APIKey != "",
 			APIKeyEnabled:    meta.APIKeyEnabled,
 			BasicAuthEnabled: meta.BasicAuthEnabled,
+			AIModeEnabled:    meta.AIMode,
 			ProxyURL:         meta.ProxyURL,
 			ClientIP:         meta.ClientIP,
 		})
 	}
 	return tunnels
+}
+
+// handleTunnelAIMode enables or disables AI/Ollama optimisations for a tunnel.
+// POST /api/tunnels/aimode  {"endpoint":"X","enabled":true}
+func (ins *Inspector) handleTunnelAIMode(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if ins.srv == nil {
+		http.Error(w, "server unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	var req struct {
+		Endpoint string `json:"endpoint"`
+		Enabled  bool   `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Endpoint == "" {
+		http.Error(w, "missing endpoint", http.StatusBadRequest)
+		return
+	}
+	if err := ins.srv.SetTunnelAIMode(req.Endpoint, req.Enabled); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"enabled": req.Enabled})
 }
 
 // handleTunnelAuth handles GET (reveal) and POST (enable/disable/regenerate) for API keys.
@@ -420,7 +459,49 @@ func (ins *Inspector) handleTunnelAPIKey(w http.ResponseWriter, r *http.Request)
 	json.NewEncoder(w).Encode(map[string]string{"apikey": meta.APIKey})
 }
 
-// handleTunnelAuth enables/disables the API key for a tunnel, optionally regenerating it.
+// handleTunnelBasicAuthCreds returns the plaintext credentials for a tunnel's
+// Basic Auth config. Only accessible to authenticated dashboard users.
+// GET /api/tunnels/basicauth/creds?endpoint=X
+func (ins *Inspector) handleTunnelBasicAuthCreds(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	endpoint := r.URL.Query().Get("endpoint")
+	if endpoint == "" {
+		http.Error(w, "missing endpoint", http.StatusBadRequest)
+		return
+	}
+	if ins.srv == nil {
+		http.Error(w, "server unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	ins.srv.tunnelMetaMu.RLock()
+	meta, ok := ins.srv.tunnelMeta[endpoint]
+	ins.srv.tunnelMetaMu.RUnlock()
+	if !ok {
+		http.Error(w, "tunnel not found", http.StatusNotFound)
+		return
+	}
+	username, password := "", ""
+	if meta.BasicAuth != "" {
+		decoded, err := base64.StdEncoding.DecodeString(meta.BasicAuth)
+		if err == nil {
+			parts := strings.SplitN(string(decoded), ":", 2)
+			if len(parts) == 2 {
+				username, password = parts[0], parts[1]
+			}
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	json.NewEncoder(w).Encode(map[string]string{
+		"username": username,
+		"password": password,
+	})
+}
+
+
 // POST /api/tunnels/auth
 //
 //	{"endpoint":"X","enabled":true,"regenerate":false,"apikey":"optional-custom-key"}

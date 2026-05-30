@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	_ "embed"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -44,12 +45,14 @@ type CapturedRequest struct {
 }
 
 type TunnelEntry struct {
-	Type        string `json:"type"`
-	Endpoint    string `json:"endpoint"`
-	Connections int    `json:"connections"`
-	HasAPIKey   bool   `json:"has_apikey"`
-	ProxyURL    string `json:"proxy_url"`
-	ClientIP    string `json:"client_ip"`
+	Type             string `json:"type"`
+	Endpoint         string `json:"endpoint"`
+	Connections      int    `json:"connections"`
+	HasAPIKey        bool   `json:"has_apikey"`
+	APIKeyEnabled    bool   `json:"apikey_enabled"`
+	BasicAuthEnabled bool   `json:"basicauth_enabled"`
+	ProxyURL         string `json:"proxy_url"`
+	ClientIP         string `json:"client_ip"`
 }
 
 // Inspector provides a secured web dashboard for live inspection of tunnel traffic.
@@ -175,6 +178,10 @@ func cloneHeaders(h http.Header) http.Header {
 	return clone
 }
 
+func base64Encode(s string) string {
+	return base64.StdEncoding.EncodeToString([]byte(s))
+}
+
 func (ins *Inspector) subscribe() (chan CapturedRequest, func()) {
 	ch := make(chan CapturedRequest, 64)
 	ins.subsMu.Lock()
@@ -250,6 +257,10 @@ func (ins *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ins.handleToken(w, r)
 	case "/api/tunnels/apikey":
 		ins.handleTunnelAPIKey(w, r)
+	case "/api/tunnels/auth":
+		ins.handleTunnelAuth(w, r)
+	case "/api/tunnels/basicauth":
+		ins.handleTunnelBasicAuth(w, r)
 	case "/api/tunnels":
 		ins.handleTunnels(w, r)
 	case "/api/requests/stream":
@@ -337,44 +348,52 @@ func (ins *Inspector) buildTunnelList() []TunnelEntry {
 	defer ins.srv.tunnelMetaMu.RUnlock()
 	defer ins.srv.mu.RUnlock()
 
-	if dc := len(ins.srv.pool.conns); dc > 0 {
+	if dc := len(ins.srv.pool); dc > 0 {
 		meta := ins.srv.tunnelMeta["(default)"]
 		tunnels = append(tunnels, TunnelEntry{
-			Type:        "http",
-			Endpoint:    "(default)",
-			Connections: dc,
-			HasAPIKey:   meta.APIKey != "",
-			ProxyURL:    meta.ProxyURL,
-			ClientIP:    meta.ClientIP,
+			Type:             "http",
+			Endpoint:         "(default)",
+			Connections:      dc,
+			HasAPIKey:        meta.APIKey != "",
+			APIKeyEnabled:    meta.APIKeyEnabled,
+			BasicAuthEnabled: meta.BasicAuthEnabled,
+			ProxyURL:         meta.ProxyURL,
+			ClientIP:         meta.ClientIP,
 		})
 	}
 	for sub, pool := range ins.srv.httpPools {
 		meta := ins.srv.tunnelMeta[sub]
 		tunnels = append(tunnels, TunnelEntry{
-			Type:        "http",
-			Endpoint:    sub,
-			Connections: len(pool.conns),
-			HasAPIKey:   meta.APIKey != "",
-			ProxyURL:    meta.ProxyURL,
-			ClientIP:    meta.ClientIP,
+			Type:             "http",
+			Endpoint:         sub,
+			Connections:      len(pool),
+			HasAPIKey:        meta.APIKey != "",
+			APIKeyEnabled:    meta.APIKeyEnabled,
+			BasicAuthEnabled: meta.BasicAuthEnabled,
+			ProxyURL:         meta.ProxyURL,
+			ClientIP:         meta.ClientIP,
 		})
 	}
 	for port, pool := range ins.srv.tcpPools {
 		meta := ins.srv.tunnelMeta[port]
 		tunnels = append(tunnels, TunnelEntry{
-			Type:        "tcp",
-			Endpoint:    port,
-			Connections: len(pool.conns),
-			HasAPIKey:   meta.APIKey != "",
-			ProxyURL:    meta.ProxyURL,
-			ClientIP:    meta.ClientIP,
+			Type:             "tcp",
+			Endpoint:         port,
+			Connections:      len(pool),
+			HasAPIKey:        meta.APIKey != "",
+			APIKeyEnabled:    meta.APIKeyEnabled,
+			BasicAuthEnabled: meta.BasicAuthEnabled,
+			ProxyURL:         meta.ProxyURL,
+			ClientIP:         meta.ClientIP,
 		})
 	}
 	return tunnels
 }
 
-// handleTunnelAPIKey returns the API key for a specific tunnel endpoint
-// on an explicit authenticated GET request. Never broadcast in SSE or tunnel lists.
+// handleTunnelAuth handles GET (reveal) and POST (enable/disable/regenerate) for API keys.
+//
+//	GET  /api/tunnels/apikey?endpoint=X          → returns {"apikey":"..."}
+//	POST /api/tunnels/auth  body: {"endpoint":"X","enabled":true,"regenerate":false,"apikey":"custom"}
 func (ins *Inspector) handleTunnelAPIKey(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -400,6 +419,119 @@ func (ins *Inspector) handleTunnelAPIKey(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("Cache-Control", "no-store")
 	json.NewEncoder(w).Encode(map[string]string{"apikey": meta.APIKey})
 }
+
+// handleTunnelAuth enables/disables the API key for a tunnel, optionally regenerating it.
+// POST /api/tunnels/auth
+//
+//	{"endpoint":"X","enabled":true,"regenerate":false,"apikey":"optional-custom-key"}
+func (ins *Inspector) handleTunnelAuth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if ins.srv == nil {
+		http.Error(w, "server unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	var req struct {
+		Endpoint   string `json:"endpoint"`
+		Enabled    bool   `json:"enabled"`
+		Regenerate bool   `json:"regenerate"`
+		APIKey     string `json:"apikey"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Endpoint == "" {
+		http.Error(w, "missing endpoint", http.StatusBadRequest)
+		return
+	}
+
+	newKey := req.APIKey
+	if req.Regenerate || (req.Enabled && newKey == "") {
+		// Generate a fresh key if asked, or if enabling with no key at all.
+		ins.srv.tunnelMetaMu.RLock()
+		meta, ok := ins.srv.tunnelMeta[req.Endpoint]
+		ins.srv.tunnelMetaMu.RUnlock()
+		if !ok {
+			http.Error(w, "tunnel not found", http.StatusNotFound)
+			return
+		}
+		if req.Regenerate || meta.APIKey == "" {
+			b := make([]byte, 20)
+			if _, err := rand.Read(b); err != nil {
+				http.Error(w, "failed to generate key", http.StatusInternalServerError)
+				return
+			}
+			newKey = hex.EncodeToString(b)
+		}
+	}
+
+	if err := ins.srv.SetTunnelAuth(req.Endpoint, req.Enabled, newKey); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	ins.srv.tunnelMetaMu.RLock()
+	meta := ins.srv.tunnelMeta[req.Endpoint]
+	ins.srv.tunnelMetaMu.RUnlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	json.NewEncoder(w).Encode(map[string]any{
+		"enabled": meta.APIKeyEnabled,
+		"apikey":  meta.APIKey,
+	})
+}
+
+// handleTunnelBasicAuth enables/disables per-tunnel Basic Auth from the dashboard.
+// POST /api/tunnels/basicauth
+//
+//	{"endpoint":"X","enabled":true,"username":"user","password":"pass"}
+func (ins *Inspector) handleTunnelBasicAuth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if ins.srv == nil {
+		http.Error(w, "server unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	var req struct {
+		Endpoint string `json:"endpoint"`
+		Enabled  bool   `json:"enabled"`
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Endpoint == "" {
+		http.Error(w, "missing endpoint", http.StatusBadRequest)
+		return
+	}
+
+	var credsB64 string
+	if req.Enabled {
+		if req.Username == "" || req.Password == "" {
+			http.Error(w, "username and password required when enabling basic auth", http.StatusBadRequest)
+			return
+		}
+		credsB64 = base64Encode(req.Username + ":" + req.Password)
+	}
+
+	if err := ins.srv.SetTunnelBasicAuth(req.Endpoint, req.Enabled, credsB64); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"enabled": req.Enabled})
+}
+
+
 
 // handleToken returns the server token on an explicit authenticated GET request.
 // The token is never pushed automatically (not in SSE or status) so a passive

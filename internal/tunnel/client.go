@@ -258,6 +258,9 @@ func RunClient(cfg *ClientConfig) {
 
 // runWorker dials the tunnel server and processes requests until an
 // unrecoverable error occurs, then reconnects after a brief pause.
+// connectAndServe returns (nil, true) for a normal data-path exit and
+// (nil, false) for a hijacked session — hijacked workers must still
+// back off so they don't hammer the server with rapid redials.
 func (c *Client) runWorker(id int) {
 	backoff := time.Second
 	for {
@@ -265,7 +268,8 @@ func (c *Client) runWorker(id int) {
 			return
 		}
 		c.setStatus("reconnecting")
-		if err := c.connectAndServe(id); err != nil {
+		err, served := c.connectAndServe(id)
+		if err != nil {
 			c.setStatus(fmt.Sprintf("connecting... (retrying in %v)", backoff))
 			select {
 			case <-time.After(backoff):
@@ -277,13 +281,28 @@ func (c *Client) runWorker(id int) {
 			if backoff > 10*time.Second {
 				backoff = 10 * time.Second
 			}
+		} else if served {
+			// Completed a full HTTP serving cycle cleanly — reset backoff.
+			backoff = time.Second
 		} else {
+			// Hijacked (TCP/WS) or clean disconnect — brief pause before redial
+			// to avoid hammering the server when the remote target disconnects.
+			select {
+			case <-time.After(time.Second):
+			case <-c.ctx.Done():
+				return
+			}
 			backoff = time.Second
 		}
 	}
 }
 
-func (c *Client) connectAndServe(id int) error {
+// connectAndServe dials the server, authenticates, and processes requests.
+// Returns (err, served):
+//   - err != nil  → connection or protocol failure; caller should back off
+//   - err == nil, served == true  → served at least one HTTP request cleanly
+//   - err == nil, served == false → hijacked (TCP/WS) or clean disconnect
+func (c *Client) connectAndServe(id int) (error, bool) {
 	var conn net.Conn
 	var err error
 	dialer := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
@@ -294,12 +313,17 @@ func (c *Client) connectAndServe(id int) error {
 		conn, err = tlsDialer.DialContext(c.ctx, "tcp", c.serverAddr)
 	}
 	if err != nil {
-		return err
+		return err, false
 	}
+	hijacked := false
 	watchDone := make(chan struct{})
 	defer func() {
-		close(watchDone)
-		conn.Close()
+		if watchDone != nil {
+			close(watchDone)
+		}
+		if !hijacked {
+			conn.Close()
+		}
 	}()
 	go func() {
 		select {
@@ -311,12 +335,16 @@ func (c *Client) connectAndServe(id int) error {
 
 	reader := bufio.NewReaderSize(conn, 64*1024)
 
+	// Set a handshake deadline matching the server's 15 s auth timeout.
+	// This ensures a hung or slow server cannot hold a worker goroutine
+	// indefinitely during the upgrade → challenge → auth sequence.
+	conn.SetDeadline(time.Now().Add(15 * time.Second))
+
 	wsRaw := make([]byte, 16)
 	if _, err := rand.Read(wsRaw); err != nil {
-		return fmt.Errorf("ws key: %w", err)
+		return fmt.Errorf("ws key: %w", err), false
 	}
 	wsKey := base64.StdEncoding.EncodeToString(wsRaw)
-	conn.SetDeadline(time.Now().Add(15 * time.Second))
 	fmt.Fprintf(conn,
 		"GET /_tunnel/connect HTTP/1.1\r\n"+
 			"Host: %s\r\n"+
@@ -329,20 +357,20 @@ func (c *Client) connectAndServe(id int) error {
 	)
 	upgradeResp, err := http.ReadResponse(reader, nil)
 	if err != nil {
-		return err
+		return err, false
 	}
 	upgradeResp.Body.Close()
 	if upgradeResp.StatusCode != http.StatusSwitchingProtocols {
-		return fmt.Errorf("upgrade rejected: %v", upgradeResp.Status)
+		return fmt.Errorf("upgrade rejected: %v", upgradeResp.Status), false
 	}
 
 	chalLine, err := reader.ReadString('\n')
 	if err != nil {
-		return fmt.Errorf("read challenge: %w", err)
+		return fmt.Errorf("read challenge: %w", err), false
 	}
 	chalLine = strings.TrimSpace(chalLine)
 	if !strings.HasPrefix(chalLine, "CHALLENGE ") {
-		return fmt.Errorf("expected CHALLENGE, got %q", chalLine)
+		return fmt.Errorf("expected CHALLENGE, got %q", chalLine), false
 	}
 	nonceHex := strings.TrimPrefix(chalLine, "CHALLENGE ")
 
@@ -361,31 +389,55 @@ func (c *Client) connectAndServe(id int) error {
 	fmt.Fprintf(conn, "AUTH %s %s %s %s\n", clientHmac, c.tunnelType, remote, key)
 
 	line, err := reader.ReadString('\n')
-	conn.SetDeadline(time.Time{})
 	if err != nil {
-		return err
+		return err, false
 	}
 	line = strings.TrimSpace(line)
 	if line != "OK" {
-		return fmt.Errorf("auth rejected: %s", line)
+		return fmt.Errorf("auth rejected: %s", line), false
 	}
+
+	// Auth succeeded — clear the deadline so the data path is unbounded.
+	conn.SetDeadline(time.Time{})
 
 	c.setStatus("online")
 	c.uiWorkers.Add(1)
 	defer c.uiWorkers.Add(-1)
 
 	if c.tunnelType == "tcp" {
-		return c.handleTCPWorker(id, conn, reader)
+		hijacked = true
+		// Transfer ownership of watchDone to the goroutine so the context
+		// watcher stays active for the full duration of the TCP session.
+		wd := watchDone
+		watchDone = nil // prevent the deferred close from firing
+		go func() {
+			defer close(wd)
+			c.handleTCPWorker(id, conn, reader)
+			conn.Close()
+		}()
+		return nil, false // hijacked
 	}
 
+	served := false
 	for {
 		req, err := http.ReadRequest(reader)
 		if err != nil {
-			return err
+			if served {
+				return nil, true // clean disconnect after serving at least one request
+			}
+			return err, false
 		}
 
 		if strings.ToLower(req.Header.Get("Upgrade")) == "websocket" {
-			return c.handleWebSocket(id, conn, reader, req)
+			hijacked = true
+			wd := watchDone
+			watchDone = nil // prevent deferred close; keep ctx watcher alive for WS session
+			go func() {
+				defer close(wd)
+				c.handleWebSocket(id, conn, reader, req)
+				conn.Close()
+			}()
+			return nil, false // hijacked
 		}
 
 		start := time.Now()
@@ -400,17 +452,18 @@ func (c *Client) connectAndServe(id int) error {
 				req.Body.Close()
 			}
 			if werr := writeErrorResponse(conn, 502, proxyErr.Error()); werr != nil {
-				return werr // tunnel conn is broken; let worker reconnect
+				return werr, served // tunnel conn is broken; let worker reconnect
 			}
 			continue
 		}
 
 		if err := resp.Write(conn); err != nil {
 			resp.Body.Close()
-			return err
+			return err, served
 		}
 		resp.Body.Close()
 
+		served = true
 		addUIReq(req.Method, req.URL.RequestURI(), resp.StatusCode, time.Since(start))
 	}
 }
@@ -516,7 +569,9 @@ func (c *Client) forwardToTarget(req *http.Request) (*http.Response, error) {
 		req.URL.Scheme = "http"
 		req.URL.Host = strings.TrimPrefix(c.targetAddr, "http://")
 	}
-	req.Host = req.URL.Host
+	if req.Host == "" {
+		req.Host = req.URL.Host
+	}
 	req.RequestURI = "" 
 
 	return c.httpClient.Do(req)

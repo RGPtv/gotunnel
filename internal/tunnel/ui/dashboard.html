@@ -393,6 +393,18 @@ nav {
 }
 .token-btn:hover { color: var(--text-2); border-color: var(--border-2); background: var(--surface); }
 .token-btn.ok { color: var(--green); border-color: rgba(34,197,94,.3); background: rgba(34,197,94,.06); }
+/* Auth toggle (pill switch) */
+.auth-toggle { position:relative; display:inline-block; width:32px; height:18px; cursor:pointer; flex-shrink:0; }
+.auth-toggle input { opacity:0; width:0; height:0; }
+.auth-toggle-slider { position:absolute; inset:0; border-radius:18px; background:var(--border-2); transition:background .2s; }
+.auth-toggle-slider::before { content:''; position:absolute; width:12px; height:12px; left:3px; top:3px; border-radius:50%; background:#fff; transition:transform .2s; }
+.auth-toggle input:checked + .auth-toggle-slider { background:var(--blue); }
+.auth-toggle input:checked + .auth-toggle-slider::before { transform:translateX(14px); }
+/* Auth input controls */
+.auth-input { width:100%; box-sizing:border-box; padding:6px 8px; border-radius:6px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:12px; margin-bottom:6px; outline:none; }
+.auth-input:focus { border-color:var(--blue); }
+.auth-save-btn { width:100%; padding:6px 0; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--text-2); font-size:12px; cursor:pointer; transition:background .15s,color .15s; }
+.auth-save-btn:hover { background:var(--blue); color:#fff; border-color:var(--blue); }
 .token-value {
   font-family: 'Geist Mono', monospace;
   font-size: 11px;
@@ -784,24 +796,58 @@ nav {
           </div>
         </div>
 
-        <!-- API Key -->
-        <div class="sidebar-section" id="apikey-section" style="display:none">
-          <div class="sidebar-label" style="font-size: 13px; margin-bottom:12px;">API Key</div>
-          <div class="token-box">
-            <div class="token-header">
-              <span class="token-header-label">Secret</span>
-              <div class="token-actions">
-                <button class="token-btn" id="api-reveal" title="Reveal" onclick="apiReveal()">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                </button>
-                <button class="token-btn" id="api-copy" title="Copy" onclick="apiCopy()">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                </button>
+        <!-- Per-tunnel Auth Management -->
+        <div id="tunnel-auth-section" style="display:none">
+
+          <!-- API Key -->
+          <div class="sidebar-section" id="apikey-section">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+              <div class="sidebar-label" style="font-size:13px;margin:0">API Key</div>
+              <label class="auth-toggle" title="Enable / disable API key protection">
+                <input type="checkbox" id="apikey-toggle" onchange="apikeyToggleChanged()">
+                <span class="auth-toggle-slider"></span>
+              </label>
+            </div>
+            <div id="apikey-controls" style="display:none">
+              <div class="token-box">
+                <div class="token-header">
+                  <span class="token-header-label">Secret</span>
+                  <div class="token-actions">
+                    <button class="token-btn" id="api-reveal" title="Reveal" onclick="apiReveal()">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    </button>
+                    <button class="token-btn" id="api-copy" title="Copy" onclick="apiCopy()">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    </button>
+                    <button class="token-btn" id="api-regen" title="Regenerate" onclick="apiRegenerate()">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                    </button>
+                  </div>
+                </div>
+                <div class="token-value masked" id="api-val">••••••••••••••••••••••••••••••••</div>
               </div>
             </div>
-            <div class="token-value masked" id="api-val">••••••••••••••••••••••••••••••••</div>
           </div>
+
+          <!-- Basic Auth -->
+          <div class="sidebar-section" id="basicauth-section">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+              <div class="sidebar-label" style="font-size:13px;margin:0">Basic Auth</div>
+              <label class="auth-toggle" title="Enable / disable Basic Auth protection">
+                <input type="checkbox" id="basicauth-toggle" onchange="basicAuthToggleChanged()">
+                <span class="auth-toggle-slider"></span>
+              </label>
+            </div>
+            <div id="basicauth-controls" style="display:none">
+              <input class="auth-input" type="text" id="basicauth-user" placeholder="Username" autocomplete="off">
+              <input class="auth-input" type="password" id="basicauth-pass" placeholder="Password" autocomplete="new-password">
+              <button class="auth-save-btn" onclick="basicAuthSave()">Save credentials</button>
+              <div id="basicauth-msg" style="font-size:11px;margin-top:6px;color:var(--success);display:none">Saved</div>
+            </div>
+          </div>
+
         </div>
+
 
       </div>
     </div>
@@ -891,20 +937,21 @@ function selectTunnel(ep) {
   document.querySelectorAll('.tunnel-entry').forEach(el => {
     el.classList.toggle('active', el.dataset.ep === ep);
   });
-  
+
   if (!ep) {
     document.getElementById('nav-tabs').style.display = 'none';
     document.getElementById('view-empty').style.display = 'flex';
     document.getElementById('view-overview').style.display = 'none';
     document.getElementById('view-inspector').style.display = 'none';
+    document.getElementById('tunnel-auth-section').style.display = 'none';
     return;
   }
-  
+
   document.getElementById('nav-tabs').style.display = 'flex';
   document.getElementById('view-empty').style.display = 'none';
   switchTab(currentTab);
   renderTunnelOverview();
-  
+
   $chipLbl.textContent = ep;
   renderAll();
 }
@@ -917,20 +964,22 @@ function renderTunnelOverview() {
   $tunConns.textContent = t.connections;
   document.getElementById('tun-clientip').textContent = (t.client_ip || '—').replace(/(:\d+)$/, '').replace(/^\[|\]$/g, '');
 
-  const section = document.getElementById('apikey-section');
-  if (t.has_apikey) {
-    // Only initialize the section on first render (when hidden).
-    // Never touch $apiVal or the reveal state on subsequent SSE ticks —
-    // that would re-mask the key every second while it's being shown.
-    if (section.style.display === 'none' || section.style.display === '') {
-      section.style.display = 'block';
-      $apiVal.textContent = '••••••••••••••••••••••••••••••••';
-      $apiVal.classList.add('masked');
-      document.getElementById('api-reveal').title = 'Reveal';
-    }
-  } else {
-    section.style.display = 'none';
+  document.getElementById('tunnel-auth-section').style.display = 'block';
+
+  // API Key toggle — sync checkbox to server state without touching revealed key
+  const apikeyToggle = document.getElementById('apikey-toggle');
+  const apikeyControls = document.getElementById('apikey-controls');
+  apikeyToggle.checked = !!t.apikey_enabled;
+  apikeyControls.style.display = t.apikey_enabled ? 'block' : 'none';
+  if (!t.apikey_enabled || !t.has_apikey) {
+    _maskApiKey();
   }
+
+  // Basic auth toggle
+  const baToggle = document.getElementById('basicauth-toggle');
+  const baControls = document.getElementById('basicauth-controls');
+  baToggle.checked = !!t.basicauth_enabled;
+  baControls.style.display = t.basicauth_enabled ? 'block' : 'none';
 }
 
 // ── Helpers ────────────────────────────────────
@@ -1058,16 +1107,31 @@ function _apikeyEndpoint() {
   return encodeURIComponent(activeTunnel || '(default)');
 }
 
+// ── API Key ─────────────────────────────────────────────
+function apikeyToggleChanged() {
+  const enabled = document.getElementById('apikey-toggle').checked;
+  fetch('/api/tunnels/auth', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ endpoint: activeTunnel || '(default)', enabled })
+  })
+  .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+  .then(data => {
+    document.getElementById('apikey-controls').style.display = data.enabled ? 'block' : 'none';
+    if (!data.enabled) _maskApiKey();
+    // Patch local tunnelsMap so SSE tick doesn't flicker the toggle
+    if (tunnelsMap[activeTunnel || '(default)']) {
+      tunnelsMap[activeTunnel || '(default)'].apikey_enabled = data.enabled;
+      tunnelsMap[activeTunnel || '(default)'].has_apikey = !!data.apikey;
+    }
+  })
+  .catch(() => { document.getElementById('apikey-toggle').checked = !enabled; });
+}
+
 function apiReveal() {
-  const val  = document.getElementById('api-val');
-  const btn  = document.getElementById('api-reveal');
-
-  // Already revealed → re-mask immediately
-  if (!val.classList.contains('masked')) {
-    _maskApiKey();
-    return;
-  }
-
+  const val = document.getElementById('api-val');
+  const btn = document.getElementById('api-reveal');
+  if (!val.classList.contains('masked')) { _maskApiKey(); return; }
   fetch('/api/tunnels/apikey?endpoint=' + _apikeyEndpoint())
     .then(r => { if (!r.ok) throw new Error(); return r.json(); })
     .then(data => {
@@ -1075,7 +1139,6 @@ function apiReveal() {
       val.textContent = data.apikey;
       val.classList.remove('masked');
       if (btn) btn.title = 'Hide';
-
       clearTimeout(_apikeyHideTimer);
       _apikeyHideTimer = setTimeout(_maskApiKey, 30000);
     })
@@ -1107,9 +1170,35 @@ function apiCopy() {
       } else {
         _apikeyFallbackCopy(key, done);
       }
-      // key goes out of scope here
     })
     .catch(() => {});
+}
+
+function apiRegenerate() {
+  const btn = document.getElementById('api-regen');
+  if (!confirm('Regenerate API key for this tunnel? Existing clients will need the new key.')) return;
+  btn.disabled = true;
+  fetch('/api/tunnels/auth', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ endpoint: activeTunnel || '(default)', enabled: true, regenerate: true })
+  })
+  .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+  .then(data => {
+    // Show new key immediately
+    const val = document.getElementById('api-val');
+    val.textContent = data.apikey;
+    val.classList.remove('masked');
+    document.getElementById('api-reveal').title = 'Hide';
+    clearTimeout(_apikeyHideTimer);
+    _apikeyHideTimer = setTimeout(_maskApiKey, 30000);
+    if (tunnelsMap[activeTunnel || '(default)']) {
+      tunnelsMap[activeTunnel || '(default)'].has_apikey = true;
+      tunnelsMap[activeTunnel || '(default)'].apikey_enabled = true;
+    }
+  })
+  .catch(() => {})
+  .finally(() => { btn.disabled = false; });
 }
 
 function _apikeyFallbackCopy(key, cb) {
@@ -1121,7 +1210,49 @@ function _apikeyFallbackCopy(key, cb) {
   ta.select();
   try { document.execCommand('copy'); cb(); } catch(e) {}
   document.body.removeChild(ta);
-  // key goes out of scope
+}
+
+// ── Basic Auth ──────────────────────────────────────────
+function basicAuthToggleChanged() {
+  const enabled = document.getElementById('basicauth-toggle').checked;
+  const controls = document.getElementById('basicauth-controls');
+  if (enabled) {
+    controls.style.display = 'block';
+    // Don't call API until user saves credentials
+  } else {
+    controls.style.display = 'none';
+    fetch('/api/tunnels/basicauth', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ endpoint: activeTunnel || '(default)', enabled: false })
+    })
+    .then(r => { if (!r.ok) throw new Error(r.status); })
+    .catch(() => { document.getElementById('basicauth-toggle').checked = true; controls.style.display = 'block'; });
+  }
+}
+
+function basicAuthSave() {
+  const user = document.getElementById('basicauth-user').value.trim();
+  const pass = document.getElementById('basicauth-pass').value;
+  const msg  = document.getElementById('basicauth-msg');
+  if (!user || !pass) { msg.style.color = 'var(--red)'; msg.textContent = 'Username and password required'; msg.style.display = 'block'; return; }
+  fetch('/api/tunnels/basicauth', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ endpoint: activeTunnel || '(default)', enabled: true, username: user, password: pass })
+  })
+  .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+  .then(() => {
+    msg.style.color = 'var(--success, #22c55e)';
+    msg.textContent = 'Saved';
+    msg.style.display = 'block';
+    setTimeout(() => { msg.style.display = 'none'; }, 2500);
+    document.getElementById('basicauth-pass').value = '';
+    if (tunnelsMap[activeTunnel || '(default)']) {
+      tunnelsMap[activeTunnel || '(default)'].basicauth_enabled = true;
+    }
+  })
+  .catch(() => { msg.style.color = 'var(--red)'; msg.textContent = 'Failed to save'; msg.style.display = 'block'; });
 }
 
 // ── Request rendering ──────────────────────────

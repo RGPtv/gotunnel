@@ -405,10 +405,11 @@ nav {
 .auth-input:focus { border-color:var(--blue); }
 .auth-save-btn { width:100%; padding:6px 0; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--text-2); font-size:12px; cursor:pointer; transition:background .15s,color .15s; }
 .auth-save-btn:hover { background:var(--blue); color:#fff; border-color:var(--blue); }
-/* Two-column auth layout */
-.auth-row { display:flex; gap:10px; margin-bottom:4px; }
-.auth-col { flex:1; min-width:0; border:1px solid var(--border); border-radius:8px; padding:10px; }
-.auth-col-header { display:flex; align-items:center; justify-content:space-between; }
+/* Auth panel */
+.auth-panel { border:1px solid var(--border); border-radius:8px; padding:12px 14px; margin-bottom:8px; }
+.auth-panel-header { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.auth-panel-title { font-size:13px; font-weight:500; color:var(--text); }
+.auth-panel-sub { font-size:11px; color:var(--text-3,#888); margin-top:2px; }
 .token-value {
   font-family: 'Geist Mono', monospace;
   font-size: 11px;
@@ -800,58 +801,63 @@ nav {
           </div>
         </div>
 
-        <!-- Per-tunnel Auth Management — two columns side by side -->
+        <!-- Per-tunnel Auth Management -->
         <div id="tunnel-auth-section" style="display:none">
-          <div class="auth-row">
 
-            <!-- API Key column -->
-            <div class="auth-col" id="apikey-section">
-              <div class="auth-col-header">
-                <span class="sidebar-label" style="font-size:12px;margin:0">API Key</span>
-                <label class="auth-toggle" title="Enable / disable API key protection">
-                  <input type="checkbox" id="apikey-toggle" onchange="apikeyToggleChanged()">
-                  <span class="auth-toggle-slider"></span>
-                </label>
+          <!-- API Key section -->
+          <div class="sidebar-section auth-panel" id="apikey-section">
+            <div class="auth-panel-header">
+              <div>
+                <div class="auth-panel-title">API Key</div>
+                <div class="auth-panel-sub">Require a secret key on every request</div>
               </div>
-              <div id="apikey-controls" style="display:none">
-                <div class="token-box" style="margin-top:8px">
-                  <div class="token-header">
-                    <span class="token-header-label">Secret</span>
-                    <div class="token-actions">
-                      <button class="token-btn" id="api-reveal" title="Reveal" onclick="apiReveal()">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                      </button>
-                      <button class="token-btn" id="api-copy" title="Copy" onclick="apiCopy()">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                      </button>
-                      <button class="token-btn" id="api-regen" title="Regenerate" onclick="apiRegenerate()">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-                      </button>
-                    </div>
+              <label class="auth-toggle" title="Enable / disable API key protection">
+                <input type="checkbox" id="apikey-toggle" onchange="apikeyToggleChanged()">
+                <span class="auth-toggle-slider"></span>
+              </label>
+            </div>
+            <div id="apikey-controls" style="display:none;margin-top:10px">
+              <div class="token-box">
+                <div class="token-header">
+                  <span class="token-header-label">Secret key</span>
+                  <div class="token-actions">
+                    <button class="token-btn" id="api-reveal" title="Reveal" onclick="apiReveal()">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    </button>
+                    <button class="token-btn" id="api-copy" title="Copy" onclick="apiCopy()">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    </button>
+                    <button class="token-btn" id="api-regen" title="Regenerate" onclick="apiRegenerate()">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                    </button>
                   </div>
-                  <div class="token-value masked" id="api-val">••••••••••••••••••••••••••••••••</div>
                 </div>
+                <div class="token-value masked" id="api-val">••••••••••••••••••••••••••••••••</div>
               </div>
+              <div style="font-size:11px;color:var(--text-3,#666);margin-top:6px">Send as <code style="font-size:10px">X-API-Key</code> header or <code style="font-size:10px">Bearer</code> token</div>
             </div>
-
-            <!-- Basic Auth column -->
-            <div class="auth-col" id="basicauth-section">
-              <div class="auth-col-header">
-                <span class="sidebar-label" style="font-size:12px;margin:0">Basic Auth</span>
-                <label class="auth-toggle" title="Enable / disable Basic Auth protection">
-                  <input type="checkbox" id="basicauth-toggle" onchange="basicAuthToggleChanged()">
-                  <span class="auth-toggle-slider"></span>
-                </label>
-              </div>
-              <div id="basicauth-controls" style="display:none">
-                <input class="auth-input" type="text" id="basicauth-user" placeholder="Username" autocomplete="off" style="margin-top:8px">
-                <input class="auth-input" type="password" id="basicauth-pass" placeholder="Password" autocomplete="new-password">
-                <button class="auth-save-btn" onclick="basicAuthSave()">Save</button>
-                <div id="basicauth-msg" style="font-size:11px;margin-top:5px;display:none"></div>
-              </div>
-            </div>
-
           </div>
+
+          <!-- Basic Auth section -->
+          <div class="sidebar-section auth-panel" id="basicauth-section">
+            <div class="auth-panel-header">
+              <div>
+                <div class="auth-panel-title">Basic Auth</div>
+                <div class="auth-panel-sub">Require username &amp; password</div>
+              </div>
+              <label class="auth-toggle" title="Enable / disable Basic Auth protection">
+                <input type="checkbox" id="basicauth-toggle" onchange="basicAuthToggleChanged()">
+                <span class="auth-toggle-slider"></span>
+              </label>
+            </div>
+            <div id="basicauth-controls" style="display:none;margin-top:10px">
+              <input class="auth-input" type="text"     id="basicauth-user" placeholder="Username" autocomplete="off">
+              <input class="auth-input" type="password" id="basicauth-pass" placeholder="New password" autocomplete="new-password">
+              <button class="auth-save-btn" onclick="basicAuthSave()">Save credentials</button>
+              <div id="basicauth-msg" style="font-size:11px;margin-top:5px;display:none"></div>
+            </div>
+          </div>
+
         </div>
 
 
@@ -1444,15 +1450,41 @@ function replayReq(id) {
 
 // ── Tunnels ────────────────────────────────────
 function renderTunnels(tunnels) {
-  tunnelsMap = {};
-  tunnels.forEach(t => tunnelsMap[t.endpoint] = t);
+  // Merge server data into tunnelsMap instead of replacing it wholesale.
+  // This preserves optimistic auth-toggle state set by the user while
+  // still updating connection counts, proxy_url, client_ip, etc.
+  const incoming = {};
+  tunnels.forEach(t => { incoming[t.endpoint] = t; });
+
+  // Remove endpoints that are no longer present.
+  Object.keys(tunnelsMap).forEach(ep => {
+    if (!incoming[ep]) delete tunnelsMap[ep];
+  });
+
+  // Merge each incoming entry: keep client-side auth fields if already patched.
+  tunnels.forEach(t => {
+    const existing = tunnelsMap[t.endpoint];
+    if (existing) {
+      // Preserve fields the user may have toggled (optimistic patches).
+      // Only accept server values when they differ from the default (false),
+      // meaning the server actually has the feature enabled — in that case
+      // the server is the source of truth.
+      tunnelsMap[t.endpoint] = Object.assign({}, t, {
+        apikey_enabled:    t.apikey_enabled    || existing.apikey_enabled,
+        basicauth_enabled: t.basicauth_enabled || existing.basicauth_enabled,
+        has_apikey:        t.has_apikey        || existing.has_apikey,
+      });
+    } else {
+      tunnelsMap[t.endpoint] = t;
+    }
+  });
 
   if (!tunnels || !tunnels.length) {
     $tunList.innerHTML = '<div class="tunnel-empty-msg">No active tunnels</div>';
     if (activeTunnel) selectTunnel(null);
     return;
   }
-  
+
   let found = false;
   $tunList.innerHTML = tunnels.map(t => {
     if (t.endpoint === activeTunnel) found = true;
@@ -1465,7 +1497,7 @@ function renderTunnels(tunnels) {
       <span class="t-workers">${t.connections}</span>
     </div>
   `}).join('');
-  
+
   if (activeTunnel && !found) {
     selectTunnel(null);
   } else if (activeTunnel) {

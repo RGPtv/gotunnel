@@ -401,10 +401,26 @@ nav {
 .auth-toggle input:checked + .auth-toggle-slider { background:var(--blue); }
 .auth-toggle input:checked + .auth-toggle-slider::before { transform:translateX(14px); }
 /* Auth input controls */
-.auth-input { width:100%; box-sizing:border-box; padding:6px 8px; border-radius:6px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:12px; margin-bottom:6px; outline:none; }
+.auth-input { width:100%; box-sizing:border-box; padding:6px 8px; border-radius:6px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:12px; margin-bottom:6px; outline:none; font-family:'Geist Mono',monospace; }
 .auth-input:focus { border-color:var(--blue); }
-.auth-save-btn { width:100%; padding:6px 0; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--text-2); font-size:12px; cursor:pointer; transition:background .15s,color .15s; }
+.auth-save-btn { width:100%; padding:6px 0; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--text-2); font-size:12px; cursor:pointer; transition:background .15s,color .15s; font-family:inherit; }
 .auth-save-btn:hover { background:var(--blue); color:#fff; border-color:var(--blue); }
+/* Credential field row */
+.cred-row { position:relative; display:flex; align-items:center; gap:4px; margin-bottom:6px; }
+.cred-row .auth-input { margin-bottom:0; flex:1; padding-right:60px; }
+.cred-btns { position:absolute; right:4px; display:flex; gap:2px; }
+.cred-btn { display:flex; align-items:center; justify-content:center; width:24px; height:24px; border:none; border-radius:4px; background:none; color:var(--text-3); cursor:pointer; transition:color .15s,background .15s; font-size:11px; }
+.cred-btn:hover { color:var(--text-2); background:var(--surface); }
+.cred-btn svg { width:11px; height:11px; }
+/* Gen password button */
+.gen-pass-btn { width:100%; padding:5px 0; border-radius:6px; border:1px dashed var(--border); background:none; color:var(--text-3); font-size:11px; cursor:pointer; transition:all .15s; font-family:inherit; margin-bottom:6px; }
+.gen-pass-btn:hover { color:var(--cyan); border-color:var(--cyan); background:rgba(34,211,238,.04); }
+/* Credential display box */
+.cred-display { display:none; background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:8px 10px; margin-bottom:6px; }
+.cred-display.visible { display:block; }
+.cred-display-row { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.cred-display-label { font-size:11px; color:var(--text-3); flex-shrink:0; min-width:56px; }
+.cred-display-val { font-family:'Geist Mono',monospace; font-size:11px; color:var(--text-2); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .token-value {
   font-family: 'Geist Mono', monospace;
   font-size: 11px;
@@ -695,6 +711,10 @@ nav {
 @media (max-width: 1024px) {
   .sidebar { width: 220px; min-width: 220px; }
 }
+@media (max-width: 900px) {
+  /* Stack overview columns on narrower screens */
+  #view-overview > div { grid-template-columns: 1fr 1fr !important; }
+}
 @media (max-width: 700px) {
   .sidebar { display: none; }
   .table-head,
@@ -702,6 +722,7 @@ nav {
     grid-template-columns: 70px 80px 60px 1fr 52px 72px 72px;
     padding: 0 14px;
   }
+  #view-overview > div { grid-template-columns: 1fr !important; }
 }
 </style>
 </head>
@@ -771,7 +792,7 @@ nav {
 
     <!-- Overview View -->
     <div id="view-overview" style="display: none; flex-direction: column; overflow-y: auto; width: 100%; height: 100%;">
-      <div style="padding: 32px 40px; display: grid; gap: 32px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); align-content: start;">
+      <div style="padding: 28px 32px; display: grid; gap: 24px; grid-template-columns: 1fr 1fr 1fr; align-content: start;">
         
         <!-- Stats -->
         <div class="sidebar-section">
@@ -796,73 +817,105 @@ nav {
           </div>
         </div>
 
-        <!-- Per-tunnel Auth Management -->
-        <div id="tunnel-auth-section" style="display:none">
-
-          <!-- API Key section -->
-          <div class="sidebar-section" id="apikey-section">
-            <div class="sidebar-label" style="font-size:13px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
-              <span>API Key</span>
-              <label class="auth-toggle" title="Enable / disable API key protection">
-                <input type="checkbox" id="apikey-toggle" onchange="apikeyToggleChanged()">
-                <span class="auth-toggle-slider"></span>
-              </label>
+        <!-- API Key section -->
+        <div class="sidebar-section" id="tunnel-auth-section" style="display:none">
+          <div class="sidebar-label" style="font-size:13px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
+            <span>API Key</span>
+            <label class="auth-toggle" title="Enable / disable API key protection">
+              <input type="checkbox" id="apikey-toggle" onchange="apikeyToggleChanged()">
+              <span class="auth-toggle-slider"></span>
+            </label>
+          </div>
+          <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);padding:12px">
+            <div class="stat-item" style="padding-top:0">
+              <span class="stat-label">Protection</span>
+              <span class="stat-value" id="apikey-status-text" style="color:var(--text-3)">Disabled</span>
             </div>
-            <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);padding:12px">
-              <div class="stat-item" style="padding-top:0">
-                <span class="stat-label">Protection</span>
-                <span class="stat-value" id="apikey-status-text" style="color:var(--text-3)">Disabled</span>
-              </div>
-              <div id="apikey-controls" style="display:none">
-                <div class="stat-item" style="padding-bottom:0;flex-direction:column;align-items:stretch;gap:6px">
-                  <div class="token-box" style="margin:0">
-                    <div class="token-header">
-                      <span class="token-header-label">Secret key</span>
-                      <div class="token-actions">
-                        <button class="token-btn" id="api-reveal" title="Reveal" onclick="apiReveal()">
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                        </button>
-                        <button class="token-btn" id="api-copy" title="Copy" onclick="apiCopy()">
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                        </button>
-                        <button class="token-btn" id="api-regen" title="Regenerate" onclick="apiRegenerate()">
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-                        </button>
-                      </div>
+            <div id="apikey-controls" style="display:none">
+              <div class="stat-item" style="padding-bottom:0;flex-direction:column;align-items:stretch;gap:6px">
+                <div class="token-box" style="margin:0">
+                  <div class="token-header">
+                    <span class="token-header-label">Secret key</span>
+                    <div class="token-actions">
+                      <button class="token-btn" id="api-reveal" title="Reveal" onclick="apiReveal()">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                      </button>
+                      <button class="token-btn" id="api-copy" title="Copy" onclick="apiCopy()">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                      </button>
+                      <button class="token-btn" id="api-regen" title="Regenerate" onclick="apiRegenerate()">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                      </button>
                     </div>
-                    <div class="token-value masked" id="api-val">••••••••••••••••••••••••••••••••</div>
                   </div>
-                  <div style="font-size:11px;color:var(--text-3,#888)">Send as <code style="font-size:10px">X-API-Key</code> header or <code style="font-size:10px">Bearer</code> token</div>
+                  <div class="token-value masked" id="api-val">••••••••••••••••••••••••••••••••</div>
                 </div>
+                <div style="font-size:11px;color:var(--text-3,#888)">Send as <code style="font-size:10px">X-API-Key</code> header or <code style="font-size:10px">Bearer</code> token</div>
               </div>
             </div>
           </div>
+        </div>
 
-          <!-- Basic Auth section -->
-          <div class="sidebar-section" id="basicauth-section">
-            <div class="sidebar-label" style="font-size:13px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
-              <span>Basic Auth</span>
-              <label class="auth-toggle" title="Enable / disable Basic Auth protection">
-                <input type="checkbox" id="basicauth-toggle" onchange="basicAuthToggleChanged()">
-                <span class="auth-toggle-slider"></span>
-              </label>
+        <!-- Basic Auth section -->
+        <div class="sidebar-section" id="basicauth-section-col" style="display:none">
+          <div class="sidebar-label" style="font-size:13px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
+            <span>Basic Auth</span>
+            <label class="auth-toggle" title="Enable / disable Basic Auth protection">
+              <input type="checkbox" id="basicauth-toggle" onchange="basicAuthToggleChanged()">
+              <span class="auth-toggle-slider"></span>
+            </label>
+          </div>
+          <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);padding:12px">
+            <div class="stat-item" style="padding-top:0">
+              <span class="stat-label">Protection</span>
+              <span class="stat-value" id="basicauth-status-text" style="color:var(--text-3)">Disabled</span>
             </div>
-            <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);padding:12px">
-              <div class="stat-item" style="padding-top:0">
-                <span class="stat-label">Protection</span>
-                <span class="stat-value" id="basicauth-status-text" style="color:var(--text-3)">Disabled</span>
-              </div>
-              <div id="basicauth-controls" style="display:none">
-                <div class="stat-item" style="padding-bottom:0;flex-direction:column;align-items:stretch;gap:6px">
-                  <input class="auth-input" type="text"     id="basicauth-user" placeholder="Username" autocomplete="off">
-                  <input class="auth-input" type="password" id="basicauth-pass" placeholder="New password" autocomplete="new-password">
-                  <button class="auth-save-btn" onclick="basicAuthSave()">Save credentials</button>
-                  <div id="basicauth-msg" style="font-size:11px;margin-top:2px;display:none"></div>
+            <div id="basicauth-controls" style="display:none">
+              <div style="display:flex;flex-direction:column;gap:0;margin-top:8px">
+
+                <!-- Saved credentials display -->
+                <div class="cred-display" id="cred-display">
+                  <div class="cred-display-row" style="margin-bottom:5px">
+                    <span class="cred-display-label">User</span>
+                    <span class="cred-display-val" id="cred-show-user">—</span>
+                    <button class="cred-btn" title="Copy username" onclick="credCopy('user')">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    </button>
+                  </div>
+                  <div class="cred-display-row">
+                    <span class="cred-display-label">Pass</span>
+                    <span class="cred-display-val masked" id="cred-show-pass" style="letter-spacing:3px">••••••••</span>
+                    <button class="cred-btn" id="cred-reveal-btn" title="Reveal password" onclick="credRevealToggle()">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    </button>
+                    <button class="cred-btn" title="Copy password" onclick="credCopy('pass')">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    </button>
+                  </div>
                 </div>
+
+                <!-- Input fields -->
+                <div class="cred-row">
+                  <input class="auth-input" type="text" id="basicauth-user" placeholder="Username" autocomplete="off">
+                </div>
+                <div class="cred-row" style="margin-bottom:6px">
+                  <input class="auth-input" type="password" id="basicauth-pass" placeholder="Password" autocomplete="new-password" id="basicauth-pass">
+                  <div class="cred-btns">
+                    <button class="cred-btn" title="Show / hide" onclick="togglePassVis()" id="pass-vis-btn">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    </button>
+                  </div>
+                </div>
+
+                <button class="gen-pass-btn" onclick="generatePassword()">
+                  ⚡ Generate strong password
+                </button>
+
+                <button class="auth-save-btn" onclick="basicAuthSave()">Apply credentials</button>
+                <div id="basicauth-msg" style="font-size:11px;margin-top:4px;display:none"></div>
               </div>
             </div>
           </div>
-
         </div>
 
 
@@ -961,6 +1014,7 @@ function selectTunnel(ep) {
     document.getElementById('view-overview').style.display = 'none';
     document.getElementById('view-inspector').style.display = 'none';
     document.getElementById('tunnel-auth-section').style.display = 'none';
+    document.getElementById('basicauth-section-col').style.display = 'none';
     return;
   }
 
@@ -982,6 +1036,7 @@ function renderTunnelOverview() {
   document.getElementById('tun-clientip').textContent = (t.client_ip || '—').replace(/(:\d+)$/, '').replace(/^\[|\]$/g, '');
 
   document.getElementById('tunnel-auth-section').style.display = 'block';
+  document.getElementById('basicauth-section-col').style.display = 'block';
 
   // Sync toggles, control panels and status text from tunnelsMap.
   // tunnelsMap is patched optimistically by toggle handlers so these
@@ -1260,6 +1315,9 @@ function _setBasicAuthStatus(enabled) {
 }
 
 // ── Basic Auth ──────────────────────────────────────────
+// Saved credentials (in-memory only, never stored globally across page loads)
+let _baCredentials = { user: '', pass: '' };
+
 function basicAuthToggleChanged() {
   const enabled = document.getElementById('basicauth-toggle').checked;
   const controls = document.getElementById('basicauth-controls');
@@ -1269,10 +1327,23 @@ function basicAuthToggleChanged() {
     controls.style.display = 'block';
     _setBasicAuthStatus(true);
     if (tunnelsMap[ep]) tunnelsMap[ep].basicauth_enabled = true;
+    // Auto-apply: if we have saved credentials, push them immediately
+    if (_baCredentials.user && _baCredentials.pass) {
+      _pushBasicAuth(ep, _baCredentials.user, _baCredentials.pass, true);
+    } else {
+      // Just enable the toggle server-side without creds yet
+      fetch('/api/tunnels/basicauth', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ endpoint: ep, enabled: true })
+      }).catch(() => {});
+    }
   } else {
     controls.style.display = 'none';
     _setBasicAuthStatus(false);
     if (tunnelsMap[ep]) tunnelsMap[ep].basicauth_enabled = false;
+    // Hide credential display on disable
+    document.getElementById('cred-display').classList.remove('visible');
     fetch('/api/tunnels/basicauth', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
@@ -1288,6 +1359,33 @@ function basicAuthToggleChanged() {
   }
 }
 
+function _pushBasicAuth(ep, user, pass, silent) {
+  return fetch('/api/tunnels/basicauth', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ endpoint: ep, enabled: true, username: user, password: pass })
+  })
+  .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+  .then(() => {
+    _baCredentials = { user, pass };
+    // Show credential display
+    document.getElementById('cred-show-user').textContent = user;
+    document.getElementById('cred-show-pass').textContent = '••••••••';
+    document.getElementById('cred-show-pass').classList.add('masked');
+    document.getElementById('cred-show-pass').dataset.plain = pass;
+    document.getElementById('cred-display').classList.add('visible');
+    if (tunnelsMap[ep]) tunnelsMap[ep].basicauth_enabled = true;
+    _setBasicAuthStatus(true);
+    if (!silent) {
+      const msg = document.getElementById('basicauth-msg');
+      msg.style.color = 'var(--green)';
+      msg.textContent = '✓ Applied';
+      msg.style.display = 'block';
+      setTimeout(() => { msg.style.display = 'none'; }, 2500);
+    }
+  });
+}
+
 function basicAuthSave() {
   const user = document.getElementById('basicauth-user').value.trim();
   const pass = document.getElementById('basicauth-pass').value;
@@ -1299,26 +1397,73 @@ function basicAuthSave() {
     msg.style.display = 'block';
     return;
   }
-  fetch('/api/tunnels/basicauth', {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ endpoint: ep, enabled: true, username: user, password: pass })
-  })
-  .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
-  .then(() => {
-    msg.style.color = 'var(--green, #22c55e)';
-    msg.textContent = 'Saved';
-    msg.style.display = 'block';
-    setTimeout(() => { msg.style.display = 'none'; }, 2500);
-    document.getElementById('basicauth-pass').value = '';
-    if (tunnelsMap[ep]) tunnelsMap[ep].basicauth_enabled = true;
-    _setBasicAuthStatus(true);
-  })
-  .catch(() => {
-    msg.style.color = 'var(--red, #ef4444)';
-    msg.textContent = 'Failed to save';
-    msg.style.display = 'block';
-  });
+  _pushBasicAuth(ep, user, pass, false)
+    .then(() => {
+      document.getElementById('basicauth-pass').value = '';
+    })
+    .catch(() => {
+      msg.style.color = 'var(--red, #ef4444)';
+      msg.textContent = 'Failed to save';
+      msg.style.display = 'block';
+    });
+}
+
+// ── Basic Auth credential helpers ──────────────────────
+function credRevealToggle() {
+  const el = document.getElementById('cred-show-pass');
+  const btn = document.getElementById('cred-reveal-btn');
+  if (el.classList.contains('masked')) {
+    el.textContent = el.dataset.plain || '';
+    el.classList.remove('masked');
+    el.style.letterSpacing = '';
+    btn.title = 'Hide password';
+    // Auto-hide after 15s
+    setTimeout(() => {
+      el.textContent = '••••••••';
+      el.classList.add('masked');
+      el.style.letterSpacing = '3px';
+      btn.title = 'Reveal password';
+    }, 15000);
+  } else {
+    el.textContent = '••••••••';
+    el.classList.add('masked');
+    el.style.letterSpacing = '3px';
+    btn.title = 'Reveal password';
+  }
+}
+
+function credCopy(field) {
+  let text = '';
+  if (field === 'user') {
+    text = document.getElementById('cred-show-user').textContent;
+  } else {
+    text = document.getElementById('cred-show-pass').dataset.plain || '';
+  }
+  if (!text) return;
+  const done = () => {};
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).catch(() => _fallbackCopy(text, done));
+  } else {
+    _fallbackCopy(text, done);
+  }
+}
+
+function togglePassVis() {
+  const inp = document.getElementById('basicauth-pass');
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+}
+
+function generatePassword() {
+  const chars = 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%^&*';
+  let pwd = '';
+  const arr = new Uint8Array(16);
+  crypto.getRandomValues(arr);
+  arr.forEach(b => { pwd += chars[b % chars.length]; });
+  const inp = document.getElementById('basicauth-pass');
+  inp.value = pwd;
+  inp.type = 'text';
+  // Auto-hide after 10s
+  setTimeout(() => { inp.type = 'password'; }, 10000);
 }
 
 // ── Request rendering ──────────────────────────

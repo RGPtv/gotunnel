@@ -682,10 +682,11 @@ func (ins *Inspector) handleReplay(w http.ResponseWriter, r *http.Request) {
 		tMeta, ok := ins.srv.tunnelMeta[endpointKey]
 		ins.srv.tunnelMetaMu.RUnlock()
 
-		if ok && tMeta.APIKey != "" {
+		if ok && tMeta.APIKeyEnabled && tMeta.APIKey != "" {
 			newReq.Header.Set("X-API-Key", tMeta.APIKey)
-		} else if ins.srv.basicAuth != "" {
-			newReq.Header.Set("Authorization", "Basic "+ins.srv.basicAuth)
+		}
+		if ok && tMeta.BasicAuthEnabled && tMeta.BasicAuth != "" {
+			newReq.Header.Set("Authorization", "Basic "+tMeta.BasicAuth)
 		}
 	}
 

@@ -34,7 +34,6 @@ type Client struct {
 	token      string
 	tunnelType string
 	remoteAddr string
-	apiKey     string
 	targetAddr string
 	noTLS      bool
 	tlsConfig  *tls.Config
@@ -161,18 +160,6 @@ func RunClient(cfg *ClientConfig) {
 			workers = 10
 		}
 
-		apiKey := t.APIKey
-		if apiKey == "auto" {
-			b := make([]byte, 16)
-			if _, err := rand.Read(b); err != nil {
-				fmt.Fprintf(os.Stderr, "ERROR: failed to generate apikey for tunnel %d: %v\n", idx+1, err)
-				cancel()
-				wg.Wait()
-				return
-			}
-			apiKey = hex.EncodeToString(b)
-		}
-
 		remoteVal := t.Remote
 		if tunnelType == "http" && t.Subdomain != "" {
 			remoteVal = t.Subdomain
@@ -183,7 +170,6 @@ func RunClient(cfg *ClientConfig) {
 			token:      cfg.Token,
 			tunnelType: tunnelType,
 			remoteAddr: remoteVal,
-			apiKey:     apiKey,
 			targetAddr: normalizeTargetAddr(t.Target),
 			noTLS:      cfg.NoTLS,
 			httpClient: &http.Client{
@@ -216,9 +202,6 @@ func RunClient(cfg *ClientConfig) {
 			if tunnelType == "http" && t.Subdomain != "" {
 				fmt.Fprintf(os.Stderr, "  %-14s %s\n", "Subdomain", t.Subdomain)
 			}
-			if apiKey != "" {
-				fmt.Fprintf(os.Stderr, "  %-14s %s\n", "API Key", apiKey)
-			}
 			fmt.Fprintf(os.Stderr, "  %-14s %s\n", "Forwarding", t.Target)
 			fmt.Fprintf(os.Stderr, "  %-14s %d\n", "Workers", workers)
 			if cfg.SkipTLSVerify {
@@ -238,9 +221,6 @@ func RunClient(cfg *ClientConfig) {
 			}
 			if tunnelType == "http" && t.Subdomain != "" {
 				fmt.Fprintf(os.Stderr, "         subdomain: %s\n", t.Subdomain)
-			}
-			if apiKey != "" {
-				fmt.Fprintf(os.Stderr, "         api key: %s\n", apiKey)
 			}
 		}
 
@@ -382,11 +362,7 @@ func (c *Client) connectAndServe(id int) (error, bool) {
 	if remote == "" {
 		remote = "-"
 	}
-	key := c.apiKey
-	if key == "" {
-		key = "-"
-	}
-	fmt.Fprintf(conn, "AUTH %s %s %s %s\n", clientHmac, c.tunnelType, remote, key)
+	fmt.Fprintf(conn, "AUTH %s %s %s\n", clientHmac, c.tunnelType, remote)
 
 	line, err := reader.ReadString('\n')
 	if err != nil {

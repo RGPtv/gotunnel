@@ -405,6 +405,10 @@ nav {
 .auth-input:focus { border-color:var(--blue); }
 .auth-save-btn { width:100%; padding:6px 0; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--text-2); font-size:12px; cursor:pointer; transition:background .15s,color .15s; }
 .auth-save-btn:hover { background:var(--blue); color:#fff; border-color:var(--blue); }
+/* Two-column auth layout */
+.auth-row { display:flex; gap:10px; margin-bottom:4px; }
+.auth-col { flex:1; min-width:0; border:1px solid var(--border); border-radius:8px; padding:10px; }
+.auth-col-header { display:flex; align-items:center; justify-content:space-between; }
 .token-value {
   font-family: 'Geist Mono', monospace;
   font-size: 11px;
@@ -796,56 +800,58 @@ nav {
           </div>
         </div>
 
-        <!-- Per-tunnel Auth Management -->
+        <!-- Per-tunnel Auth Management — two columns side by side -->
         <div id="tunnel-auth-section" style="display:none">
+          <div class="auth-row">
 
-          <!-- API Key -->
-          <div class="sidebar-section" id="apikey-section">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-              <div class="sidebar-label" style="font-size:13px;margin:0">API Key</div>
-              <label class="auth-toggle" title="Enable / disable API key protection">
-                <input type="checkbox" id="apikey-toggle" onchange="apikeyToggleChanged()">
-                <span class="auth-toggle-slider"></span>
-              </label>
-            </div>
-            <div id="apikey-controls" style="display:none">
-              <div class="token-box">
-                <div class="token-header">
-                  <span class="token-header-label">Secret</span>
-                  <div class="token-actions">
-                    <button class="token-btn" id="api-reveal" title="Reveal" onclick="apiReveal()">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                    </button>
-                    <button class="token-btn" id="api-copy" title="Copy" onclick="apiCopy()">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                    </button>
-                    <button class="token-btn" id="api-regen" title="Regenerate" onclick="apiRegenerate()">
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-                    </button>
+            <!-- API Key column -->
+            <div class="auth-col" id="apikey-section">
+              <div class="auth-col-header">
+                <span class="sidebar-label" style="font-size:12px;margin:0">API Key</span>
+                <label class="auth-toggle" title="Enable / disable API key protection">
+                  <input type="checkbox" id="apikey-toggle" onchange="apikeyToggleChanged()">
+                  <span class="auth-toggle-slider"></span>
+                </label>
+              </div>
+              <div id="apikey-controls" style="display:none">
+                <div class="token-box" style="margin-top:8px">
+                  <div class="token-header">
+                    <span class="token-header-label">Secret</span>
+                    <div class="token-actions">
+                      <button class="token-btn" id="api-reveal" title="Reveal" onclick="apiReveal()">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                      </button>
+                      <button class="token-btn" id="api-copy" title="Copy" onclick="apiCopy()">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                      </button>
+                      <button class="token-btn" id="api-regen" title="Regenerate" onclick="apiRegenerate()">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                      </button>
+                    </div>
                   </div>
+                  <div class="token-value masked" id="api-val">••••••••••••••••••••••••••••••••</div>
                 </div>
-                <div class="token-value masked" id="api-val">••••••••••••••••••••••••••••••••</div>
               </div>
             </div>
-          </div>
 
-          <!-- Basic Auth -->
-          <div class="sidebar-section" id="basicauth-section">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-              <div class="sidebar-label" style="font-size:13px;margin:0">Basic Auth</div>
-              <label class="auth-toggle" title="Enable / disable Basic Auth protection">
-                <input type="checkbox" id="basicauth-toggle" onchange="basicAuthToggleChanged()">
-                <span class="auth-toggle-slider"></span>
-              </label>
+            <!-- Basic Auth column -->
+            <div class="auth-col" id="basicauth-section">
+              <div class="auth-col-header">
+                <span class="sidebar-label" style="font-size:12px;margin:0">Basic Auth</span>
+                <label class="auth-toggle" title="Enable / disable Basic Auth protection">
+                  <input type="checkbox" id="basicauth-toggle" onchange="basicAuthToggleChanged()">
+                  <span class="auth-toggle-slider"></span>
+                </label>
+              </div>
+              <div id="basicauth-controls" style="display:none">
+                <input class="auth-input" type="text" id="basicauth-user" placeholder="Username" autocomplete="off" style="margin-top:8px">
+                <input class="auth-input" type="password" id="basicauth-pass" placeholder="Password" autocomplete="new-password">
+                <button class="auth-save-btn" onclick="basicAuthSave()">Save</button>
+                <div id="basicauth-msg" style="font-size:11px;margin-top:5px;display:none"></div>
+              </div>
             </div>
-            <div id="basicauth-controls" style="display:none">
-              <input class="auth-input" type="text" id="basicauth-user" placeholder="Username" autocomplete="off">
-              <input class="auth-input" type="password" id="basicauth-pass" placeholder="Password" autocomplete="new-password">
-              <button class="auth-save-btn" onclick="basicAuthSave()">Save credentials</button>
-              <div id="basicauth-msg" style="font-size:11px;margin-top:6px;color:var(--success);display:none">Saved</div>
-            </div>
-          </div>
 
+          </div>
         </div>
 
 
@@ -966,17 +972,16 @@ function renderTunnelOverview() {
 
   document.getElementById('tunnel-auth-section').style.display = 'block';
 
-  // API Key toggle — sync checkbox to server state without touching revealed key
-  const apikeyToggle = document.getElementById('apikey-toggle');
+  // Sync toggles and control panels from tunnelsMap.
+  // tunnelsMap is patched optimistically by toggle handlers so these
+  // assignments reflect any pending user change, not stale server state.
+  const apikeyToggle   = document.getElementById('apikey-toggle');
   const apikeyControls = document.getElementById('apikey-controls');
   apikeyToggle.checked = !!t.apikey_enabled;
   apikeyControls.style.display = t.apikey_enabled ? 'block' : 'none';
-  if (!t.apikey_enabled || !t.has_apikey) {
-    _maskApiKey();
-  }
+  if (!t.apikey_enabled) _maskApiKey();
 
-  // Basic auth toggle
-  const baToggle = document.getElementById('basicauth-toggle');
+  const baToggle   = document.getElementById('basicauth-toggle');
   const baControls = document.getElementById('basicauth-controls');
   baToggle.checked = !!t.basicauth_enabled;
   baControls.style.display = t.basicauth_enabled ? 'block' : 'none';
@@ -1110,22 +1115,36 @@ function _apikeyEndpoint() {
 // ── API Key ─────────────────────────────────────────────
 function apikeyToggleChanged() {
   const enabled = document.getElementById('apikey-toggle').checked;
+  const ep = activeTunnel || '(default)';
+  // Optimistic update — prevents SSE tick from immediately resetting the toggle.
+  if (tunnelsMap[ep]) {
+    tunnelsMap[ep].apikey_enabled = enabled;
+    if (!enabled) tunnelsMap[ep].has_apikey = tunnelsMap[ep].has_apikey; // preserve
+  }
+  document.getElementById('apikey-controls').style.display = enabled ? 'block' : 'none';
+  if (!enabled) _maskApiKey();
+
   fetch('/api/tunnels/auth', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ endpoint: activeTunnel || '(default)', enabled })
+    body: JSON.stringify({ endpoint: ep, enabled })
   })
   .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
   .then(data => {
+    if (tunnelsMap[ep]) {
+      tunnelsMap[ep].apikey_enabled = data.enabled;
+      tunnelsMap[ep].has_apikey = !!data.apikey;
+    }
     document.getElementById('apikey-controls').style.display = data.enabled ? 'block' : 'none';
     if (!data.enabled) _maskApiKey();
-    // Patch local tunnelsMap so SSE tick doesn't flicker the toggle
-    if (tunnelsMap[activeTunnel || '(default)']) {
-      tunnelsMap[activeTunnel || '(default)'].apikey_enabled = data.enabled;
-      tunnelsMap[activeTunnel || '(default)'].has_apikey = !!data.apikey;
-    }
   })
-  .catch(() => { document.getElementById('apikey-toggle').checked = !enabled; });
+  .catch(() => {
+    // Revert toggle on failure.
+    const reverted = !enabled;
+    document.getElementById('apikey-toggle').checked = reverted;
+    if (tunnelsMap[ep]) tunnelsMap[ep].apikey_enabled = reverted;
+    document.getElementById('apikey-controls').style.display = reverted ? 'block' : 'none';
+  });
 }
 
 function apiReveal() {
@@ -1216,18 +1235,30 @@ function _apikeyFallbackCopy(key, cb) {
 function basicAuthToggleChanged() {
   const enabled = document.getElementById('basicauth-toggle').checked;
   const controls = document.getElementById('basicauth-controls');
+  const ep = activeTunnel || '(default)';
+
   if (enabled) {
+    // Show credential inputs. Don't call the API yet — wait for Save.
     controls.style.display = 'block';
-    // Don't call API until user saves credentials
+    // Optimistically mark as enabled in local map so SSE ticks don't
+    // immediately flip the checkbox back before the user saves.
+    if (tunnelsMap[ep]) tunnelsMap[ep].basicauth_enabled = true;
   } else {
     controls.style.display = 'none';
+    // Optimistic update — revert if API call fails.
+    if (tunnelsMap[ep]) tunnelsMap[ep].basicauth_enabled = false;
     fetch('/api/tunnels/basicauth', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ endpoint: activeTunnel || '(default)', enabled: false })
+      body: JSON.stringify({ endpoint: ep, enabled: false })
     })
     .then(r => { if (!r.ok) throw new Error(r.status); })
-    .catch(() => { document.getElementById('basicauth-toggle').checked = true; controls.style.display = 'block'; });
+    .catch(() => {
+      // Revert on failure.
+      document.getElementById('basicauth-toggle').checked = true;
+      controls.style.display = 'block';
+      if (tunnelsMap[ep]) tunnelsMap[ep].basicauth_enabled = true;
+    });
   }
 }
 
@@ -1235,24 +1266,32 @@ function basicAuthSave() {
   const user = document.getElementById('basicauth-user').value.trim();
   const pass = document.getElementById('basicauth-pass').value;
   const msg  = document.getElementById('basicauth-msg');
-  if (!user || !pass) { msg.style.color = 'var(--red)'; msg.textContent = 'Username and password required'; msg.style.display = 'block'; return; }
+  const ep   = activeTunnel || '(default)';
+  if (!user || !pass) {
+    msg.style.color = 'var(--red, #ef4444)';
+    msg.textContent = 'Username and password required';
+    msg.style.display = 'block';
+    return;
+  }
   fetch('/api/tunnels/basicauth', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ endpoint: activeTunnel || '(default)', enabled: true, username: user, password: pass })
+    body: JSON.stringify({ endpoint: ep, enabled: true, username: user, password: pass })
   })
   .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
   .then(() => {
-    msg.style.color = 'var(--success, #22c55e)';
+    msg.style.color = 'var(--green, #22c55e)';
     msg.textContent = 'Saved';
     msg.style.display = 'block';
     setTimeout(() => { msg.style.display = 'none'; }, 2500);
     document.getElementById('basicauth-pass').value = '';
-    if (tunnelsMap[activeTunnel || '(default)']) {
-      tunnelsMap[activeTunnel || '(default)'].basicauth_enabled = true;
-    }
+    if (tunnelsMap[ep]) tunnelsMap[ep].basicauth_enabled = true;
   })
-  .catch(() => { msg.style.color = 'var(--red)'; msg.textContent = 'Failed to save'; msg.style.display = 'block'; });
+  .catch(() => {
+    msg.style.color = 'var(--red, #ef4444)';
+    msg.textContent = 'Failed to save';
+    msg.style.display = 'block';
+  });
 }
 
 // ── Request rendering ──────────────────────────

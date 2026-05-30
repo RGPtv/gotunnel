@@ -101,7 +101,6 @@ const (
 
 type Server struct {
 	token        string
-	basicAuth    string
 	domain       string
 	httpAddr     string
 	httpsAddr    string
@@ -208,13 +207,8 @@ func RunServer(cfg *ServerConfig) {
 		}
 	}
 	
-	basicAuthEnc := ""
-	if cfg.Auth != "" {
-		basicAuthEnc = base64.StdEncoding.EncodeToString([]byte(cfg.Auth))
-	}
 	srv := &Server{
 		token:        token,
-		basicAuth:    basicAuthEnc,
 		domain:       cfg.Domain,
 		httpAddr:     httpAddr,
 		httpsAddr:    cfg.HTTPSAddr,
@@ -493,15 +487,6 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 	if len(parts) > 3 && parts[3] != "-" {
 		remoteAddr = parts[3]
 	}
-	apiKey := ""
-	if len(parts) > 4 && parts[4] != "-" {
-		// Join all remaining fields: apikey is always the last field and
-		// must never contain spaces, but joining is defensive.
-		apiKey = strings.Join(parts[4:], " ")
-		if apiKey == "-" {
-			apiKey = ""
-		}
-	}
 
 	mac := hmac.New(sha256.New, []byte(s.token))
 	mac.Write([]byte(nonceHex))
@@ -552,13 +537,18 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 		s.srvLog(LevelSuccess, "tunnel connected %s → tcp:%s (active: %d)", conn.RemoteAddr(), remoteAddr, n)
 
 		s.tunnelMetaMu.Lock()
+		prev := s.tunnelMeta[remoteAddr]
 		s.tunnelMeta[remoteAddr] = TunnelMeta{
-			APIKey:      apiKey,
-			Type:        "tcp",
-			Endpoint:    remoteAddr,
-			ProxyURL:    "tcp://" + remoteAddr,
-			ConnectedAt: time.Now(),
-			ClientIP:    conn.RemoteAddr().String(),
+			// Preserve dashboard-managed auth config across reconnects.
+			APIKey:           prev.APIKey,
+			APIKeyEnabled:    prev.APIKeyEnabled,
+			BasicAuth:        prev.BasicAuth,
+			BasicAuthEnabled: prev.BasicAuthEnabled,
+			Type:             "tcp",
+			Endpoint:         remoteAddr,
+			ProxyURL:         "tcp://" + remoteAddr,
+			ConnectedAt:      time.Now(),
+			ClientIP:         conn.RemoteAddr().String(),
 		}
 		s.tunnelMetaMu.Unlock()
 
@@ -588,13 +578,17 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 		s.srvLog(LevelSuccess, "tunnel connected %s → http:%s (active: %d)", conn.RemoteAddr(), remoteAddr, n)
 
 		s.tunnelMetaMu.Lock()
+		prev := s.tunnelMeta[remoteAddr]
 		s.tunnelMeta[remoteAddr] = TunnelMeta{
-			APIKey:      apiKey,
-			Type:        "http",
-			Endpoint:    remoteAddr,
-			ProxyURL:    s.buildProxyURL("http", remoteAddr),
-			ConnectedAt: time.Now(),
-			ClientIP:    conn.RemoteAddr().String(),
+			APIKey:           prev.APIKey,
+			APIKeyEnabled:    prev.APIKeyEnabled,
+			BasicAuth:        prev.BasicAuth,
+			BasicAuthEnabled: prev.BasicAuthEnabled,
+			Type:             "http",
+			Endpoint:         remoteAddr,
+			ProxyURL:         s.buildProxyURL("http", remoteAddr),
+			ConnectedAt:      time.Now(),
+			ClientIP:         conn.RemoteAddr().String(),
 		}
 		s.tunnelMetaMu.Unlock()
 
@@ -615,13 +609,17 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 	s.srvLog(LevelSuccess, "tunnel connected %s → http:(default) (active: %d)", conn.RemoteAddr(), n)
 
 	s.tunnelMetaMu.Lock()
+	prev := s.tunnelMeta["(default)"]
 	s.tunnelMeta["(default)"] = TunnelMeta{
-		APIKey:      apiKey,
-		Type:        "http",
-		Endpoint:    "(default)",
-		ProxyURL:    s.buildProxyURL("http", "(default)"),
-		ConnectedAt: time.Now(),
-		ClientIP:    conn.RemoteAddr().String(),
+		APIKey:           prev.APIKey,
+		APIKeyEnabled:    prev.APIKeyEnabled,
+		BasicAuth:        prev.BasicAuth,
+		BasicAuthEnabled: prev.BasicAuthEnabled,
+		Type:             "http",
+		Endpoint:         "(default)",
+		ProxyURL:         s.buildProxyURL("http", "(default)"),
+		ConnectedAt:      time.Now(),
+		ClientIP:         conn.RemoteAddr().String(),
 	}
 	s.tunnelMetaMu.Unlock()
 
@@ -714,7 +712,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		r.Header.Del("X-API-Key")
-		if s.basicAuth == "" && !tMeta.BasicAuthEnabled {
+		if !tMeta.BasicAuthEnabled {
 			r.Header.Del("Authorization")
 		}
 	}
@@ -723,16 +721,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if hasTMeta && tMeta.BasicAuthEnabled && tMeta.BasicAuth != "" {
 		auth := r.Header.Get("Authorization")
 		if !strings.HasPrefix(auth, "Basic ") || subtle.ConstantTimeCompare([]byte(strings.TrimPrefix(auth, "Basic ")), []byte(tMeta.BasicAuth)) != 1 {
-			w.Header().Set("WWW-Authenticate", `Basic realm="gotunnel"`)
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
-	}
-
-	// ── Global Basic Auth check ──────────────────────────────────────────────
-	if s.basicAuth != "" {
-		auth := r.Header.Get("Authorization")
-		if !strings.HasPrefix(auth, "Basic ") || subtle.ConstantTimeCompare([]byte(strings.TrimPrefix(auth, "Basic ")), []byte(s.basicAuth)) != 1 {
 			w.Header().Set("WWW-Authenticate", `Basic realm="gotunnel"`)
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return

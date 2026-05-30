@@ -24,7 +24,6 @@ type ServerConfig struct {
 	Token       string `yaml:"token"`
 	CertFile    string `yaml:"cert"`
 	KeyFile     string `yaml:"key"`
-	Auth        string `yaml:"auth"`
 	Domain      string `yaml:"domain"`
 	Inspect     string `yaml:"inspect"`
 	InspectUser string `yaml:"inspectUser"`
@@ -49,7 +48,6 @@ type TunnelConfig struct {
 	Type      string `yaml:"type"`
 	Subdomain string `yaml:"subdomain"`
 	Remote    string `yaml:"remote"`
-	APIKey    string `yaml:"apiKey"`
 	Workers   int    `yaml:"workers"`
 }
 
@@ -130,11 +128,6 @@ func validateServerConfig(s *ServerConfig) error {
 	if s.HTTPSAddr != "" && (s.CertFile == "" || s.KeyFile == "") {
 		return errors.New(
 			"invalid serverConfig: 'https' requires both 'cert' and 'key' to be set",
-		)
-	}
-	if s.Auth != "" && strings.Count(s.Auth, ":") != 1 {
-		return errors.New(
-			"invalid serverConfig: 'auth' must be in 'user:pass' format",
 		)
 	}
 	return nil

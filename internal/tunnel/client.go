@@ -181,7 +181,6 @@ func RunClient(cfg *ClientConfig) {
 					MaxIdleConns:          200,
 					MaxIdleConnsPerHost:   50,
 					IdleConnTimeout:       90 * time.Second,
-					ResponseHeaderTimeout: 60 * time.Second,
 				},
 				CheckRedirect: func(*http.Request, []*http.Request) error {
 					return http.ErrUseLastResponse

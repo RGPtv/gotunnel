@@ -326,7 +326,6 @@ func RunServer(cfg *ServerConfig) {
 		Addr:              httpAddr,
 		Handler:           srv,
 		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       60 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
 
@@ -337,7 +336,6 @@ func RunServer(cfg *ServerConfig) {
 			Addr:              cfg.HTTPSAddr,
 			Handler:           srv,
 			ReadHeaderTimeout: 10 * time.Second,
-			ReadTimeout:       60 * time.Second,
 			IdleTimeout:       120 * time.Second,
 		}
 		go func() {
@@ -792,7 +790,7 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, reqBody *capp
 	// body exceeds the limit and we return 413 instead of silently truncating.
 	var bodyBuf []byte
 	if out.Body != nil {
-		const maxBodyBuf = 10 * 1024 * 1024 // 10 MB
+		const maxBodyBuf = 100 * 1024 * 1024 // 100 MB
 		var rerr error
 		bodyBuf, rerr = io.ReadAll(io.LimitReader(out.Body, maxBodyBuf+1))
 		out.Body.Close()
@@ -801,7 +799,7 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, reqBody *capp
 			return
 		}
 		if int64(len(bodyBuf)) > maxBodyBuf {
-			http.Error(w, "request body too large (max 10 MB)", http.StatusRequestEntityTooLarge)
+			http.Error(w, "request body too large (max 100 MB)", http.StatusRequestEntityTooLarge)
 			return
 		}
 		out.ContentLength = int64(len(bodyBuf))

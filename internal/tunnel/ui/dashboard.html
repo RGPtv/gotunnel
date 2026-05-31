@@ -1029,7 +1029,8 @@ function switchTab(tab) {
 
 function selectTunnel(ep) {
   _maskApiKey();
-  _baCreds = { user: '', pass: '' };
+  _baCreds    = { user: '', pass: '' };
+  _baEditOpen = false;
   _baMaskCreds();
   activeTunnel = ep;
   document.querySelectorAll('.tunnel-entry').forEach(el => {
@@ -1080,12 +1081,16 @@ function renderTunnelOverview() {
   document.getElementById('basicauth-toggle').checked           = baEnabled;
   document.getElementById('basicauth-status-text').textContent  = baEnabled ? 'Enabled' : 'Disabled';
   document.getElementById('basicauth-status-text').style.color  = baEnabled ? 'var(--green)' : 'var(--text-3)';
-  if (baEnabled) {
-    _baShowEditForm(false);
-    _baShowCredView(true);
-  } else {
-    _baShowCredView(false);
-    _baShowEditForm(false);
+  // Only sync sub-panels when the edit form is NOT open — SSE ticks must
+  // never close a form the user is actively filling in.
+  if (!_baEditOpen) {
+    if (baEnabled) {
+      _baShowEditForm(false);
+      _baShowCredView(true);
+    } else {
+      _baShowCredView(false);
+      _baShowEditForm(false);
+    }
   }
 }
 
@@ -1388,8 +1393,12 @@ function _setBasicAuthStatus(enabled) {
   el.style.color  = enabled ? 'var(--green)' : 'var(--text-3)';
 }
 
-// Cached plaintext creds (fetched once, cleared on tunnel switch / disable)
-let _baCreds = { user: '', pass: '' };
+// ── Basic Auth state ────────────────────────────────────
+// _baCreds: plaintext creds cached after first fetch/save — cleared on switch
+// _baEditOpen: true while the edit form is open — blocks SSE ticks from
+//              closing it while the user is typing
+let _baCreds     = { user: '', pass: '' };
+let _baEditOpen  = false;
 let _baUserRevealed = false;
 let _baPassRevealed = false;
 
@@ -1397,8 +1406,8 @@ function _baMaskCreds() {
   _baUserRevealed = false; _baPassRevealed = false;
   const u = document.getElementById('ba-user-val');
   const p = document.getElementById('ba-pass-val');
-  if (u) { u.textContent = '••••••'; }
-  if (p) { p.textContent = '••••••••'; }
+  if (u) u.textContent = '••••••';
+  if (p) p.textContent = '••••••••';
   const br1 = document.getElementById('ba-user-reveal');
   const br2 = document.getElementById('ba-pass-reveal');
   if (br1) br1.title = 'Reveal';
@@ -1407,62 +1416,74 @@ function _baMaskCreds() {
 
 function _baShowCredView(show) {
   document.getElementById('basicauth-cred-view').style.display = show ? 'block' : 'none';
-  document.getElementById('basicauth-controls').style.display = 'none';
+  document.getElementById('basicauth-controls').style.display  = 'none';
+  if (show) _baEditOpen = false;
 }
 
 function _baShowEditForm(show) {
-  document.getElementById('basicauth-controls').style.display = show ? 'block' : 'none';
+  document.getElementById('basicauth-controls').style.display  = show ? 'block' : 'none';
   document.getElementById('basicauth-cred-view').style.display = 'none';
+  _baEditOpen = show;
 }
 
+// ── Credential reveal ───────────────────────────────────
 function baReveal(field) {
-  const ep = activeTunnel || '(default)';
+  const ep     = activeTunnel || '(default)';
   const isUser = field === 'user';
   const valEl  = document.getElementById(isUser ? 'ba-user-val' : 'ba-pass-val');
   const btnEl  = document.getElementById(isUser ? 'ba-user-reveal' : 'ba-pass-reveal');
   const revealed = isUser ? _baUserRevealed : _baPassRevealed;
 
   if (revealed) {
-    // Re-mask
     valEl.textContent = isUser ? '••••••' : '••••••••';
     btnEl.title = 'Reveal';
     if (isUser) _baUserRevealed = false; else _baPassRevealed = false;
     return;
   }
 
-  // Fetch if not yet cached
-  const show = (u, p) => {
-    if (isUser) {
-      valEl.textContent = u; _baUserRevealed = true;
-      btnEl.title = 'Hide';
-    } else {
-      valEl.textContent = p; _baPassRevealed = true;
-      btnEl.title = 'Hide';
-    }
+  const showVal = (u, p) => {
+    if (isUser) { valEl.textContent = u; _baUserRevealed = true; btnEl.title = 'Hide'; }
+    else        { valEl.textContent = p; _baPassRevealed = true; btnEl.title = 'Hide'; }
   };
 
-  if (_baCreds.user || _baCreds.pass) {
-    show(_baCreds.user, _baCreds.pass);
-    return;
-  }
+  if (_baCreds.user || _baCreds.pass) { showVal(_baCreds.user, _baCreds.pass); return; }
 
   fetch('/api/tunnels/basicauth/creds?endpoint=' + encodeURIComponent(ep))
     .then(r => { if (!r.ok) throw new Error(); return r.json(); })
     .then(d => {
       _baCreds = { user: d.username || '', pass: d.password || '' };
-      show(_baCreds.user, _baCreds.pass);
+      showVal(_baCreds.user, _baCreds.pass);
     })
     .catch(() => { valEl.textContent = '(error)'; });
 }
 
+// ── Edit form ───────────────────────────────────────────
 function baOpenEdit() {
-  // Pre-fill with cached creds if available
-  if (_baCreds.user) document.getElementById('basicauth-user').value = _baCreds.user;
-  _baShowEditForm(true);
+  // Always fetch fresh creds so form is pre-filled even without a prior reveal
+  if (_baCreds.user) {
+    document.getElementById('basicauth-user').value = _baCreds.user;
+    document.getElementById('basicauth-pass').value = '';
+    _baShowEditForm(true);
+    return;
+  }
+  const ep = activeTunnel || '(default)';
+  fetch('/api/tunnels/basicauth/creds?endpoint=' + encodeURIComponent(ep))
+    .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+    .then(d => {
+      _baCreds = { user: d.username || '', pass: d.password || '' };
+      document.getElementById('basicauth-user').value = _baCreds.user;
+      document.getElementById('basicauth-pass').value = '';
+      _baShowEditForm(true);
+    })
+    .catch(() => {
+      document.getElementById('basicauth-user').value = '';
+      document.getElementById('basicauth-pass').value = '';
+      _baShowEditForm(true);
+    });
 }
 
 function baCancelEdit() {
-  const ep = activeTunnel || '(default)';
+  const ep       = activeTunnel || '(default)';
   const hasCreds = !!(tunnelsMap[ep] && tunnelsMap[ep].basicauth_enabled);
   _baShowEditForm(false);
   if (hasCreds) _baShowCredView(true);
@@ -1470,41 +1491,42 @@ function baCancelEdit() {
 
 function baTogglePassVis() {
   const inp = document.getElementById('basicauth-pass');
-  inp.type = inp.type === 'password' ? 'text' : 'password';
+  inp.type  = inp.type === 'password' ? 'text' : 'password';
 }
 
 function baGenUser() {
-  const adj = ['swift','bright','calm','bold','cool','keen','wise'];
-  const nouns = ['tunnel','proxy','gate','relay','bridge','node','link'];
-  const rand = arr => arr[Math.floor(Math.random()*arr.length)];
-  const n = Math.floor(100 + Math.random()*900);
-  document.getElementById('basicauth-user').value = rand(adj) + '_' + rand(nouns) + n;
+  const adj   = ['swift','bright','calm','bold','cool','keen','wise','sharp','quick','clear'];
+  const nouns = ['tunnel','proxy','gate','relay','bridge','node','link','path','route','mesh'];
+  const pick  = arr => arr[Math.floor(Math.random() * arr.length)];
+  document.getElementById('basicauth-user').value =
+    pick(adj) + '_' + pick(nouns) + Math.floor(100 + Math.random() * 900);
 }
 
 function baGenPass() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%^&*';
+  const bytes = new Uint8Array(18);
+  crypto.getRandomValues(bytes);
   let p = '';
-  const arr = new Uint8Array(18);
-  crypto.getRandomValues(arr);
-  arr.forEach(b => { p += chars[b % chars.length]; });
+  bytes.forEach(b => { p += chars[b % chars.length]; });
   const inp = document.getElementById('basicauth-pass');
   inp.value = p;
-  inp.type = 'text'; // reveal so user can see the generated value
+  inp.type  = 'text'; // show the generated password immediately
 }
 
-// ── Basic Auth ──────────────────────────────────────────
+// ── Toggle ──────────────────────────────────────────────
 function basicAuthToggleChanged() {
   const enabled = document.getElementById('basicauth-toggle').checked;
-  const ep = activeTunnel || '(default)';
-
-  _setBasicAuthStatus(enabled);
-  if (tunnelsMap[ep]) tunnelsMap[ep].basicauth_enabled = enabled;
+  const ep      = activeTunnel || '(default)';
 
   if (!enabled) {
+    // ── Disable ─────────────────────────────────────────
+    _setBasicAuthStatus(false);
+    if (tunnelsMap[ep]) tunnelsMap[ep].basicauth_enabled = false;
     _baShowCredView(false);
-    _baShowEditForm(false);
+    _baShowEditForm(false);  // also clears _baEditOpen
     _baCreds = { user: '', pass: '' };
     _baMaskCreds();
+
     fetch('/api/tunnels/basicauth', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
@@ -1512,22 +1534,35 @@ function basicAuthToggleChanged() {
     })
     .then(r => { if (!r.ok) throw new Error(r.status); })
     .catch(() => {
+      // Revert
       document.getElementById('basicauth-toggle').checked = true;
       _setBasicAuthStatus(true);
       if (tunnelsMap[ep]) tunnelsMap[ep].basicauth_enabled = true;
+      _baShowCredView(true);
     });
     return;
   }
 
-  // Enabling — if we already have creds saved, apply immediately
+  // ── Enable ───────────────────────────────────────────
+  // Update status text immediately so toggle feels responsive.
+  // Do NOT set tunnelsMap[ep].basicauth_enabled = true yet — that would make
+  // the next SSE tick call _baShowCredView(true) and destroy the edit form.
+  // We only commit that flag after a successful API save (_doSaveBasicAuth).
+  _setBasicAuthStatus(true);
+
   if (_baCreds.user && _baCreds.pass) {
+    // Re-enabling with previously cached creds — save immediately
     _doSaveBasicAuth(ep, _baCreds.user, _baCreds.pass, true);
     return;
   }
-  // No creds yet — show the edit form so user can enter them
+
+  // No creds yet — open edit form. _baEditOpen = true blocks SSE resets.
+  document.getElementById('basicauth-user').value = '';
+  document.getElementById('basicauth-pass').value = '';
   _baShowEditForm(true);
 }
 
+// ── Save / apply ────────────────────────────────────────
 function _doSaveBasicAuth(ep, user, pass, showCredView) {
   const msg = document.getElementById('basicauth-msg');
   fetch('/api/tunnels/basicauth', {
@@ -1538,18 +1573,33 @@ function _doSaveBasicAuth(ep, user, pass, showCredView) {
   .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
   .then(() => {
     _baCreds = { user, pass };
+    // Commit enabled state — SSE ticks will now see correct server state
     if (tunnelsMap[ep]) tunnelsMap[ep].basicauth_enabled = true;
     document.getElementById('basicauth-toggle').checked = true;
     _setBasicAuthStatus(true);
     _baMaskCreds();
     if (showCredView) {
-      _baShowEditForm(false);
+      _baShowEditForm(false);  // clears _baEditOpen
       _baShowCredView(true);
     }
-    if (msg) { msg.style.color='var(--green,#22c55e)'; msg.textContent='Applied'; msg.style.display='block'; setTimeout(()=>{msg.style.display='none';},2000); }
+    if (msg) {
+      msg.style.color = 'var(--green,#22c55e)';
+      msg.textContent = 'Applied';
+      msg.style.display = 'block';
+      setTimeout(() => { msg.style.display = 'none'; }, 2000);
+    }
   })
   .catch(() => {
-    if (msg) { msg.style.color='var(--red,#ef4444)'; msg.textContent='Failed to save'; msg.style.display='block'; }
+    if (msg) {
+      msg.style.color   = 'var(--red,#ef4444)';
+      msg.textContent   = 'Failed to save';
+      msg.style.display = 'block';
+    }
+    // If this was a toggle-enable attempt, revert the toggle
+    if (!tunnelsMap[ep] || !tunnelsMap[ep].basicauth_enabled) {
+      document.getElementById('basicauth-toggle').checked = false;
+      _setBasicAuthStatus(false);
+    }
   });
 }
 
@@ -1559,13 +1609,15 @@ function basicAuthSave() {
   const ep   = activeTunnel || '(default)';
   const msg  = document.getElementById('basicauth-msg');
   if (!user || !pass) {
-    msg.style.color='var(--red,#ef4444)'; msg.textContent='Username and password required'; msg.style.display='block';
+    msg.style.color   = 'var(--red,#ef4444)';
+    msg.textContent   = 'Username and password required';
+    msg.style.display = 'block';
     return;
   }
   _doSaveBasicAuth(ep, user, pass, true);
 }
 
-// ── Request rendering ──────────────────────────
+// ── Request rendering ────────────────────────── ──────────────────────────
 function renderAll() {
   const list = activeTunnel ? allReqs.filter(r => r.endpoint === activeTunnel) : [];
   $tCount.textContent = list.length;

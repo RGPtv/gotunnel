@@ -1571,16 +1571,35 @@ function basicAuthToggleChanged() {
   _setBasicAuthStatus(true);
 
   if (_baCreds.user && _baCreds.pass) {
-    // Re-enabling with remembered credentials — apply immediately, no form
+    // In-memory cache hit — re-enable with the same credentials immediately
     _doSaveBasicAuth(ep, _baCreds.user, _baCreds.pass, true);
     return;
   }
 
-  // First-ever enable: auto-generate credentials and save immediately.
-  // The user can always edit afterwards via "Edit credentials".
-  const autoUser = _baAutoUser();
-  const autoPass = _baAutoPass();
-  _doSaveBasicAuth(ep, autoUser, autoPass, true);
+  // Cache miss (e.g. page was refreshed) — ask the server whether credentials
+  // already exist before deciding to generate new ones.
+  fetch('/api/tunnels/basicauth/creds?endpoint=' + encodeURIComponent(ep))
+    .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+    .then(d => {
+      const user = d.username || '';
+      const pass = d.password || '';
+      if (user && pass) {
+        // Server already has credentials — reuse them
+        _baCreds = { user, pass };
+        _doSaveBasicAuth(ep, user, pass, true);
+      } else {
+        // Genuinely first time — auto-generate and save
+        const autoUser = _baAutoUser();
+        const autoPass = _baAutoPass();
+        _doSaveBasicAuth(ep, autoUser, autoPass, true);
+      }
+    })
+    .catch(() => {
+      // Fetch failed — fall back to auto-generate so the toggle still works
+      const autoUser = _baAutoUser();
+      const autoPass = _baAutoPass();
+      _doSaveBasicAuth(ep, autoUser, autoPass, true);
+    });
 }
 
 // ── Save / apply ────────────────────────────────────────

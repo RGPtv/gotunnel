@@ -852,56 +852,58 @@ nav {
                 </label>
               </div>
               <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);padding:12px">
-                <div class="stat-item" style="padding-top:0">
+                <div class="stat-item" style="padding-top:0;padding-bottom:8px">
                   <span class="stat-label">Status</span>
                   <span class="stat-value" id="basicauth-status-text" style="color:var(--text-3)">Disabled</span>
                 </div>
-                <!-- Credential rows (always visible when card is enabled) -->
+                <!-- Credential view — shown when enabled and not editing -->
                 <div id="basicauth-cred-view" style="display:none">
-                  <div class="stat-item" style="padding-bottom:4px">
+                  <div class="stat-item" style="padding:6px 0">
                     <span class="stat-label">Username</span>
                     <div style="display:flex;align-items:center;gap:4px">
-                      <span class="stat-value masked-cred" id="ba-user-val">••••••</span>
+                      <span class="stat-value masked-cred" id="ba-user-val" style="font-size:12px">••••••</span>
                       <button class="token-btn" id="ba-user-reveal" title="Reveal" onclick="baReveal('user')">
                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                       </button>
                     </div>
                   </div>
-                  <div class="stat-item" style="padding-bottom:4px">
+                  <div class="stat-item" style="padding:6px 0">
                     <span class="stat-label">Password</span>
                     <div style="display:flex;align-items:center;gap:4px">
-                      <span class="stat-value masked-cred" id="ba-pass-val">••••••••</span>
+                      <span class="stat-value masked-cred" id="ba-pass-val" style="font-size:12px">••••••••</span>
                       <button class="token-btn" id="ba-pass-reveal" title="Reveal" onclick="baReveal('pass')">
                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                       </button>
                     </div>
                   </div>
-                  <button class="auth-save-btn" style="margin-top:6px" onclick="baOpenEdit()">Edit credentials</button>
+                  <button class="auth-save-btn" style="margin-top:8px;width:100%" onclick="baOpenEdit()">Edit credentials</button>
                 </div>
-                <!-- Edit form (shown when no creds yet, or after Edit click) -->
-                <div id="basicauth-controls" style="display:none;margin-top:4px">
-                  <div style="display:flex;gap:4px;margin-top:4px">
-                    <input class="auth-input" style="flex:1;margin:0" type="text" id="basicauth-user" placeholder="Username" autocomplete="off">
-                    <button class="token-btn" title="Auto-generate username" onclick="baGenUser()" style="flex-shrink:0">
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-                    </button>
-                  </div>
-                  <div style="display:flex;gap:4px;margin-top:6px">
-                    <div style="position:relative;flex:1">
-                      <input class="auth-input" style="margin:0;padding-right:28px;width:100%;box-sizing:border-box" type="text" id="basicauth-pass" placeholder="Password" autocomplete="new-password">
-                      <button class="token-btn" title="Reveal/hide" onclick="baTogglePassVis()" style="position:absolute;right:2px;top:50%;transform:translateY(-50%);border:none;background:none">
-                        <svg id="ba-pass-eye" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                <!-- Edit form -->
+                <div id="basicauth-controls" style="display:none">
+                  <div style="margin-top:4px">
+                    <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+                      <input class="auth-input" style="flex:1;margin:0" type="text" id="basicauth-user" placeholder="Username" autocomplete="off">
+                      <button class="token-btn" title="Auto-generate" onclick="baGenUser()" style="flex-shrink:0;width:28px;height:28px;padding:0;display:flex;align-items:center;justify-content:center">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                       </button>
                     </div>
-                    <button class="token-btn" title="Auto-generate password" onclick="baGenPass()" style="flex-shrink:0">
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-                    </button>
+                    <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
+                      <div style="position:relative;flex:1">
+                        <input class="auth-input" style="margin:0;padding-right:30px;width:100%;box-sizing:border-box" type="password" id="basicauth-pass" placeholder="Password" autocomplete="new-password">
+                        <button class="token-btn" title="Show/hide" onclick="baTogglePassVis()" style="position:absolute;right:4px;top:50%;transform:translateY(-50%);border:none;background:none;padding:2px">
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                      </div>
+                      <button class="token-btn" title="Auto-generate" onclick="baGenPass()" style="flex-shrink:0;width:28px;height:28px;padding:0;display:flex;align-items:center;justify-content:center">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                      </button>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+                      <button class="auth-save-btn" onclick="basicAuthSave()">Apply</button>
+                      <button class="auth-save-btn" onclick="baCancelEdit()">Cancel</button>
+                    </div>
+                    <div id="basicauth-msg" style="font-size:11px;margin-top:6px;display:none"></div>
                   </div>
-                  <div style="display:flex;gap:4px;margin-top:8px">
-                    <button class="auth-save-btn" style="flex:1" onclick="basicAuthSave()">Apply</button>
-                    <button class="auth-save-btn" style="flex:0 0 auto;padding:6px 10px" onclick="baCancelEdit()">Cancel</button>
-                  </div>
-                  <div id="basicauth-msg" style="font-size:11px;margin-top:4px;display:none"></div>
                 </div>
               </div>
             </div>
@@ -1505,23 +1507,30 @@ function baTogglePassVis() {
   inp.type  = inp.type === 'password' ? 'text' : 'password';
 }
 
-function baGenUser() {
+function _baAutoUser() {
   const adj   = ['swift','bright','calm','bold','cool','keen','wise','sharp','quick','clear'];
   const nouns = ['tunnel','proxy','gate','relay','bridge','node','link','path','route','mesh'];
   const pick  = arr => arr[Math.floor(Math.random() * arr.length)];
-  document.getElementById('basicauth-user').value =
-    pick(adj) + '_' + pick(nouns) + Math.floor(100 + Math.random() * 900);
+  return pick(adj) + '_' + pick(nouns) + Math.floor(100 + Math.random() * 900);
 }
 
-function baGenPass() {
+function _baAutoPass() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%^&*';
   const bytes = new Uint8Array(18);
   crypto.getRandomValues(bytes);
   let p = '';
   bytes.forEach(b => { p += chars[b % chars.length]; });
+  return p;
+}
+
+function baGenUser() {
+  document.getElementById('basicauth-user').value = _baAutoUser();
+}
+
+function baGenPass() {
   const inp = document.getElementById('basicauth-pass');
-  inp.value = p;
-  inp.type  = 'text'; // show the generated password immediately
+  inp.value = _baAutoPass();
+  inp.type  = 'text';
 }
 
 // ── Toggle ──────────────────────────────────────────────
@@ -1536,7 +1545,9 @@ function basicAuthToggleChanged() {
     if (tunnelsMap[ep]) tunnelsMap[ep].basicauth_enabled = false;
     _baShowCredView(false);
     _baShowEditForm(false);  // also clears _baEditOpen
-    _baCreds = { user: '', pass: '' };
+    // NOTE: _baCreds is intentionally NOT cleared here so that re-enabling
+    // the toggle reuses the same credentials without the user having to
+    // re-enter them.
     _baMaskCreds();
 
     fetch('/api/tunnels/basicauth', {
@@ -1556,21 +1567,20 @@ function basicAuthToggleChanged() {
   }
 
   // ── Enable ───────────────────────────────────────────
-  // _baPendingEnable=true freezes the checkbox and sub-panels in
-  // renderTunnelOverview until _doSaveBasicAuth resolves.
   _baPendingEnable = true;
   _setBasicAuthStatus(true);
 
   if (_baCreds.user && _baCreds.pass) {
-    // Re-enabling with previously cached creds — save immediately
+    // Re-enabling with remembered credentials — apply immediately, no form
     _doSaveBasicAuth(ep, _baCreds.user, _baCreds.pass, true);
     return;
   }
 
-  // No creds yet — open edit form. _baEditOpen = true blocks SSE resets.
-  document.getElementById('basicauth-user').value = '';
-  document.getElementById('basicauth-pass').value = '';
-  _baShowEditForm(true);
+  // First-ever enable: auto-generate credentials and save immediately.
+  // The user can always edit afterwards via "Edit credentials".
+  const autoUser = _baAutoUser();
+  const autoPass = _baAutoPass();
+  _doSaveBasicAuth(ep, autoUser, autoPass, true);
 }
 
 // ── Save / apply ────────────────────────────────────────

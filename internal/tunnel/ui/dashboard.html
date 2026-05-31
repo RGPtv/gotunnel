@@ -1029,8 +1029,9 @@ function switchTab(tab) {
 
 function selectTunnel(ep) {
   _maskApiKey();
-  _baCreds    = { user: '', pass: '' };
-  _baEditOpen = false;
+  _baCreds         = { user: '', pass: '' };
+  _baEditOpen      = false;
+  _baPendingEnable = false;
   _baMaskCreds();
   activeTunnel = ep;
   document.querySelectorAll('.tunnel-entry').forEach(el => {
@@ -1077,13 +1078,15 @@ function renderTunnelOverview() {
   document.getElementById('apikey-status-text').style.color  = apikeyEnabled ? 'var(--green)' : 'var(--text-3)';
   if (!apikeyEnabled) _maskApiKey();
 
-  const baEnabled = !!t.basicauth_enabled;
-  document.getElementById('basicauth-toggle').checked           = baEnabled;
-  document.getElementById('basicauth-status-text').textContent  = baEnabled ? 'Enabled' : 'Disabled';
-  document.getElementById('basicauth-status-text').style.color  = baEnabled ? 'var(--green)' : 'var(--text-3)';
-  // Only sync sub-panels when the edit form is NOT open — SSE ticks must
-  // never close a form the user is actively filling in.
-  if (!_baEditOpen) {
+  // Basic Auth — skip all DOM writes while the user is in the edit flow.
+  // _baEditOpen:     edit form is visible (user is typing)
+  // _baPendingEnable: toggle was just flipped to ON but API hasn't confirmed yet
+  // Either condition means the checkbox + sub-panels must not be touched.
+  if (!_baEditOpen && !_baPendingEnable) {
+    const baEnabled = !!t.basicauth_enabled;
+    document.getElementById('basicauth-toggle').checked           = baEnabled;
+    document.getElementById('basicauth-status-text').textContent  = baEnabled ? 'Enabled' : 'Disabled';
+    document.getElementById('basicauth-status-text').style.color  = baEnabled ? 'var(--green)' : 'var(--text-3)';
     if (baEnabled) {
       _baShowEditForm(false);
       _baShowCredView(true);
@@ -1397,8 +1400,9 @@ function _setBasicAuthStatus(enabled) {
 // _baCreds: plaintext creds cached after first fetch/save — cleared on switch
 // _baEditOpen: true while the edit form is open — blocks SSE ticks from
 //              closing it while the user is typing
-let _baCreds     = { user: '', pass: '' };
-let _baEditOpen  = false;
+let _baCreds        = { user: '', pass: '' };
+let _baEditOpen     = false;   // edit form is visible — blocks SSE from resetting panels
+let _baPendingEnable = false;  // toggle just flipped ON — blocks SSE from resetting checkbox
 let _baUserRevealed = false;
 let _baPassRevealed = false;
 
@@ -1485,8 +1489,15 @@ function baOpenEdit() {
 function baCancelEdit() {
   const ep       = activeTunnel || '(default)';
   const hasCreds = !!(tunnelsMap[ep] && tunnelsMap[ep].basicauth_enabled);
+  _baPendingEnable = false;   // allow SSE to resume control of checkbox
   _baShowEditForm(false);
-  if (hasCreds) _baShowCredView(true);
+  if (hasCreds) {
+    _baShowCredView(true);
+  } else {
+    // User cancelled without saving — revert toggle to disabled
+    document.getElementById('basicauth-toggle').checked = false;
+    _setBasicAuthStatus(false);
+  }
 }
 
 function baTogglePassVis() {
@@ -1520,6 +1531,7 @@ function basicAuthToggleChanged() {
 
   if (!enabled) {
     // ── Disable ─────────────────────────────────────────
+    _baPendingEnable = false;
     _setBasicAuthStatus(false);
     if (tunnelsMap[ep]) tunnelsMap[ep].basicauth_enabled = false;
     _baShowCredView(false);
@@ -1544,10 +1556,9 @@ function basicAuthToggleChanged() {
   }
 
   // ── Enable ───────────────────────────────────────────
-  // Update status text immediately so toggle feels responsive.
-  // Do NOT set tunnelsMap[ep].basicauth_enabled = true yet — that would make
-  // the next SSE tick call _baShowCredView(true) and destroy the edit form.
-  // We only commit that flag after a successful API save (_doSaveBasicAuth).
+  // _baPendingEnable=true freezes the checkbox and sub-panels in
+  // renderTunnelOverview until _doSaveBasicAuth resolves.
+  _baPendingEnable = true;
   _setBasicAuthStatus(true);
 
   if (_baCreds.user && _baCreds.pass) {
@@ -1572,6 +1583,7 @@ function _doSaveBasicAuth(ep, user, pass, showCredView) {
   })
   .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
   .then(() => {
+    _baPendingEnable = false;
     _baCreds = { user, pass };
     // Commit enabled state — SSE ticks will now see correct server state
     if (tunnelsMap[ep]) tunnelsMap[ep].basicauth_enabled = true;
@@ -1590,6 +1602,7 @@ function _doSaveBasicAuth(ep, user, pass, showCredView) {
     }
   })
   .catch(() => {
+    _baPendingEnable = false;
     if (msg) {
       msg.style.color   = 'var(--red,#ef4444)';
       msg.textContent   = 'Failed to save';

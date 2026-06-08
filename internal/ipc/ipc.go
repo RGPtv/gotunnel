@@ -127,7 +127,9 @@ func StartIPCServer(port int, getState func() interface{}) (net.Listener, error)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(getState())
+		if err := json.NewEncoder(w).Encode(getState()); err != nil {
+			fmt.Fprintf(os.Stderr, "ipc /state encode: %v\n", err)
+		}
 	})
 	mux.HandleFunc("/shutdown", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {

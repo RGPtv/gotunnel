@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -78,7 +79,8 @@ type Inspector struct {
 	sessions   map[string]time.Time
 
 	// Reference to server for tunnels API and replay.
-	srv *Server
+	srv  *Server
+	done chan struct{} // closed by Stop() to terminate background goroutines
 }
 
 // NewInspector creates a new request inspector.
@@ -94,24 +96,40 @@ func NewInspector(serverAddr, tunAddr, token, username, password string, activeC
 		Password:    password,
 		sessions:    make(map[string]time.Time),
 		srv:         srv,
+		done:        make(chan struct{}),
 	}
 	go ins.cleanSessions()
 	return ins
+}
+
+// Stop terminates background goroutines started by NewInspector.
+func (ins *Inspector) Stop() {
+	select {
+	case <-ins.done:
+		// already stopped
+	default:
+		close(ins.done)
+	}
 }
 
 // cleanSessions periodically purges expired session tokens.
 func (ins *Inspector) cleanSessions() {
 	ticker := time.NewTicker(15 * time.Minute)
 	defer ticker.Stop()
-	for range ticker.C {
-		now := time.Now()
-		ins.sessionsMu.Lock()
-		for tok, exp := range ins.sessions {
-			if now.After(exp) {
-				delete(ins.sessions, tok)
+	for {
+		select {
+		case <-ticker.C:
+			now := time.Now()
+			ins.sessionsMu.Lock()
+			for tok, exp := range ins.sessions {
+				if now.After(exp) {
+					delete(ins.sessions, tok)
+				}
 			}
+			ins.sessionsMu.Unlock()
+		case <-ins.done:
+			return
 		}
-		ins.sessionsMu.Unlock()
 	}
 }
 
@@ -736,12 +754,19 @@ func (ins *Inspector) handleReplay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	port := ins.ServerAddr
-	if strings.HasPrefix(port, ":") {
-		port = "localhost" + port
+	// Always replay to localhost using only the port from ServerAddr,
+	// regardless of the bind address (0.0.0.0, specific IP, etc.).
+	_, port, err := net.SplitHostPort(ins.ServerAddr)
+	if err != nil {
+		// ServerAddr may be just ":port"
+		port = strings.TrimPrefix(ins.ServerAddr, ":")
+	}
+	replayTarget := "localhost:" + port
+	if port == "" {
+		replayTarget = "localhost:8080"
 	}
 
-	newReq, err := http.NewRequest(targetReq.Method, "http://"+port+targetReq.Path, bytes.NewReader(targetReq.ReqBody))
+	newReq, err := http.NewRequest(targetReq.Method, "http://"+replayTarget+targetReq.Path, bytes.NewReader(targetReq.ReqBody))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -758,10 +783,14 @@ func (ins *Inspector) handleReplay(w http.ResponseWriter, r *http.Request) {
 
 	// Re-apply gateway auth so the replayed request passes the server's auth check.
 	if ins.srv != nil {
+		// Acquire locks in consistent order (mu before tunnelMetaMu) to match
+		// the janitor and avoid lock-order inversion.
+		ins.srv.mu.RLock()
 		ins.srv.tunnelMetaMu.RLock()
-		endpointKey := ins.srv.getEndpointKey(targetReq.Host)
+		endpointKey := ins.srv.getEndpointKeyLocked(targetReq.Host)
 		tMeta, ok := ins.srv.tunnelMeta[endpointKey]
 		ins.srv.tunnelMetaMu.RUnlock()
+		ins.srv.mu.RUnlock()
 
 		if ok && tMeta.APIKeyEnabled && tMeta.APIKey != "" {
 			newReq.Header.Set("X-API-Key", tMeta.APIKey)

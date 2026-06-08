@@ -424,7 +424,11 @@ func (c *Client) connectAndServe(id int) (error, bool) {
 			// continue without draining, unconsumed body bytes remain at the
 			// head of `reader` and corrupt the next http.ReadRequest parse.
 			if req.Body != nil {
-				io.Copy(io.Discard, req.Body)
+				if _, drainErr := io.Copy(io.Discard, req.Body); drainErr != nil {
+					req.Body.Close()
+					// Drain failed — tunnel conn is unrecoverable; reconnect.
+					return drainErr, served
+				}
 				req.Body.Close()
 			}
 			if werr := writeErrorResponse(conn, 502, proxyErr.Error()); werr != nil {

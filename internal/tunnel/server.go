@@ -154,18 +154,19 @@ var hopByHopSet = func() map[string]struct{} {
 func (s *Server) srvLog(level int, format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	log.Print(msg)
-	if s != nil {
-		s.logsMu.Lock()
-		s.logs = append(s.logs, ipc.LogEntry{
-			Time:    time.Now(),
-			Level:   level,
-			Message: msg,
-		})
-		if len(s.logs) > 200 {
-			s.logs = s.logs[len(s.logs)-200:]
-		}
-		s.logsMu.Unlock()
+	if s == nil {
+		return
 	}
+	s.logsMu.Lock()
+	s.logs = append(s.logs, ipc.LogEntry{
+		Time:    time.Now(),
+		Level:   level,
+		Message: msg,
+	})
+	if len(s.logs) > 200 {
+		s.logs = s.logs[len(s.logs)-200:]
+	}
+	s.logsMu.Unlock()
 }
 
 func RunServer(cfg *ServerConfig) {
@@ -237,9 +238,11 @@ func RunServer(cfg *ServerConfig) {
 
 
 	if _, err := ipc.StartIPCServer(41400, func() interface{} {
+		// Snapshot pool/meta state under the two read locks, then release
+		// before acquiring logsMu to preserve consistent lock ordering and
+		// avoid starvation of writers on the RWMutexes.
 		srv.mu.RLock()
 		srv.tunnelMetaMu.RLock()
-		
 		var tunnels []ipc.TunnelInfo
 		for ep, tm := range srv.tunnelMeta {
 			conns := 0
@@ -265,6 +268,7 @@ func RunServer(cfg *ServerConfig) {
 		srv.tunnelMetaMu.RUnlock()
 		srv.mu.RUnlock()
 
+		// Acquire logsMu only after releasing the other two locks.
 		srv.logsMu.Lock()
 		logs := make([]ipc.LogEntry, len(srv.logs))
 		copy(logs, srv.logs)
@@ -279,7 +283,7 @@ func RunServer(cfg *ServerConfig) {
 			DashUser:    inspectUser,
 			DashPass:    inspectPass,
 			ActiveConns: srv.count.Load(),
-			TotalReqs:   0, // Simplified
+			TotalReqs:   0,
 			Uptime:      int64(time.Since(srv.startTime).Seconds()),
 			Tunnels:     tunnels,
 			Logs:        logs,
@@ -481,7 +485,6 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 		conn.Close()
 		return
 	}
-	conn.SetDeadline(time.Time{})
 
 	line = strings.TrimSpace(line)
 	parts := strings.Fields(line) // correctly handle spaces
@@ -513,6 +516,9 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 		return
 	}
 
+	// Auth succeeded — clear the deadline so the data path is unbounded.
+	conn.SetDeadline(time.Time{})
+
 	if tunnelType == "tcp" {
 		if remoteAddr == "" {
 			fmt.Fprintf(conn, "ERROR remote address required for tcp\n")
@@ -542,6 +548,7 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 				s.srvLog(LevelSuccess, "TCP listener opened on %s", remoteAddr)
 			} else {
 				ln.Close() // lost race — discard the listener we just bound
+				// pool is now correctly set to the winner's pool from the map
 			}
 			s.mu.Unlock()
 		}
@@ -802,9 +809,16 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, reqBody *capp
 		out.URL.Host = r.Host
 	}
 
-	// Strip gateway-level auth headers — they are not meant for the backend.
-	out.Header.Del("X-API-Key")
-	out.Header.Del("Authorization")
+	// Strip gateway-level auth headers only when the gateway enforced them.
+	// If no gateway auth is active, forward the client's Authorization header
+	// to the backend so downstream services can authenticate the request.
+	s.tunnelMetaMu.RLock()
+	epMeta := s.tunnelMeta[epKey]
+	s.tunnelMetaMu.RUnlock()
+	out.Header.Del("X-API-Key") // never forward our internal key header
+	if epMeta.APIKeyEnabled || epMeta.BasicAuthEnabled {
+		out.Header.Del("Authorization")
+	}
 	out.Header.Set("X-Forwarded-For", clientIP(r))
 	out.Header.Set("X-Forwarded-Host", r.Host)
 	out.Header.Set("X-Forwarded-Proto", scheme(r))
@@ -1003,9 +1017,15 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request) {
 	} else {
 		out.URL.Host = r.Host
 	}
-	// Strip gateway-level auth headers — they must not reach the backend.
-	out.Header.Del("X-API-Key")
-	out.Header.Del("Authorization")
+	// Strip gateway-level auth headers only when the gateway enforced them.
+	pwsEpKey := s.getEndpointKey(r.Host)
+	s.tunnelMetaMu.RLock()
+	pwsMeta := s.tunnelMeta[pwsEpKey]
+	s.tunnelMetaMu.RUnlock()
+	out.Header.Del("X-API-Key") // never forward our internal key header
+	if pwsMeta.APIKeyEnabled || pwsMeta.BasicAuthEnabled {
+		out.Header.Del("Authorization")
+	}
 	out.Header.Set("X-Forwarded-For", clientIP(r))
 	out.Header.Set("X-Forwarded-Host", r.Host)
 	out.Header.Set("X-Forwarded-Proto", scheme(r))
@@ -1102,6 +1122,23 @@ func (s *Server) getEndpointKey(host string) string {
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	if s.domain != "" && strings.HasSuffix(hostOnly, "."+s.domain) {
+		sub := strings.TrimSuffix(hostOnly, "."+s.domain)
+		if _, ok := s.httpPools[sub]; ok {
+			return sub
+		}
+	}
+	return "(default)"
+}
+
+// getEndpointKeyLocked is like getEndpointKey but assumes the caller already
+// holds s.mu.RLock (and optionally s.tunnelMetaMu.RLock). It does not acquire
+// any locks itself, avoiding lock-order inversions in callers that hold mu.
+func (s *Server) getEndpointKeyLocked(host string) string {
+	hostOnly, _, err := net.SplitHostPort(host)
+	if err != nil {
+		hostOnly = host
+	}
 	if s.domain != "" && strings.HasSuffix(hostOnly, "."+s.domain) {
 		sub := strings.TrimSuffix(hostOnly, "."+s.domain)
 		if _, ok := s.httpPools[sub]; ok {

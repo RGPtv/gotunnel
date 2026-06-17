@@ -401,13 +401,58 @@ nav {
 .auth-toggle input:checked + .auth-toggle-slider { background:var(--blue); }
 .auth-toggle input:checked + .auth-toggle-slider::before { transform:translateX(14px); }
 /* Auth input controls */
-.auth-input { width:100%; box-sizing:border-box; padding:6px 8px; border-radius:6px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:12px; margin-bottom:6px; outline:none; }
+.auth-input { width:100%; box-sizing:border-box; padding:6px 8px; border-radius:6px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:12px; margin-bottom:6px; outline:none; font-family:inherit; }
 .auth-input:focus { border-color:var(--blue); }
-.auth-save-btn { width:100%; padding:6px 0; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--text-2); font-size:12px; cursor:pointer; transition:background .15s,color .15s; }
+.auth-save-btn { width:100%; padding:6px 0; border-radius:6px; border:1px solid var(--border); background:var(--surface); color:var(--text-2); font-size:12px; cursor:pointer; transition:background .15s,color .15s; font-family:inherit; }
 .auth-save-btn:hover { background:var(--blue); color:#fff; border-color:var(--blue); }
+.auth-save-btn.danger:hover { background:var(--red); border-color:var(--red); color:#fff; }
 /* Auth cards flow into the same auto-fill parent grid as Tunnel Info */
 .overview-grid { display:contents; }
 .masked-cred { font-family:'Geist Mono',monospace; letter-spacing:.1em; font-size:13px; }
+/* Password strength meter */
+.strength-bar { display:flex; gap:3px; margin:4px 0 8px; }
+.strength-seg { flex:1; height:3px; border-radius:99px; background:var(--border-2); transition:background .25s; }
+.strength-seg.weak   { background:var(--red); }
+.strength-seg.fair   { background:var(--amber); }
+.strength-seg.good   { background:var(--blue); }
+.strength-seg.strong { background:var(--green); }
+.strength-label { font-size:10px; color:var(--text-3); margin-bottom:6px; transition:color .2s; }
+.strength-label.weak   { color:var(--red); }
+.strength-label.fair   { color:var(--amber); }
+.strength-label.good   { color:var(--blue); }
+.strength-label.strong { color:var(--green); }
+/* Curl snippet */
+.curl-block { background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:8px 10px; margin-top:8px; position:relative; }
+.curl-code { font-family:'Geist Mono',monospace; font-size:10px; color:var(--text-3); white-space:pre-wrap; word-break:break-all; line-height:1.6; }
+.curl-copy { position:absolute; top:6px; right:6px; background:var(--surface); border:1px solid var(--border); border-radius:4px; padding:2px 7px; font-size:10px; color:var(--text-3); cursor:pointer; transition:all .15s; font-family:inherit; }
+.curl-copy:hover { color:var(--text); border-color:var(--border-2); }
+.curl-copy.ok { color:var(--green); border-color:rgba(34,197,94,.3); }
+/* Custom key input */
+.key-input-wrap { display:flex; gap:6px; align-items:center; margin:8px 0 4px; }
+.key-input { flex:1; box-sizing:border-box; padding:6px 8px; border-radius:6px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:12px; font-family:'Geist Mono',monospace; outline:none; }
+.key-input:focus { border-color:var(--blue); }
+.key-input::placeholder { color:var(--text-3); font-family:inherit; }
+/* Toast notifications */
+#toast-container { position:fixed; bottom:80px; right:24px; display:flex; flex-direction:column-reverse; gap:8px; z-index:9999; pointer-events:none; }
+.toast { display:flex; align-items:center; gap:8px; background:var(--surface-2); border:1px solid var(--border); border-radius:8px; padding:10px 14px; font-size:13px; color:var(--text); box-shadow:0 4px 16px rgba(0,0,0,.5); pointer-events:auto; animation:toastIn .2s ease; min-width:220px; max-width:320px; }
+.toast.success { border-color:rgba(34,197,94,.3); background:rgba(34,197,94,.06); color:var(--green); }
+.toast.error   { border-color:rgba(239,68,68,.3);  background:rgba(239,68,68,.06);  color:var(--red); }
+.toast.info    { border-color:rgba(59,130,246,.3);  background:rgba(59,130,246,.06);  color:var(--blue); }
+.toast-icon { font-size:14px; flex-shrink:0; }
+.toast-msg { flex:1; }
+@keyframes toastIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+@keyframes toastOut { to { opacity:0; transform:translateY(8px); } }
+/* Feature pill badges */
+.feat-pill { display:inline-flex; align-items:center; gap:4px; font-size:10px; font-weight:500; padding:2px 7px; border-radius:99px; }
+.feat-pill.on  { color:var(--green); background:rgba(34,197,94,.08); border:1px solid rgba(34,197,94,.2); }
+.feat-pill.off { color:var(--text-3); background:var(--surface); border:1px solid var(--border); }
+/* Section card header */
+.card-section-head { font-size:13px; margin-bottom:12px; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.card-section-title { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.6px; color:var(--text-3); }
+.card-section-badge { font-size:10px; font-weight:600; padding:2px 8px; border-radius:99px; }
+.card-section-badge.enabled  { color:var(--green); background:rgba(34,197,94,.1); border:1px solid rgba(34,197,94,.25); }
+.card-section-badge.disabled { color:var(--text-3); background:transparent; border:1px solid var(--border); }
+.card-section-badge.active   { color:var(--blue);  background:rgba(59,130,246,.1); border:1px solid rgba(59,130,246,.25); }
 .token-value {
   font-family: 'Geist Mono', monospace;
   font-size: 11px;
@@ -805,60 +850,78 @@ nav {
 
             <!-- API Key card -->
             <div class="sidebar-section" id="apikey-section">
-              <div class="sidebar-label" style="font-size:13px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
-                <span>API Key</span>
-                <label class="auth-toggle" title="Enable / disable API key">
+              <div class="card-section-head">
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span class="card-section-title">API Key</span>
+                  <span class="card-section-badge disabled" id="apikey-badge">Off</span>
+                </div>
+                <label class="auth-toggle" title="Enable / disable API key authentication">
                   <input type="checkbox" id="apikey-toggle" onchange="apikeyToggleChanged()">
                   <span class="auth-toggle-slider"></span>
                 </label>
               </div>
               <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);padding:12px">
-                <div class="stat-item" style="padding-top:0">
-                  <span class="stat-label">Status</span>
-                  <span class="stat-value" id="apikey-status-text" style="color:var(--text-3)">Disabled</span>
-                </div>
                 <div id="apikey-controls" style="display:none">
-                  <div class="token-box" style="margin:8px 0 0">
+                  <div class="token-box">
                     <div class="token-header">
-                      <span class="token-header-label">Secret key</span>
+                      <span class="token-header-label">Active key</span>
                       <div class="token-actions">
                         <button class="token-btn" id="api-reveal" title="Reveal" onclick="apiReveal()">
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                         </button>
-                        <button class="token-btn" id="api-copy" title="Copy" onclick="apiCopy()">
+                        <button class="token-btn" id="api-copy" title="Copy to clipboard" onclick="apiCopy()">
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                         </button>
-                        <button class="token-btn" id="api-regen" title="Regenerate" onclick="apiRegenerate()">
+                        <button class="token-btn" id="api-regen" title="Generate new random key" onclick="apiRegenerate()">
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                         </button>
                       </div>
                     </div>
                     <div class="token-value masked" id="api-val">••••••••••••••••••••••••••••••••</div>
                   </div>
-                  <div style="font-size:11px;color:var(--text-3);margin-top:6px">
-                    <code style="font-size:10px">X-API-Key</code> header or <code style="font-size:10px">Bearer</code> token
+                  <!-- Custom key input -->
+                  <div id="apikey-custom-section" style="margin-top:10px">
+                    <div style="font-size:10px;color:var(--text-3);margin-bottom:4px;font-weight:500;text-transform:uppercase;letter-spacing:.4px">Set custom key</div>
+                    <div class="key-input-wrap">
+                      <input class="key-input" type="text" id="apikey-custom-input" placeholder="Paste or type a custom key…" autocomplete="off" oninput="apikeyCustomInputChanged()" maxlength="128">
+                      <button class="token-btn" title="Apply custom key" id="apikey-custom-save" onclick="apikeyCustomSave()" style="width:28px;height:28px;flex-shrink:0;padding:0;display:flex;align-items:center;justify-content:center" disabled>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                      </button>
+                    </div>
+                    <div id="apikey-strength-bar" class="strength-bar" style="display:none">
+                      <div class="strength-seg" id="aks-1"></div>
+                      <div class="strength-seg" id="aks-2"></div>
+                      <div class="strength-seg" id="aks-3"></div>
+                      <div class="strength-seg" id="aks-4"></div>
+                    </div>
+                    <div class="strength-label" id="apikey-strength-label"></div>
                   </div>
+                  <div style="font-size:11px;color:var(--text-3);margin-top:6px;line-height:1.5">
+                    Send as <code style="font-size:10px;background:var(--bg);padding:1px 4px;border-radius:3px">X-API-Key</code> header or <code style="font-size:10px;background:var(--bg);padding:1px 4px;border-radius:3px">Authorization: Bearer &lt;key&gt;</code>
+                  </div>
+                </div>
+                <div id="apikey-disabled-msg" style="font-size:12px;color:var(--text-3);padding:4px 0">
+                  Enable to require an API key for all requests to this tunnel.
                 </div>
               </div>
             </div>
 
             <!-- Basic Auth card -->
             <div class="sidebar-section" id="basicauth-section">
-              <div class="sidebar-label" style="font-size:13px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
-                <span>Basic Auth</span>
-                <label class="auth-toggle" title="Enable / disable Basic Auth">
+              <div class="card-section-head">
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span class="card-section-title">Basic Auth</span>
+                  <span class="card-section-badge disabled" id="basicauth-badge">Off</span>
+                </div>
+                <label class="auth-toggle" title="Enable / disable HTTP Basic Authentication">
                   <input type="checkbox" id="basicauth-toggle" onchange="basicAuthToggleChanged()">
                   <span class="auth-toggle-slider"></span>
                 </label>
               </div>
               <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);padding:12px">
-                <div class="stat-item" style="padding-top:0;padding-bottom:8px">
-                  <span class="stat-label">Status</span>
-                  <span class="stat-value" id="basicauth-status-text" style="color:var(--text-3)">Disabled</span>
-                </div>
                 <!-- Credential view — shown when enabled and not editing -->
                 <div id="basicauth-cred-view" style="display:none">
-                  <div class="stat-item" style="padding:6px 0">
+                  <div class="stat-item" style="padding:4px 0">
                     <span class="stat-label">Username</span>
                     <div style="display:flex;align-items:center;gap:4px">
                       <span class="stat-value masked-cred" id="ba-user-val" style="font-size:12px">••••••</span>
@@ -867,7 +930,7 @@ nav {
                       </button>
                     </div>
                   </div>
-                  <div class="stat-item" style="padding:6px 0">
+                  <div class="stat-item" style="padding:4px 0">
                     <span class="stat-label">Password</span>
                     <div style="display:flex;align-items:center;gap:4px">
                       <span class="stat-value masked-cred" id="ba-pass-val" style="font-size:12px">••••••••</span>
@@ -876,68 +939,87 @@ nav {
                       </button>
                     </div>
                   </div>
-                  <button class="auth-save-btn" style="margin-top:8px;width:100%" onclick="baOpenEdit()">Edit credentials</button>
+                  <!-- curl snippet -->
+                  <div id="ba-curl-block" class="curl-block" style="display:none">
+                    <div style="font-size:10px;color:var(--text-3);margin-bottom:4px;font-weight:500">Example curl</div>
+                    <code class="curl-code" id="ba-curl-code"></code>
+                    <button class="curl-copy" id="ba-curl-copy" onclick="baCopyCurl()">copy</button>
+                  </div>
+                  <button class="auth-save-btn" style="margin-top:10px;width:100%" onclick="baOpenEdit()">Edit credentials</button>
                 </div>
                 <!-- Edit form -->
                 <div id="basicauth-controls" style="display:none">
                   <div style="margin-top:4px">
                     <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
                       <input class="auth-input" style="flex:1;margin:0" type="text" id="basicauth-user" placeholder="Username" autocomplete="off">
-                      <button class="token-btn" title="Auto-generate" onclick="baGenUser()" style="flex-shrink:0;width:28px;height:28px;padding:0;display:flex;align-items:center;justify-content:center">
+                      <button class="token-btn" title="Auto-generate username" onclick="baGenUser()" style="flex-shrink:0;width:28px;height:28px;padding:0;display:flex;align-items:center;justify-content:center">
                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                       </button>
                     </div>
-                    <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
+                    <div style="display:flex;gap:6px;align-items:center;margin-bottom:2px">
                       <div style="position:relative;flex:1">
-                        <input class="auth-input" style="margin:0;padding-right:30px;width:100%;box-sizing:border-box" type="password" id="basicauth-pass" placeholder="Password" autocomplete="new-password">
-                        <button class="token-btn" title="Show/hide" onclick="baTogglePassVis()" style="position:absolute;right:4px;top:50%;transform:translateY(-50%);border:none;background:none;padding:2px">
+                        <input class="auth-input" style="margin:0;padding-right:30px;width:100%;box-sizing:border-box" type="password" id="basicauth-pass" placeholder="Password" autocomplete="new-password" oninput="baPassStrength()">
+                        <button class="token-btn" title="Show/hide password" onclick="baTogglePassVis()" style="position:absolute;right:4px;top:50%;transform:translateY(-50%);border:none;background:none;padding:2px">
                           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                         </button>
                       </div>
-                      <button class="token-btn" title="Auto-generate" onclick="baGenPass()" style="flex-shrink:0;width:28px;height:28px;padding:0;display:flex;align-items:center;justify-content:center">
+                      <button class="token-btn" title="Auto-generate strong password" onclick="baGenPass()" style="flex-shrink:0;width:28px;height:28px;padding:0;display:flex;align-items:center;justify-content:center">
                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
                       </button>
                     </div>
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+                    <!-- Password strength meter -->
+                    <div class="strength-bar">
+                      <div class="strength-seg" id="bas-1"></div>
+                      <div class="strength-seg" id="bas-2"></div>
+                      <div class="strength-seg" id="bas-3"></div>
+                      <div class="strength-seg" id="bas-4"></div>
+                    </div>
+                    <div class="strength-label" id="ba-strength-label"> </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:4px">
                       <button class="auth-save-btn" onclick="basicAuthSave()">Apply</button>
                       <button class="auth-save-btn" onclick="baCancelEdit()">Cancel</button>
                     </div>
                     <div id="basicauth-msg" style="font-size:11px;margin-top:6px;display:none"></div>
                   </div>
                 </div>
+                <div id="basicauth-disabled-msg" style="font-size:12px;color:var(--text-3);padding:4px 0">
+                  Enable to protect this tunnel with HTTP Basic Authentication.
+                </div>
               </div>
             </div>
 
-            <!-- AI / Ollama mode card -->
+            <!-- AI Optimization card -->
             <div class="sidebar-section" id="aimode-section">
-              <div class="sidebar-label" style="font-size:13px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">
-                <span>AI / Ollama</span>
-                <label class="auth-toggle" title="Optimise tunnel for AI streaming workloads">
+              <div class="card-section-head">
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span class="card-section-title">AI Optimization</span>
+                  <span class="card-section-badge disabled" id="aimode-badge">Off</span>
+                </div>
+                <label class="auth-toggle" title="Optimize tunnel for AI &amp; streaming workloads (LLMs, Ollama, etc.)">
                   <input type="checkbox" id="aimode-toggle" onchange="aiModeToggleChanged()">
                   <span class="auth-toggle-slider"></span>
                 </label>
               </div>
               <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);padding:12px">
-                <div class="stat-item" style="padding-top:0">
-                  <span class="stat-label">Status</span>
-                  <span class="stat-value" id="aimode-status-text" style="color:var(--text-3)">Disabled</span>
+                <div style="font-size:11px;color:var(--text-3);line-height:1.6;margin-bottom:10px">
+                  Optimizes the tunnel for streaming AI responses — ideal for LLMs, Ollama, and real-time token output.
                 </div>
-                <div id="aimode-details" style="display:none">
-                  <div class="stat-item" style="padding-bottom:2px">
-                    <span class="stat-label" style="font-size:11px">Body limit</span>
-                    <span class="stat-value" style="font-size:11px;color:var(--green)">100 MB</span>
+                <div id="aimode-feats" style="display:flex;flex-direction:column;gap:6px">
+                  <div style="display:flex;align-items:center;justify-content:space-between">
+                    <span style="font-size:12px;color:var(--text-2)">Body limit</span>
+                    <span class="feat-pill off" id="ai-feat-body">10 MB</span>
                   </div>
-                  <div class="stat-item" style="padding-bottom:2px">
-                    <span class="stat-label" style="font-size:11px">Flush buffer</span>
-                    <span class="stat-value" style="font-size:11px;color:var(--green)">512 B</span>
+                  <div style="display:flex;align-items:center;justify-content:space-between">
+                    <span style="font-size:12px;color:var(--text-2)">Flush buffer</span>
+                    <span class="feat-pill off" id="ai-feat-flush">32 KB</span>
                   </div>
-                  <div class="stat-item" style="padding-bottom:2px">
-                    <span class="stat-label" style="font-size:11px">CORS</span>
-                    <span class="stat-value" style="font-size:11px;color:var(--green)">Enabled</span>
+                  <div style="display:flex;align-items:center;justify-content:space-between">
+                    <span style="font-size:12px;color:var(--text-2)">CORS headers</span>
+                    <span class="feat-pill off" id="ai-feat-cors">Disabled</span>
                   </div>
-                  <div class="stat-item" style="padding-bottom:0">
-                    <span class="stat-label" style="font-size:11px">Buffering</span>
-                    <span class="stat-value" style="font-size:11px;color:var(--green)">Disabled</span>
+                  <div style="display:flex;align-items:center;justify-content:space-between">
+                    <span style="font-size:12px;color:var(--text-2)">Proxy buffering</span>
+                    <span class="feat-pill off" id="ai-feat-buf">Enabled</span>
                   </div>
                 </div>
               </div>
@@ -988,6 +1070,8 @@ nav {
   </div>
 </div>
 
+<!-- Toast container -->
+<div id="toast-container"></div>
 
 <div class="status-footer">
   <div class="live-badge">
@@ -1070,28 +1154,22 @@ function renderTunnelOverview() {
 
   _syncAIModeUI(t);
 
-  // Sync toggles, control panels and status text from tunnelsMap.
-  // tunnelsMap is patched optimistically by toggle handlers so these
-  // assignments reflect any pending user change, not stale server state.
-  const apikeyEnabled  = !!t.apikey_enabled;
-  document.getElementById('apikey-toggle').checked            = apikeyEnabled;
-  document.getElementById('apikey-controls').style.display   = apikeyEnabled ? 'block' : 'none';
-  document.getElementById('apikey-status-text').textContent  = apikeyEnabled ? 'Enabled' : 'Disabled';
-  document.getElementById('apikey-status-text').style.color  = apikeyEnabled ? 'var(--green)' : 'var(--text-3)';
+  // Sync API key state
+  const apikeyEnabled = !!t.apikey_enabled;
+  document.getElementById('apikey-toggle').checked = apikeyEnabled;
+  _setApikeyStatus(apikeyEnabled);
   if (!apikeyEnabled) _maskApiKey();
 
   // Basic Auth — skip all DOM writes while the user is in the edit flow.
-  // _baEditOpen:     edit form is visible (user is typing)
-  // _baPendingEnable: toggle was just flipped to ON but API hasn't confirmed yet
-  // Either condition means the checkbox + sub-panels must not be touched.
   if (!_baEditOpen && !_baPendingEnable) {
     const baEnabled = !!t.basicauth_enabled;
-    document.getElementById('basicauth-toggle').checked           = baEnabled;
-    document.getElementById('basicauth-status-text').textContent  = baEnabled ? 'Enabled' : 'Disabled';
-    document.getElementById('basicauth-status-text').style.color  = baEnabled ? 'var(--green)' : 'var(--text-3)';
+    document.getElementById('basicauth-toggle').checked = baEnabled;
+    _setBasicAuthStatus(baEnabled);
     if (baEnabled) {
       _baShowEditForm(false);
       _baShowCredView(true);
+      // Refresh curl snippet if creds are cached
+      if (_baCreds.user) _updateBaCurlSnippet(_baCreds.user, _baCreds.pass);
     } else {
       _baShowCredView(false);
       _baShowEditForm(false);
@@ -1224,7 +1302,22 @@ function _apikeyEndpoint() {
   return encodeURIComponent(activeTunnel || '(default)');
 }
 
-// ── AI / Ollama Mode ────────────────────────────────────
+// ── Toast notifications ─────────────────────────────────
+function showToast(msg, type = 'info', duration = 3000) {
+  const icons = { success: '✓', error: '✗', info: 'ℹ' };
+  const c = document.getElementById('toast-container');
+  if (!c) return;
+  const t = document.createElement('div');
+  t.className = 'toast ' + type;
+  t.innerHTML = `<span class="toast-icon">${icons[type] || icons.info}</span><span class="toast-msg">${msg}</span>`;
+  c.appendChild(t);
+  setTimeout(() => {
+    t.style.animation = 'toastOut .2s ease forwards';
+    setTimeout(() => t.remove(), 220);
+  }, duration);
+}
+
+// ── AI Optimization ─────────────────────────────────────
 function aiModeToggleChanged() {
   const enabled = document.getElementById('aimode-toggle').checked;
   const ep = activeTunnel || '(default)';
@@ -1240,22 +1333,34 @@ function aiModeToggleChanged() {
   .then(data => {
     if (tunnelsMap[ep]) tunnelsMap[ep].aimode_enabled = data.enabled;
     _setAIModeStatus(data.enabled);
+    showToast(data.enabled ? 'AI Optimization enabled' : 'AI Optimization disabled', data.enabled ? 'success' : 'info');
   })
   .catch(() => {
     const reverted = !enabled;
     document.getElementById('aimode-toggle').checked = reverted;
     if (tunnelsMap[ep]) tunnelsMap[ep].aimode_enabled = reverted;
     _setAIModeStatus(reverted);
+    showToast('Failed to update AI Optimization', 'error');
   });
 }
 
 function _setAIModeStatus(enabled) {
-  const txt = document.getElementById('aimode-status-text');
-  const det = document.getElementById('aimode-details');
-  if (!txt) return;
-  txt.textContent = enabled ? 'Active' : 'Disabled';
-  txt.style.color  = enabled ? 'var(--blue,#60a5fa)' : 'var(--text-3)';
-  if (det) det.style.display = enabled ? 'block' : 'none';
+  const badge = document.getElementById('aimode-badge');
+  if (badge) {
+    badge.textContent = enabled ? 'Active' : 'Off';
+    badge.className = 'card-section-badge ' + (enabled ? 'active' : 'disabled');
+  }
+  // Update feature pills
+  function setFeat(id, onText, offText, isOn) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = isOn ? onText : offText;
+    el.className = 'feat-pill ' + (isOn ? 'on' : 'off');
+  }
+  setFeat('ai-feat-body',  '100 MB',   '10 MB',   enabled);
+  setFeat('ai-feat-flush', '512 B',    '32 KB',   enabled);
+  setFeat('ai-feat-cors',  'Enabled',  'Disabled', enabled);
+  setFeat('ai-feat-buf',   'Disabled', 'Enabled',  enabled);
 }
 
 function _syncAIModeUI(t) {
@@ -1265,10 +1370,76 @@ function _syncAIModeUI(t) {
 }
 
 function _setApikeyStatus(enabled) {
-  const el = document.getElementById('apikey-status-text');
-  if (!el) return;
-  el.textContent = enabled ? 'Enabled' : 'Disabled';
-  el.style.color = enabled ? 'var(--green)' : 'var(--text-3)';
+  const badge = document.getElementById('apikey-badge');
+  if (badge) {
+    badge.textContent = enabled ? 'Active' : 'Off';
+    badge.className = 'card-section-badge ' + (enabled ? 'enabled' : 'disabled');
+  }
+  const ctrl = document.getElementById('apikey-controls');
+  const dis  = document.getElementById('apikey-disabled-msg');
+  if (ctrl) ctrl.style.display = enabled ? 'block' : 'none';
+  if (dis)  dis.style.display  = enabled ? 'none'  : 'block';
+}
+
+// Custom key input strength checker
+function apikeyCustomInputChanged() {
+  const val = document.getElementById('apikey-custom-input').value.trim();
+  const bar = document.getElementById('apikey-strength-bar');
+  const lbl = document.getElementById('apikey-strength-label');
+  const btn = document.getElementById('apikey-custom-save');
+  if (!val) {
+    if (bar) bar.style.display = 'none';
+    if (lbl) lbl.textContent = '';
+    if (btn) btn.disabled = true;
+    return;
+  }
+  if (bar) bar.style.display = 'flex';
+  const score = _keyStrength(val);
+  const levels = ['','weak','fair','good','strong'];
+  const labels = ['','Weak — too short or simple','Fair — consider adding symbols','Good — solid key','Strong — excellent'];
+  for (let i = 1; i <= 4; i++) {
+    const seg = document.getElementById('aks-' + i);
+    if (seg) seg.className = 'strength-seg ' + (i <= score ? levels[score] : '');
+  }
+  if (lbl) { lbl.textContent = labels[score]; lbl.className = 'strength-label ' + levels[score]; }
+  if (btn) btn.disabled = score < 2;
+}
+
+function _keyStrength(k) {
+  if (k.length < 8) return 1;
+  let score = 1;
+  if (k.length >= 16) score++;
+  if (/[A-Z]/.test(k) && /[a-z]/.test(k)) score++;
+  if (/[0-9]/.test(k) && /[^A-Za-z0-9]/.test(k)) score++;
+  return Math.min(score, 4);
+}
+
+function apikeyCustomSave() {
+  const inp = document.getElementById('apikey-custom-input');
+  const key = (inp ? inp.value.trim() : '');
+  if (!key) return;
+  const ep = activeTunnel || '(default)';
+  fetch('/api/tunnels/auth', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ endpoint: ep, enabled: true, apikey: key })
+  })
+  .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+  .then(data => {
+    if (tunnelsMap[ep]) { tunnelsMap[ep].apikey_enabled = true; tunnelsMap[ep].has_apikey = true; }
+    _setApikeyStatus(true);
+    // Show the newly set key
+    const val = document.getElementById('api-val');
+    if (val) { val.textContent = data.apikey; val.classList.remove('masked'); }
+    const revBtn = document.getElementById('api-reveal');
+    if (revBtn) revBtn.title = 'Hide';
+    clearTimeout(_apikeyHideTimer);
+    _apikeyHideTimer = setTimeout(_maskApiKey, 30000);
+    if (inp) inp.value = '';
+    apikeyCustomInputChanged();
+    showToast('Custom API key applied', 'success');
+  })
+  .catch(() => showToast('Failed to set custom key', 'error'));
 }
 
 // ── API Key ─────────────────────────────────────────────
@@ -1278,7 +1449,6 @@ function apikeyToggleChanged() {
   if (tunnelsMap[ep]) {
     tunnelsMap[ep].apikey_enabled = enabled;
   }
-  document.getElementById('apikey-controls').style.display = enabled ? 'block' : 'none';
   _setApikeyStatus(enabled);
   if (!enabled) _maskApiKey();
 
@@ -1293,16 +1463,16 @@ function apikeyToggleChanged() {
       tunnelsMap[ep].apikey_enabled = data.enabled;
       tunnelsMap[ep].has_apikey = !!data.apikey;
     }
-    document.getElementById('apikey-controls').style.display = data.enabled ? 'block' : 'none';
     _setApikeyStatus(data.enabled);
     if (!data.enabled) _maskApiKey();
+    showToast(data.enabled ? 'API key authentication enabled' : 'API key authentication disabled', data.enabled ? 'success' : 'info');
   })
   .catch(() => {
     const reverted = !enabled;
     document.getElementById('apikey-toggle').checked = reverted;
     if (tunnelsMap[ep]) tunnelsMap[ep].apikey_enabled = reverted;
-    document.getElementById('apikey-controls').style.display = reverted ? 'block' : 'none';
     _setApikeyStatus(reverted);
+    showToast('Failed to update API key', 'error');
   });
 }
 
@@ -1320,7 +1490,7 @@ function apiReveal() {
       clearTimeout(_apikeyHideTimer);
       _apikeyHideTimer = setTimeout(_maskApiKey, 30000);
     })
-    .catch(() => {});
+    .catch(() => showToast('Could not fetch API key', 'error'));
 }
 
 function _maskApiKey() {
@@ -1342,6 +1512,7 @@ function apiCopy() {
       const done = () => {
         const btn = document.getElementById('api-copy');
         if (btn) { btn.classList.add('ok'); setTimeout(() => btn.classList.remove('ok'), 1800); }
+        showToast('API key copied to clipboard', 'success');
       };
       if (navigator.clipboard && window.isSecureContext) {
         navigator.clipboard.writeText(key).then(done).catch(() => _apikeyFallbackCopy(key, done));
@@ -1349,7 +1520,7 @@ function apiCopy() {
         _apikeyFallbackCopy(key, done);
       }
     })
-    .catch(() => {});
+    .catch(() => showToast('Could not copy API key', 'error'));
 }
 
 function apiRegenerate() {
@@ -1363,20 +1534,18 @@ function apiRegenerate() {
   })
   .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
   .then(data => {
-    // Show new key immediately
     const val = document.getElementById('api-val');
     val.textContent = data.apikey;
     val.classList.remove('masked');
     document.getElementById('api-reveal').title = 'Hide';
     clearTimeout(_apikeyHideTimer);
     _apikeyHideTimer = setTimeout(_maskApiKey, 30000);
-    if (tunnelsMap[activeTunnel || '(default)']) {
-      tunnelsMap[activeTunnel || '(default)'].has_apikey = true;
-      tunnelsMap[activeTunnel || '(default)'].apikey_enabled = true;
-    }
+    const ep = activeTunnel || '(default)';
+    if (tunnelsMap[ep]) { tunnelsMap[ep].has_apikey = true; tunnelsMap[ep].apikey_enabled = true; }
     _setApikeyStatus(true);
+    showToast('API key regenerated', 'success');
   })
-  .catch(() => {})
+  .catch(() => showToast('Failed to regenerate key', 'error'))
   .finally(() => { btn.disabled = false; });
 }
 
@@ -1392,10 +1561,13 @@ function _apikeyFallbackCopy(key, cb) {
 }
 
 function _setBasicAuthStatus(enabled) {
-  const el = document.getElementById('basicauth-status-text');
-  if (!el) return;
-  el.textContent = enabled ? 'Enabled' : 'Disabled';
-  el.style.color  = enabled ? 'var(--green)' : 'var(--text-3)';
+  const badge = document.getElementById('basicauth-badge');
+  if (badge) {
+    badge.textContent = enabled ? 'Active' : 'Off';
+    badge.className = 'card-section-badge ' + (enabled ? 'enabled' : 'disabled');
+  }
+  const dis = document.getElementById('basicauth-disabled-msg');
+  if (dis) dis.style.display = enabled ? 'none' : 'block';
 }
 
 // ── Basic Auth state ────────────────────────────────────
@@ -1507,6 +1679,50 @@ function baTogglePassVis() {
   inp.type  = inp.type === 'password' ? 'text' : 'password';
 }
 
+// ── Password strength ────────────────────────────────────
+function baPassStrength() {
+  const pass = document.getElementById('basicauth-pass').value;
+  const lbl  = document.getElementById('ba-strength-label');
+  const segs = [1,2,3,4].map(i => document.getElementById('bas-' + i));
+  const levels = ['','weak','fair','good','strong'];
+  const labels = ['','Weak','Fair','Good','Strong'];
+  const score = _passStrengthScore(pass);
+  segs.forEach((s, i) => { if (s) s.className = 'strength-seg ' + (i < score ? levels[score] : ''); });
+  if (lbl) { lbl.textContent = pass ? labels[score] : ''; lbl.className = 'strength-label ' + (pass ? levels[score] : ''); }
+}
+
+function _passStrengthScore(p) {
+  if (!p || p.length < 6) return 1;
+  let s = 1;
+  if (p.length >= 10) s++;
+  if (/[A-Z]/.test(p) && /[a-z]/.test(p)) s++;
+  if (/[0-9]/.test(p) && /[^A-Za-z0-9]/.test(p)) s++;
+  return Math.min(s, 4);
+}
+
+// ── curl snippet ─────────────────────────────────────────
+function _updateBaCurlSnippet(user, pass) {
+  const proxyUrl = (tunnelsMap[activeTunnel || '(default)'] || {}).proxy_url || 'http://your-tunnel';
+  const snippet = `curl -u "${user}:${pass}" ${proxyUrl}/`;
+  const code = document.getElementById('ba-curl-code');
+  const block = document.getElementById('ba-curl-block');
+  if (code) code.textContent = snippet;
+  if (block) block.style.display = user ? 'block' : 'none';
+}
+
+function baCopyCurl() {
+  const code = document.getElementById('ba-curl-code');
+  if (!code) return;
+  const btn = document.getElementById('ba-curl-copy');
+  const text = code.textContent;
+  const done = () => { if (btn) { btn.textContent = 'copied!'; btn.classList.add('ok'); setTimeout(() => { btn.textContent = 'copy'; btn.classList.remove('ok'); }, 1600); } };
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(done).catch(() => _fallbackCopy(text, done));
+  } else {
+    _fallbackCopy(text, done);
+  }
+}
+
 function _baAutoUser() {
   const adj   = ['swift','bright','calm','bold','cool','keen','wise','sharp','quick','clear'];
   const nouns = ['tunnel','proxy','gate','relay','bridge','node','link','path','route','mesh'];
@@ -1531,6 +1747,7 @@ function baGenPass() {
   const inp = document.getElementById('basicauth-pass');
   inp.value = _baAutoPass();
   inp.type  = 'text';
+  baPassStrength();
 }
 
 // ── Toggle ──────────────────────────────────────────────
@@ -1614,30 +1831,26 @@ function _doSaveBasicAuth(ep, user, pass, showCredView) {
   .then(() => {
     _baPendingEnable = false;
     _baCreds = { user, pass };
-    // Commit enabled state — SSE ticks will now see correct server state
     if (tunnelsMap[ep]) tunnelsMap[ep].basicauth_enabled = true;
     document.getElementById('basicauth-toggle').checked = true;
     _setBasicAuthStatus(true);
     _baMaskCreds();
+    _updateBaCurlSnippet(user, pass);
     if (showCredView) {
-      _baShowEditForm(false);  // clears _baEditOpen
+      _baShowEditForm(false);
       _baShowCredView(true);
     }
-    if (msg) {
-      msg.style.color = 'var(--green,#22c55e)';
-      msg.textContent = 'Applied';
-      msg.style.display = 'block';
-      setTimeout(() => { msg.style.display = 'none'; }, 2000);
-    }
+    showToast('Basic Auth credentials saved', 'success');
+    if (msg) msg.style.display = 'none';
   })
   .catch(() => {
     _baPendingEnable = false;
     if (msg) {
       msg.style.color   = 'var(--red,#ef4444)';
-      msg.textContent   = 'Failed to save';
+      msg.textContent   = 'Failed to save — check server logs';
       msg.style.display = 'block';
     }
-    // If this was a toggle-enable attempt, revert the toggle
+    showToast('Failed to save Basic Auth', 'error');
     if (!tunnelsMap[ep] || !tunnelsMap[ep].basicauth_enabled) {
       document.getElementById('basicauth-toggle').checked = false;
       _setBasicAuthStatus(false);
@@ -1651,9 +1864,13 @@ function basicAuthSave() {
   const ep   = activeTunnel || '(default)';
   const msg  = document.getElementById('basicauth-msg');
   if (!user || !pass) {
-    msg.style.color   = 'var(--red,#ef4444)';
-    msg.textContent   = 'Username and password required';
-    msg.style.display = 'block';
+    if (msg) { msg.style.color = 'var(--red,#ef4444)'; msg.textContent = 'Username and password required'; msg.style.display = 'block'; }
+    showToast('Username and password required', 'error');
+    return;
+  }
+  const score = _passStrengthScore(pass);
+  if (score < 2) {
+    if (msg) { msg.style.color = 'var(--amber)'; msg.textContent = 'Password is too weak — use at least 10 characters'; msg.style.display = 'block'; }
     return;
   }
   _doSaveBasicAuth(ep, user, pass, true);

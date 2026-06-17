@@ -1083,6 +1083,14 @@ nav {
 <script>
 'use strict';
 
+// ── CSRF helper ────────────────────────────────
+// Reads the gotunnel_csrf cookie set by the server on every authenticated
+// response and includes it in all state-changing POST requests.
+function getCsrfToken() {
+  const m = document.cookie.match(/(?:^|;\s*)gotunnel_csrf=([^;]*)/);
+  return m ? decodeURIComponent(m[1]) : '';
+}
+
 // ── State ──────────────────────────────────────
 let activeTunnel = null;
 let currentTab = 'overview';
@@ -1326,7 +1334,7 @@ function aiModeToggleChanged() {
 
   fetch('/api/tunnels/aimode', {
     method: 'POST',
-    headers: {'Content-Type':'application/json'},
+    headers: {'Content-Type':'application/json', 'X-CSRF-Token': getCsrfToken()},
     body: JSON.stringify({ endpoint: ep, enabled })
   })
   .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
@@ -1421,7 +1429,7 @@ function apikeyCustomSave() {
   const ep = activeTunnel || '(default)';
   fetch('/api/tunnels/auth', {
     method: 'POST',
-    headers: {'Content-Type':'application/json'},
+    headers: {'Content-Type':'application/json', 'X-CSRF-Token': getCsrfToken()},
     body: JSON.stringify({ endpoint: ep, enabled: true, apikey: key })
   })
   .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
@@ -1454,7 +1462,7 @@ function apikeyToggleChanged() {
 
   fetch('/api/tunnels/auth', {
     method: 'POST',
-    headers: {'Content-Type':'application/json'},
+    headers: {'Content-Type':'application/json', 'X-CSRF-Token': getCsrfToken()},
     body: JSON.stringify({ endpoint: ep, enabled })
   })
   .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
@@ -1529,7 +1537,7 @@ function apiRegenerate() {
   btn.disabled = true;
   fetch('/api/tunnels/auth', {
     method: 'POST',
-    headers: {'Content-Type':'application/json'},
+    headers: {'Content-Type':'application/json', 'X-CSRF-Token': getCsrfToken()},
     body: JSON.stringify({ endpoint: activeTunnel || '(default)', enabled: true, regenerate: true })
   })
   .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
@@ -1769,7 +1777,7 @@ function basicAuthToggleChanged() {
 
     fetch('/api/tunnels/basicauth', {
       method: 'POST',
-      headers: {'Content-Type':'application/json'},
+      headers: {'Content-Type':'application/json', 'X-CSRF-Token': getCsrfToken()},
       body: JSON.stringify({ endpoint: ep, enabled: false })
     })
     .then(r => { if (!r.ok) throw new Error(r.status); })
@@ -1824,7 +1832,7 @@ function _doSaveBasicAuth(ep, user, pass, showCredView) {
   const msg = document.getElementById('basicauth-msg');
   fetch('/api/tunnels/basicauth', {
     method: 'POST',
-    headers: {'Content-Type':'application/json'},
+    headers: {'Content-Type':'application/json', 'X-CSRF-Token': getCsrfToken()},
     body: JSON.stringify({ endpoint: ep, enabled: true, username: user, password: pass })
   })
   .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
@@ -2019,7 +2027,7 @@ function clearReqs() {
 function replayReq(id) {
   fetch('/api/replay', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
     body: JSON.stringify({ id })
   });
 }

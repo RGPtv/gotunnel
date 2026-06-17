@@ -18,18 +18,19 @@ type AppConfig struct {
 
 // ServerConfig holds all settings for running gotunnel in server mode.
 type ServerConfig struct {
-	HTTPAddr    string `yaml:"http"`
-	HTTPSAddr   string `yaml:"https"`
-	TunAddr     string `yaml:"tun"`
-	Token       string `yaml:"token"`
-	CertFile    string `yaml:"cert"`
-	KeyFile     string `yaml:"key"`
-	Domain      string `yaml:"domain"`
-	Inspect     string `yaml:"inspect"`
-	InspectUser string `yaml:"inspectUser"`
-	InspectPass string `yaml:"inspectPass"`
-	NoTLS       bool   `yaml:"noTLS"`
-	PoolSize    int    `yaml:"poolSize"`
+	HTTPAddr        string   `yaml:"http"`
+	HTTPSAddr       string   `yaml:"https"`
+	TunAddr         string   `yaml:"tun"`
+	Token           string   `yaml:"token"`
+	CertFile        string   `yaml:"cert"`
+	KeyFile         string   `yaml:"key"`
+	Domain          string   `yaml:"domain"`
+	Inspect         string   `yaml:"inspect"`
+	InspectUser     string   `yaml:"inspectUser"`
+	InspectPass     string   `yaml:"inspectPass"`
+	NoTLS           bool     `yaml:"noTLS"`
+	PoolSize        int      `yaml:"poolSize"`
+	AllowedTCPPorts []string `yaml:"allowedTCPPorts"` // if set, only these remote addrs are allowed for TCP tunnels
 }
 
 // ClientConfig holds all settings for running gotunnel in client mode.

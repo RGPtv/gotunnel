@@ -29,6 +29,51 @@ import (
 	"github.com/RGPtv/gotunnel/internal/ipc"
 )
 
+// ── Per-IP rate limiter for tunnel authentication ─────────────────────────────
+
+const (
+	authRateLimit    = 5               // max auth attempts per window
+	authRateWindow   = 30 * time.Second // sliding window duration
+	authFailDelay    = 500 * time.Millisecond // delay after failed auth to slow scanners
+	authLimiterExpiry = 5 * time.Minute // expire limiter entries after inactivity
+)
+
+// authBucket tracks per-IP authentication attempt counts.
+type authBucket struct {
+	mu       sync.Mutex
+	attempts []time.Time
+	lastSeen time.Time
+}
+
+// allow returns true if the IP is within the rate limit.
+func (b *authBucket) allow() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	now := time.Now()
+	b.lastSeen = now
+	cutoff := now.Add(-authRateWindow)
+	// Prune old attempts.
+	valid := b.attempts[:0]
+	for _, t := range b.attempts {
+		if t.After(cutoff) {
+			valid = append(valid, t)
+		}
+	}
+	b.attempts = valid
+	if len(b.attempts) >= authRateLimit {
+		return false
+	}
+	b.attempts = append(b.attempts, now)
+	return true
+}
+
+// expired reports whether this bucket has been idle long enough to evict.
+func (b *authBucket) expired() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return time.Since(b.lastSeen) > authLimiterExpiry
+}
+
 // poolConn pairs a raw net.Conn with its persistent buffered reader so we
 // never lose bytes that were pre-read during authentication.
 // pool holds the channel this connection belongs to so enqueue can return it
@@ -114,23 +159,25 @@ const (
 )
 
 type Server struct {
-	token        string
-	domain       string
-	httpAddr     string
-	httpsAddr    string
-	poolSize     int
-	pool         chan *poolConn
-	httpPools    map[string]chan *poolConn
-	tcpPools     map[string]chan *poolConn
-	tcpListeners map[string]net.Listener
-	mu           sync.RWMutex
-	count        atomic.Int64 // active tunnel connections
-	inspector    *Inspector
-	tunnelMeta   map[string]TunnelMeta
-	tunnelMetaMu sync.RWMutex
-	logs         []ipc.LogEntry
-	logsMu       sync.Mutex
-	startTime    time.Time
+	token           string
+	domain          string
+	httpAddr        string
+	httpsAddr       string
+	poolSize        int
+	pool            chan *poolConn
+	httpPools       map[string]chan *poolConn
+	tcpPools        map[string]chan *poolConn
+	tcpListeners    map[string]net.Listener
+	mu              sync.RWMutex
+	count           atomic.Int64 // active tunnel connections
+	inspector       *Inspector
+	tunnelMeta      map[string]TunnelMeta
+	tunnelMetaMu    sync.RWMutex
+	logs            []ipc.LogEntry
+	logsMu          sync.Mutex
+	startTime       time.Time
+	authLimiters    sync.Map       // IP → *authBucket for rate-limiting tunnel auth
+	allowedTCPPorts []string       // if non-empty, only these remote addrs are allowed for TCP tunnels
 }
 
 // hopByHopHeaders are headers that must not be forwarded through a proxy.
@@ -223,17 +270,18 @@ func RunServer(cfg *ServerConfig) {
 	}
 	
 	srv := &Server{
-		token:        token,
-		domain:       cfg.Domain,
-		httpAddr:     httpAddr,
-		httpsAddr:    cfg.HTTPSAddr,
-		poolSize:     poolSize,
-		pool:         make(chan *poolConn, poolSize),
-		httpPools:    make(map[string]chan *poolConn),
-		tcpPools:     make(map[string]chan *poolConn),
-		tcpListeners: make(map[string]net.Listener),
-		tunnelMeta:   make(map[string]TunnelMeta),
-		startTime: time.Now(),
+		token:           token,
+		domain:          cfg.Domain,
+		httpAddr:        httpAddr,
+		httpsAddr:       cfg.HTTPSAddr,
+		poolSize:        poolSize,
+		pool:            make(chan *poolConn, poolSize),
+		httpPools:       make(map[string]chan *poolConn),
+		tcpPools:        make(map[string]chan *poolConn),
+		tcpListeners:    make(map[string]net.Listener),
+		tunnelMeta:      make(map[string]TunnelMeta),
+		startTime:       time.Now(),
+		allowedTCPPorts: cfg.AllowedTCPPorts,
 	}
 
 
@@ -275,13 +323,13 @@ func RunServer(cfg *ServerConfig) {
 		srv.logsMu.Unlock()
 
 		return ipc.ServerState{
-			Token:       token,
+			Token:       "[redacted]",
 			HTTPAddr:    httpAddr,
 			HTTPSAddr:   cfg.HTTPSAddr,
 			TunAddr:     tunAddr,
 			InspectAddr: inspect,
 			DashUser:    inspectUser,
-			DashPass:    inspectPass,
+			DashPass:    "[redacted]",
 			ActiveConns: srv.count.Load(),
 			TotalReqs:   0,
 			Uptime:      int64(time.Since(srv.startTime).Seconds()),
@@ -431,6 +479,20 @@ func (s *Server) acceptTunnelConns(l net.Listener) {
 
 // handleTunnelConn authenticates the new tunnel connection and adds it to the pool.
 func (s *Server) handleTunnelConn(conn net.Conn) {
+	// ── Per-IP rate limiting ─────────────────────────────────────────────────
+	peerIP, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
+	if peerIP == "" {
+		peerIP = conn.RemoteAddr().String()
+	}
+	bucketVal, _ := s.authLimiters.LoadOrStore(peerIP, &authBucket{lastSeen: time.Now()})
+	bucket := bucketVal.(*authBucket)
+	if !bucket.allow() {
+		s.srvLog(LevelWarn, "auth rate limited: %s", conn.RemoteAddr())
+		fmt.Fprintf(conn, "ERROR rate limited\n")
+		conn.Close()
+		return
+	}
+
 	conn.SetDeadline(time.Now().Add(15 * time.Second))
 
 	r := bufio.NewReaderSize(conn, 64*1024)
@@ -511,6 +573,8 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 
 	if subtle.ConstantTimeCompare([]byte(clientHmac), []byte(expectedHmac)) != 1 {
 		fmt.Fprintf(conn, "ERROR unauthorized\n")
+		// Brief delay to slow down brute-force scanners.
+		time.Sleep(authFailDelay)
 		conn.Close()
 		s.srvLog(LevelWarn, "auth failed (bad token) from %s", conn.RemoteAddr())
 		return
@@ -523,6 +587,14 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 		if remoteAddr == "" {
 			fmt.Fprintf(conn, "ERROR remote address required for tcp\n")
 			conn.Close()
+			return
+		}
+
+		// Validate against allowed TCP ports if configured.
+		if !s.isTCPPortAllowed(remoteAddr) {
+			fmt.Fprintf(conn, "ERROR tcp port %s is not allowed\n", remoteAddr)
+			conn.Close()
+			s.srvLog(LevelWarn, "TCP port denied: %s from %s", remoteAddr, conn.RemoteAddr())
 			return
 		}
 
@@ -751,21 +823,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// ── Health endpoint ──────────────────────────────────────────────────────
+	// ── Health endpoint (minimal info — detailed stats require the dashboard) ─
 	if r.URL.Path == "/_tunnel/health" {
-		s.mu.RLock()
-		totalCapacity := len(s.pool)
-		for _, p := range s.httpPools {
-			totalCapacity += len(p)
-		}
-		for _, p := range s.tcpPools {
-			totalCapacity += len(p)
-		}
-		s.mu.RUnlock()
-
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"status":"ok","tunnel_clients":%d,"pool_ready":%d}`,
-			s.count.Load(), totalCapacity)
+		fmt.Fprintf(w, `{"status":"ok"}`)
 		return
 	}
 
@@ -822,6 +883,11 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, reqBody *capp
 	out.Header.Set("X-Forwarded-For", clientIP(r))
 	out.Header.Set("X-Forwarded-Host", r.Host)
 	out.Header.Set("X-Forwarded-Proto", scheme(r))
+
+	// HSTS — tell browsers to always use HTTPS for this domain.
+	if r.TLS != nil {
+		w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+	}
 
 	// Remove hop-by-hop headers before forwarding.
 	removeHopByHop(out.Header)
@@ -1264,6 +1330,14 @@ func (s *Server) startJanitor() {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	for range ticker.C {
+		// Evict expired auth rate-limiter entries.
+		s.authLimiters.Range(func(key, value any) bool {
+			if b, ok := value.(*authBucket); ok && b.expired() {
+				s.authLimiters.Delete(key)
+			}
+			return true
+		})
+
 		// Clean the default pool without any lock — channel ops are goroutine-safe.
 		s.cleanPool(s.pool)
 
@@ -1396,5 +1470,21 @@ func scheme(r *http.Request) string {
 		return "https"
 	}
 	return "http"
+}
+
+// isTCPPortAllowed checks if a remote address is permitted by the server's
+// AllowedTCPPorts configuration. An empty allow-list means all ports are allowed.
+func (s *Server) isTCPPortAllowed(remoteAddr string) bool {
+	if len(s.allowedTCPPorts) == 0 {
+		return true // default allow — backward compatible
+	}
+	for _, allowed := range s.allowedTCPPorts {
+		if allowed == remoteAddr {
+			return true
+		}
+		// Support wildcard port patterns like ":20000-:30000" — simple exact match for now.
+		// Operators can list specific ports like ":22222", ":33333".
+	}
+	return false
 }
 

@@ -26,6 +26,14 @@ var inspectorHTML string
 var loginHTML string
 
 const maxCapturedRequests = 500
+const maxAPIBodySize = 64 * 1024 // 64 KB limit on dashboard API request bodies
+
+// loginRateLimit controls brute-force protection on the dashboard login.
+const (
+	loginRateLimit  = 5
+	loginRateWindow = 60 * time.Second
+	loginFailDelay  = 500 * time.Millisecond
+)
 
 // CapturedRequest holds metadata about a single proxied HTTP request.
 type CapturedRequest struct {
@@ -73,14 +81,46 @@ type Inspector struct {
 	ActiveConns *atomic.Int64
 
 	// Auth
-	Username   string
-	Password   string
-	sessionsMu sync.Mutex
-	sessions   map[string]time.Time
+	Username      string
+	Password      string
+	sessionsMu    sync.Mutex
+	sessions      map[string]sessionData // token → session info (expiry + CSRF)
+	loginLimiters sync.Map               // IP → *loginBucket
 
 	// Reference to server for tunnels API and replay.
 	srv  *Server
 	done chan struct{} // closed by Stop() to terminate background goroutines
+}
+
+// sessionData stores per-session info including the CSRF token.
+type sessionData struct {
+	expiry    time.Time
+	csrfToken string
+}
+
+// loginBucket tracks per-IP login attempt counts.
+type loginBucket struct {
+	mu       sync.Mutex
+	attempts []time.Time
+}
+
+func (b *loginBucket) allow() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	now := time.Now()
+	cutoff := now.Add(-loginRateWindow)
+	valid := b.attempts[:0]
+	for _, t := range b.attempts {
+		if t.After(cutoff) {
+			valid = append(valid, t)
+		}
+	}
+	b.attempts = valid
+	if len(b.attempts) >= loginRateLimit {
+		return false
+	}
+	b.attempts = append(b.attempts, now)
+	return true
 }
 
 // NewInspector creates a new request inspector.
@@ -94,7 +134,7 @@ func NewInspector(serverAddr, tunAddr, token, username, password string, activeC
 		ActiveConns: activeConns,
 		Username:    username,
 		Password:    password,
-		sessions:    make(map[string]time.Time),
+		sessions:    make(map[string]sessionData),
 		srv:         srv,
 		done:        make(chan struct{}),
 	}
@@ -121,8 +161,8 @@ func (ins *Inspector) cleanSessions() {
 		case <-ticker.C:
 			now := time.Now()
 			ins.sessionsMu.Lock()
-			for tok, exp := range ins.sessions {
-				if now.After(exp) {
+			for tok, sd := range ins.sessions {
+				if now.After(sd.expiry) {
 					delete(ins.sessions, tok)
 				}
 			}
@@ -145,9 +185,35 @@ func (ins *Inspector) isAuthenticated(r *http.Request) bool {
 		return false
 	}
 	ins.sessionsMu.Lock()
-	exp, ok := ins.sessions[cookie.Value]
+	sd, ok := ins.sessions[cookie.Value]
 	ins.sessionsMu.Unlock()
-	return ok && time.Now().Before(exp)
+	return ok && time.Now().Before(sd.expiry)
+}
+
+// getCSRFToken returns the CSRF token for the current session, or "" if not found.
+func (ins *Inspector) getCSRFToken(r *http.Request) string {
+	cookie, err := r.Cookie("gotunnel_session")
+	if err != nil {
+		return ""
+	}
+	ins.sessionsMu.Lock()
+	sd, ok := ins.sessions[cookie.Value]
+	ins.sessionsMu.Unlock()
+	if !ok {
+		return ""
+	}
+	return sd.csrfToken
+}
+
+// validateCSRF checks that the X-CSRF-Token header matches the session's CSRF token.
+func (ins *Inspector) validateCSRF(w http.ResponseWriter, r *http.Request) bool {
+	expected := ins.getCSRFToken(r)
+	got := r.Header.Get("X-CSRF-Token")
+	if expected == "" || subtle.ConstantTimeCompare([]byte(got), []byte(expected)) != 1 {
+		http.Error(w, "CSRF token mismatch", http.StatusForbidden)
+		return false
+	}
+	return true
 }
 
 // Record stores a completed request and fans it out to SSE subscribers.
@@ -244,6 +310,19 @@ func (ins *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
+
+	// Set CSRF cookie so JS can read it and include in POST headers.
+	csrf := ins.getCSRFToken(r)
+	if csrf != "" {
+		http.SetCookie(w, &http.Cookie{
+			Name:     "gotunnel_csrf",
+			Value:    csrf,
+			Path:     "/",
+			SameSite: http.SameSiteStrictMode,
+			Secure:   r.TLS != nil,
+		})
+	}
 
 	switch r.URL.Path {
 	case "/":
@@ -304,6 +383,19 @@ func (ins *Inspector) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == http.MethodPost {
+		// Per-IP rate limiting on login attempts.
+		peerIP, _, _ := net.SplitHostPort(r.RemoteAddr)
+		if peerIP == "" {
+			peerIP = r.RemoteAddr
+		}
+		bucketVal, _ := ins.loginLimiters.LoadOrStore(peerIP, &loginBucket{})
+		bucket := bucketVal.(*loginBucket)
+		if !bucket.allow() {
+			w.Header().Set("Retry-After", "60")
+			http.Error(w, "Too many login attempts. Try again later.", http.StatusTooManyRequests)
+			return
+		}
+
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
@@ -319,8 +411,20 @@ func (ins *Inspector) handleLogin(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			tok := hex.EncodeToString(b)
+
+			// Generate CSRF token for this session.
+			csrfBytes := make([]byte, 32)
+			if _, err := rand.Read(csrfBytes); err != nil {
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
+			csrfToken := hex.EncodeToString(csrfBytes)
+
 			ins.sessionsMu.Lock()
-			ins.sessions[tok] = time.Now().Add(24 * time.Hour)
+			ins.sessions[tok] = sessionData{
+				expiry:    time.Now().Add(24 * time.Hour),
+				csrfToken: csrfToken,
+			}
 			ins.sessionsMu.Unlock()
 			http.SetCookie(w, &http.Cookie{
 				Name:     "gotunnel_session",
@@ -329,11 +433,13 @@ func (ins *Inspector) handleLogin(w http.ResponseWriter, r *http.Request) {
 				Expires:  time.Now().Add(24 * time.Hour),
 				HttpOnly: true,
 				Secure:   r.TLS != nil,
-				SameSite: http.SameSiteLaxMode,
+				SameSite: http.SameSiteStrictMode,
 			})
 			http.Redirect(w, r, "/", http.StatusFound)
 			return
 		}
+		// Brief delay on failed login to slow brute-force.
+		time.Sleep(loginFailDelay)
 		http.Redirect(w, r, "/login?error=1", http.StatusFound)
 		return
 	}
@@ -354,7 +460,15 @@ func (ins *Inspector) handleLogout(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		Expires:  time.Unix(0, 0),
 		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: http.SameSiteStrictMode,
+	})
+	// Also clear the CSRF cookie.
+	http.SetCookie(w, &http.Cookie{
+		Name:     "gotunnel_csrf",
+		Value:    "",
+		Path:     "/",
+		Expires:  time.Unix(0, 0),
+		SameSite: http.SameSiteStrictMode,
 	})
 	http.Redirect(w, r, "/login", http.StatusFound)
 }
@@ -423,10 +537,14 @@ func (ins *Inspector) handleTunnelAIMode(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !ins.validateCSRF(w, r) {
+		return
+	}
 	if ins.srv == nil {
 		http.Error(w, "server unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxAPIBodySize)
 	var req struct {
 		Endpoint string `json:"endpoint"`
 		Enabled  bool   `json:"enabled"`
@@ -528,10 +646,14 @@ func (ins *Inspector) handleTunnelAuth(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !ins.validateCSRF(w, r) {
+		return
+	}
 	if ins.srv == nil {
 		http.Error(w, "server unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxAPIBodySize)
 	var req struct {
 		Endpoint   string `json:"endpoint"`
 		Enabled    bool   `json:"enabled"`
@@ -593,10 +715,14 @@ func (ins *Inspector) handleTunnelBasicAuth(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !ins.validateCSRF(w, r) {
+		return
+	}
 	if ins.srv == nil {
 		http.Error(w, "server unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxAPIBodySize)
 	var req struct {
 		Endpoint string `json:"endpoint"`
 		Enabled  bool   `json:"enabled"`
@@ -730,6 +856,10 @@ func (ins *Inspector) handleReplay(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !ins.validateCSRF(w, r) {
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxAPIBodySize)
 	var req struct {
 		ID int `json:"id"`
 	}

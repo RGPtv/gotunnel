@@ -445,17 +445,7 @@ func (c *Client) handleTCPWorker(id int, tunnelConn net.Conn, tunnelReader *bufi
 
 	log.Printf("[w%d] tcp session started: %s", id, c.targetAddr)
 
-	done := make(chan struct{}, 2)
-	cp := func(dst io.Writer, src io.Reader) {
-		io.Copy(dst, src)
-		done <- struct{}{}
-	}
-	go cp(targetConn, tunnelReader)
-	go cp(tunnelConn, targetConn)
-	<-done
-	tunnelConn.Close()
-	targetConn.Close()
-	<-done
+	proxyBidirectional(targetConn, tunnelReader, tunnelConn, targetConn)
 
 	log.Printf("[w%d] tcp session closed", id)
 	return nil
@@ -491,17 +481,7 @@ func (c *Client) handleWebSocket(id int, tunnelConn net.Conn, tunnelReader *bufi
 
 	log.Printf("[w%d] ws open: %s", id, req.URL.Path)
 
-	done := make(chan struct{}, 2)
-	cp := func(dst io.Writer, src io.Reader) {
-		io.Copy(dst, src)
-		done <- struct{}{}
-	}
-	go cp(targetConn, tunnelReader)
-	go cp(tunnelConn, targetReader)
-	<-done
-	targetConn.Close()
-	tunnelConn.Close()
-	<-done
+	proxyBidirectional(targetConn, targetReader, tunnelConn, tunnelReader)
 
 	log.Printf("[w%d] ws closed: %s", id, req.URL.Path)
 	return nil

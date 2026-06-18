@@ -748,17 +748,7 @@ func (s *Server) handleExternalTCPConn(conn net.Conn, remoteAddr string) {
 		return
 	}
 
-	done := make(chan struct{}, 2)
-	cp := func(dst io.Writer, src io.Reader) {
-		io.Copy(dst, src)
-		done <- struct{}{}
-	}
-	go cp(stream, conn)
-	go cp(conn, stream)
-	<-done
-	stream.Close()
-	conn.Close()
-	<-done
+	proxyBidirectional(conn, conn, stream, stream)
 }
 
 // ServeHTTP handles incoming HTTP requests from end users.
@@ -1086,17 +1076,7 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request) {
 	// Pipe both directions concurrently until either side closes.
 	// FIX: write to browserConn directly (not brw.Writer) so WebSocket frames
 	// are not stuck in a bufio buffer waiting for a flush that never comes.
-	done := make(chan struct{}, 2)
-	cp := func(dst io.Writer, src io.Reader) {
-		io.Copy(dst, src)
-		done <- struct{}{}
-	}
-	go cp(stream, brw.Reader)
-	go cp(browserConn, stream)
-	<-done
-	browserConn.Close()
-	stream.Close()
-	<-done
+	proxyBidirectional(browserConn, brw.Reader, stream, stream)
 
 	s.srvLog(LevelInfo, "ws tunnel closed: %s", r.URL.Path)
 }

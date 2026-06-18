@@ -49,7 +49,6 @@ type TunnelConfig struct {
 	Type      string `yaml:"type"`
 	Subdomain string `yaml:"subdomain"`
 	Remote    string `yaml:"remote"`
-	Workers   int    `yaml:"workers"`
 }
 
 // LoadConfig searches for config.yml then config.yaml in the current working

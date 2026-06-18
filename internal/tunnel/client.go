@@ -45,6 +45,11 @@ type Client struct {
 	uiStatusMu sync.RWMutex
 	uiStatus   string
 	uiWorkers  atomic.Int32
+
+	wg             *sync.WaitGroup
+	maxWorkers     int
+	spawnedWorkers atomic.Int32
+	activeRequests atomic.Int32
 }
 
 type uiRequest struct {
@@ -152,7 +157,6 @@ func RunClient(cfg *ClientConfig) {
 	// unconditionally) can reference them when the TUI polls for state.
 	var wg sync.WaitGroup
 	clients := make([]*Client, 0, len(cfg.Tunnels))
-	workerCounts := make([]int, 0, len(cfg.Tunnels))
 
 	for idx, t := range cfg.Tunnels {
 		t := t // capture loop variable
@@ -160,10 +164,6 @@ func RunClient(cfg *ClientConfig) {
 		tunnelType := strings.ToLower(t.Type)
 		if tunnelType == "" {
 			tunnelType = "http"
-		}
-		workers := t.Workers
-		if workers <= 0 {
-			workers = 10
 		}
 
 		remoteVal := t.Remote
@@ -203,6 +203,7 @@ func RunClient(cfg *ClientConfig) {
 			uiStatus:  "connecting...",
 			ctx:       ctx,
 			cancel:    cancel,
+			wg:        &wg,
 		}
 
 		if singleTunnel {
@@ -215,14 +216,13 @@ func RunClient(cfg *ClientConfig) {
 				fmt.Fprintf(os.Stderr, "  %-14s %s\n", "Subdomain", t.Subdomain)
 			}
 			fmt.Fprintf(os.Stderr, "  %-14s %s\n", "Forwarding", t.Target)
-			fmt.Fprintf(os.Stderr, "  %-14s %d\n", "Workers", workers)
 			if cfg.SkipTLSVerify {
 				fmt.Fprintf(os.Stderr, "  %-14s disabled (skipTLSVerify: true)\n", "TLS Verify")
 			}
 			fmt.Fprintln(os.Stderr)
 		} else {
 			// Multi-tunnel mode: compact per-tunnel summary line.
-			fmt.Fprintf(os.Stderr, "  [%s] %s → %s  (%d workers)\n", name, tunnelType, t.Target, workers)
+			fmt.Fprintf(os.Stderr, "  [%s] %s → %s\n", name, tunnelType, t.Target)
 			if tunnelType == "tcp" {
 				fmt.Fprintf(os.Stderr, "         remote: %s\n", t.Remote)
 			}
@@ -232,7 +232,6 @@ func RunClient(cfg *ClientConfig) {
 		}
 
 		clients = append(clients, c)
-		workerCounts = append(workerCounts, workers)
 	}
 
 	// ── IPC server — always start, regardless of tunnel count ────────────────
@@ -244,19 +243,26 @@ func RunClient(cfg *ClientConfig) {
 	}
 
 	// ── Launch workers ────────────────────────────────────────────────────────
-	for i, c := range clients {
+	for _, c := range clients {
 		c := c
-		workers := workerCounts[i]
-		for j := 0; j < workers; j++ {
-			wg.Add(1)
-			go func(id int) {
-				defer wg.Done()
-				c.runWorker(id)
-			}(j + 1)
-		}
+		c.maxWorkers = 10 // Dynamic scaling allows up to 10 background workers per tunnel
+		c.maybeSpawnWorker()
 	}
 
 	wg.Wait()
+}
+
+func (c *Client) maybeSpawnWorker() {
+	count := c.spawnedWorkers.Add(1)
+	if int(count) > c.maxWorkers {
+		c.spawnedWorkers.Add(-1)
+		return
+	}
+	c.wg.Add(1)
+	go func(id int) {
+		defer c.wg.Done()
+		c.runWorker(id)
+	}(int(count))
 }
 
 // runWorker dials the tunnel server and processes requests until an
@@ -287,6 +293,12 @@ func (c *Client) runWorker(id int) {
 		} else if served {
 			// Completed a full HTTP serving cycle cleanly — reset backoff.
 			backoff = time.Second
+			// Scale down logic: if we are idle and there are excess connections, we can exit.
+			if int(c.uiWorkers.Load())-int(c.activeRequests.Load()) > 1 && int(c.spawnedWorkers.Load()) > 1 {
+				c.spawnedWorkers.Add(-1)
+				c.setStatus("scaled down")
+				return
+			}
 		} else {
 			// Hijacked (TCP/WS) or clean disconnect — brief pause before redial
 			// to avoid hammering the server when the remote target disconnects.
@@ -439,8 +451,17 @@ func (c *Client) connectAndServe(id int) (error, bool) {
 			return nil, false // hijacked
 		}
 
+		c.activeRequests.Add(1)
+		// Lazy scale up: if there are no idle workers to accept the next request, spawn one.
+		if int(c.uiWorkers.Load())-int(c.activeRequests.Load()) < 1 {
+			c.maybeSpawnWorker()
+		}
+
 		start := time.Now()
 		resp, proxyErr := c.forwardToTarget(req)
+		
+		c.activeRequests.Add(-1)
+		
 		if proxyErr != nil {
 			// Drain the request body fully before sending the error response.
 			// forwardToTarget may have failed before consuming the body; if we

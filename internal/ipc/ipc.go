@@ -41,31 +41,39 @@ type LogEntry struct {
 
 // ClientState represents the live state of the tunnel client.
 type ClientState struct {
-	Status     string              `json:"status"`
-	ServerAddr string              `json:"serverAddr"`
-	RemoteAddr string              `json:"remoteAddr"`
-	TargetAddr string              `json:"targetAddr"`
-	TunnelType string              `json:"tunnelType"`
-	Workers    int                 `json:"workers"`
-	Tunnels    []ClientTunnelState `json:"tunnels,omitempty"`
-	Requests   []UIRequest         `json:"requests"`
-}
-
-type ClientTunnelState struct {
-	Name              string `json:"name"`
-	Status            string `json:"status"`
-	RemoteAddr        string `json:"remoteAddr"`
-	TargetAddr        string `json:"targetAddr"`
-	TunnelType        string `json:"tunnelType"`
-	Workers           int    `json:"workers"`
-	ConfiguredWorkers int    `json:"configuredWorkers"`
+	Status     string      `json:"status"`
+	ServerAddr string      `json:"serverAddr"`
+	RemoteAddr string      `json:"remoteAddr"`
+	TargetAddr string      `json:"targetAddr"`
+	TunnelType string      `json:"tunnelType"`
+	Workers    int         `json:"workers"`
+	Requests   []UIRequest `json:"requests"`
 }
 
 type UIRequest struct {
+	Tunnel string `json:"tunnel"`
 	Method string `json:"method"`
 	Path   string `json:"path"`
 	Status int    `json:"status"`
 	Dur    int64  `json:"dur"` // in milliseconds
+}
+
+// TunnelState holds live state for a single tunnel in a multi-tunnel client.
+type TunnelState struct {
+	Name       string `json:"name"`
+	Status     string `json:"status"`
+	ServerAddr string `json:"serverAddr"`
+	RemoteAddr string `json:"remoteAddr"`
+	TargetAddr string `json:"targetAddr"`
+	TunnelType string `json:"tunnelType"`
+	Workers    int    `json:"workers"`
+}
+
+// MultiClientState holds the aggregate live state of all tunnels plus the
+// combined HTTP request log.  This is what the client daemon exposes on /state.
+type MultiClientState struct {
+	Tunnels  []TunnelState `json:"tunnels"`
+	Requests []UIRequest   `json:"requests"`
 }
 
 // IPC Client to fetch state or send shutdown
@@ -115,6 +123,17 @@ func (c *Client) GetServerState() (ServerState, error) {
 
 func (c *Client) GetClientState() (ClientState, error) {
 	var s ClientState
+	resp, err := c.client.Get(c.url + "/state")
+	if err != nil {
+		return s, err
+	}
+	defer resp.Body.Close()
+	err = json.NewDecoder(resp.Body).Decode(&s)
+	return s, err
+}
+
+func (c *Client) GetMultiClientState() (MultiClientState, error) {
+	var s MultiClientState
 	resp, err := c.client.Get(c.url + "/state")
 	if err != nil {
 		return s, err

@@ -150,6 +150,7 @@ func drawServerFrame(ipcClient *ipc.Client) {
 	epW := 22
 	typeW := 6
 	conW := 5
+	streamW := 7
 	ipW := 21
 	maxUrlW := 36
 
@@ -158,17 +159,17 @@ func drawServerFrame(ipcClient *ipc.Client) {
 		innerW = 0
 	}
 
-	urlW := innerW - (epW + typeW + conW + ipW + 8) // 8 is min gaps (4 * 2)
+	urlW := innerW - (epW + typeW + conW + streamW + ipW + 10) // 10 is min gaps (5 * 2)
 	if urlW > maxUrlW {
 		urlW = maxUrlW
 	} else if urlW < 8 {
 		urlW = 8
 	}
 
-	totalCols := epW + typeW + conW + ipW + urlW
+	totalCols := epW + typeW + conW + streamW + ipW + urlW
 	availableExtra := innerW - totalCols
 
-	gapSize := availableExtra / 6
+	gapSize := availableExtra / 7
 	if gapSize < 2 {
 		gapSize = 2
 	}
@@ -176,7 +177,7 @@ func drawServerFrame(ipcClient *ipc.Client) {
 		gapSize = 6
 	}
 
-	usedByGaps := gapSize * 4
+	usedByGaps := gapSize * 5
 	leftPad := 0
 	if availableExtra > usedByGaps {
 		leftPad = (availableExtra - usedByGaps) / 2
@@ -189,6 +190,7 @@ func drawServerFrame(ipcClient *ipc.Client) {
 		pad("ENDPOINT", epW) + sep +
 		pad("TYPE", typeW) + sep +
 		rpad("CONNS", conW) + sep +
+		rpad("STREAMS", streamW) + sep +
 		pad("CLIENT IP", ipW) + sep +
 		pad("PROXY URL", urlW) + reset
 	panelRow(&b, th, w) // 1 line (counted in fixedInside)
@@ -210,6 +212,7 @@ func drawServerFrame(ipcClient *ipc.Client) {
 		line := margin + bold + pad(tun.Endpoint, epW) + reset + sep +
 			typeColor + pad(badge, typeW) + reset + sep +
 			lgreen + rpad(fmt.Sprintf("%d", tun.Connections), conW) + reset + sep +
+			lgreen + rpad(fmt.Sprintf("%d", tun.Streams), streamW) + reset + sep +
 			dim + pad(orDash(tun.ClientIP), ipW) + reset + sep +
 			lblue + pad(orDash(tun.ProxyURL), urlW) + reset
 		panelRow(&b, line, w)

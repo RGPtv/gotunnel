@@ -46,6 +46,7 @@ type Client struct {
 	uiStatusMu sync.RWMutex
 	uiStatus   string
 	uiWorkers  atomic.Int32
+	uiStreams  atomic.Int32
 
 	
 }
@@ -381,6 +382,8 @@ func (c *Client) connectAndServe() error {
 }
 
 func (c *Client) handleStream(stream net.Conn) {
+	c.uiStreams.Add(1)
+	defer c.uiStreams.Add(-1)
 	defer stream.Close()
 
 	if c.tunnelType == "tcp" {
@@ -562,6 +565,7 @@ func startMultiIPC(clients []*Client) {
 				TargetAddr: c.targetAddr,
 				TunnelType: c.tunnelType,
 				Workers:    int(c.uiWorkers.Load()),
+				Streams:    int(c.uiStreams.Load()),
 			}
 		}
 

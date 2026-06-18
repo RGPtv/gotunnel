@@ -118,14 +118,15 @@ func drawClientFrame(ipcClient *ipc.Client) {
 	// ── 3. Tunnels table ──────────────────────────────────────────────────────
 	//
 	// Column layout (all widths in visible runes, inside the panel: w-8):
-	//   NAME  TYPE  STATUS  REMOTE  TARGET  WORKERS
+	//   NAME  TYPE  STATUS  REMOTE  TARGET  WORKERS  STREAMS
 	innerW := w - 8
 	nameW    := 14
-	typeW    := 6
+	typeW    := 8
 	tstatsW  := 18 // "● RECONNECTING" fits in 16, pad to 18
-	remoteW  := 14
-	workersW := 9
-	targetW  := innerW - nameW - typeW - tstatsW - remoteW - workersW
+	remoteW  := 25
+	workersW := 8
+	streamsW := 8
+	targetW  := innerW - nameW - typeW - tstatsW - remoteW - workersW - streamsW
 	if targetW < 8 {
 		targetW = 8
 	}
@@ -171,13 +172,15 @@ func drawClientFrame(ipcClient *ipc.Client) {
 		}
 
 		wStr := fmt.Sprintf("%d", t.Workers)
+		sStr := fmt.Sprintf("%d", t.Streams)
 
 		row := bold + pad(t.Name, nameW) + reset +
 			tColor + pad(tType, typeW) + reset +
 			sColor + pad(statusStr, tstatsW) + reset +
 			dim + pad(remote, remoteW) + reset +
 			lteal + pad(t.TargetAddr, targetW) + reset +
-			dim + rpad(wStr, workersW) + reset
+			dim + rpad(wStr, workersW) + reset +
+			dim + rpad(sStr, streamsW) + reset
 		panelRow(&b, row, w) // 1 line per tunnel
 	}
 

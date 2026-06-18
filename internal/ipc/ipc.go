@@ -29,6 +29,7 @@ type TunnelInfo struct {
 	Endpoint    string `json:"endpoint"`
 	Type        string `json:"type"`
 	Connections int    `json:"connections"`
+	Streams     int    `json:"streams"`
 	ClientIP    string `json:"clientIP"`
 	ProxyURL    string `json:"proxyURL"`
 }
@@ -67,6 +68,7 @@ type TunnelState struct {
 	TargetAddr string `json:"targetAddr"`
 	TunnelType string `json:"tunnelType"`
 	Workers    int    `json:"workers"`
+	Streams    int    `json:"streams"`
 }
 
 // MultiClientState holds the aggregate live state of all tunnels plus the

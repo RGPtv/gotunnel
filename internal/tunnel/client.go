@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/RGPtv/gotunnel/internal/ipc"
+	"github.com/hashicorp/yamux"
 )
 
 // Client connects to the tunnel server and forwards HTTP requests to the
@@ -46,10 +47,7 @@ type Client struct {
 	uiStatus   string
 	uiWorkers  atomic.Int32
 
-	wg             *sync.WaitGroup
-	maxWorkers     int
-	spawnedWorkers atomic.Int32
-	activeRequests atomic.Int32
+	
 }
 
 type uiRequest struct {
@@ -203,8 +201,7 @@ func RunClient(cfg *ClientConfig) {
 			uiStatus:  "connecting...",
 			ctx:       ctx,
 			cancel:    cancel,
-			wg:        &wg,
-		}
+					}
 
 		if singleTunnel {
 			// Single-tunnel mode: full banner.
@@ -245,39 +242,24 @@ func RunClient(cfg *ClientConfig) {
 	// ── Launch workers ────────────────────────────────────────────────────────
 	for _, c := range clients {
 		c := c
-		c.maxWorkers = 10 // Dynamic scaling allows up to 10 background workers per tunnel
-		c.maybeSpawnWorker()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			c.run()
+		}()
 	}
 
 	wg.Wait()
 }
 
-func (c *Client) maybeSpawnWorker() {
-	count := c.spawnedWorkers.Add(1)
-	if int(count) > c.maxWorkers {
-		c.spawnedWorkers.Add(-1)
-		return
-	}
-	c.wg.Add(1)
-	go func(id int) {
-		defer c.wg.Done()
-		c.runWorker(id)
-	}(int(count))
-}
-
-// runWorker dials the tunnel server and processes requests until an
-// unrecoverable error occurs, then reconnects after a brief pause.
-// connectAndServe returns (nil, true) for a normal data-path exit and
-// (nil, false) for a hijacked session — hijacked workers must still
-// back off so they don't hammer the server with rapid redials.
-func (c *Client) runWorker(id int) {
+func (c *Client) run() {
 	backoff := time.Second
 	for {
 		if c.ctx.Err() != nil {
 			return
 		}
 		c.setStatus("reconnecting")
-		err, served := c.connectAndServe(id)
+		err := c.connectAndServe()
 		if err != nil {
 			c.setStatus(fmt.Sprintf("connecting... (retrying in %v)", backoff))
 			select {
@@ -290,34 +272,13 @@ func (c *Client) runWorker(id int) {
 			if backoff > 10*time.Second {
 				backoff = 10 * time.Second
 			}
-		} else if served {
-			// Completed a full HTTP serving cycle cleanly — reset backoff.
-			backoff = time.Second
-			// Scale down logic: if we are idle and there are excess connections, we can exit.
-			if int(c.uiWorkers.Load())-int(c.activeRequests.Load()) > 1 && int(c.spawnedWorkers.Load()) > 1 {
-				c.spawnedWorkers.Add(-1)
-				c.setStatus("scaled down")
-				return
-			}
 		} else {
-			// Hijacked (TCP/WS) or clean disconnect — brief pause before redial
-			// to avoid hammering the server when the remote target disconnects.
-			select {
-			case <-time.After(time.Second):
-			case <-c.ctx.Done():
-				return
-			}
 			backoff = time.Second
 		}
 	}
 }
 
-// connectAndServe dials the server, authenticates, and processes requests.
-// Returns (err, served):
-//   - err != nil  → connection or protocol failure; caller should back off
-//   - err == nil, served == true  → served at least one HTTP request cleanly
-//   - err == nil, served == false → hijacked (TCP/WS) or clean disconnect
-func (c *Client) connectAndServe(id int) (error, bool) {
+func (c *Client) connectAndServe() error {
 	var conn net.Conn
 	var err error
 	dialer := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
@@ -328,24 +289,13 @@ func (c *Client) connectAndServe(id int) (error, bool) {
 		conn, err = tlsDialer.DialContext(c.ctx, "tcp", c.serverAddr)
 	}
 	if err != nil {
-		return err, false
+		return err
 	}
-	hijacked := false
-	watchDone := make(chan struct{})
-	defer func() {
-		if watchDone != nil {
-			close(watchDone)
-		}
-		if !hijacked {
-			conn.Close()
-		}
-	}()
+	defer conn.Close()
+	
 	go func() {
-		select {
-		case <-c.ctx.Done():
-			conn.Close()
-		case <-watchDone:
-		}
+		<-c.ctx.Done()
+		conn.Close()
 	}()
 
 	reader := bufio.NewReaderSize(conn, 64*1024)
@@ -357,7 +307,7 @@ func (c *Client) connectAndServe(id int) (error, bool) {
 
 	wsRaw := make([]byte, 16)
 	if _, err := rand.Read(wsRaw); err != nil {
-		return fmt.Errorf("ws key: %w", err), false
+		return fmt.Errorf("ws key: %w", err)
 	}
 	wsKey := base64.StdEncoding.EncodeToString(wsRaw)
 	fmt.Fprintf(conn,
@@ -372,20 +322,20 @@ func (c *Client) connectAndServe(id int) (error, bool) {
 	)
 	upgradeResp, err := http.ReadResponse(reader, nil)
 	if err != nil {
-		return err, false
+		return err
 	}
 	upgradeResp.Body.Close()
 	if upgradeResp.StatusCode != http.StatusSwitchingProtocols {
-		return fmt.Errorf("upgrade rejected: %v", upgradeResp.Status), false
+		return fmt.Errorf("upgrade rejected: %v", upgradeResp.Status)
 	}
 
 	chalLine, err := reader.ReadString('\n')
 	if err != nil {
-		return fmt.Errorf("read challenge: %w", err), false
+		return fmt.Errorf("read challenge: %w", err)
 	}
 	chalLine = strings.TrimSpace(chalLine)
 	if !strings.HasPrefix(chalLine, "CHALLENGE ") {
-		return fmt.Errorf("expected CHALLENGE, got %q", chalLine), false
+		return fmt.Errorf("expected CHALLENGE, got %q", chalLine)
 	}
 	nonceHex := strings.TrimPrefix(chalLine, "CHALLENGE ")
 
@@ -401,11 +351,11 @@ func (c *Client) connectAndServe(id int) (error, bool) {
 
 	line, err := reader.ReadString('\n')
 	if err != nil {
-		return err, false
+		return err
 	}
 	line = strings.TrimSpace(line)
 	if line != "OK" {
-		return fmt.Errorf("auth rejected: %s", line), false
+		return fmt.Errorf("auth rejected: %s", line)
 	}
 
 	// Auth succeeded — clear the deadline so the data path is unbounded.
@@ -415,82 +365,55 @@ func (c *Client) connectAndServe(id int) (error, bool) {
 	c.uiWorkers.Add(1)
 	defer c.uiWorkers.Add(-1)
 
-	if c.tunnelType == "tcp" {
-		hijacked = true
-		// Transfer ownership of watchDone to the goroutine so the context
-		// watcher stays active for the full duration of the TCP session.
-		wd := watchDone
-		watchDone = nil // prevent the deferred close from firing
-		go func() {
-			defer close(wd)
-			c.handleTCPWorker(id, conn, reader)
-			conn.Close()
-		}()
-		return nil, false // hijacked
+	session, err := yamux.Server(conn, yamux.DefaultConfig())
+	if err != nil {
+		return err
 	}
+	defer session.Close()
 
-	served := false
 	for {
-		req, err := http.ReadRequest(reader)
+		stream, err := session.AcceptStream()
 		if err != nil {
-			if served {
-				return nil, true // clean disconnect after serving at least one request
-			}
-			return err, false
+			return err
 		}
-
-		if strings.ToLower(req.Header.Get("Upgrade")) == "websocket" {
-			hijacked = true
-			wd := watchDone
-			watchDone = nil // prevent deferred close; keep ctx watcher alive for WS session
-			go func() {
-				defer close(wd)
-				c.handleWebSocket(id, conn, reader, req)
-				conn.Close()
-			}()
-			return nil, false // hijacked
-		}
-
-		c.activeRequests.Add(1)
-		// Lazy scale up: if there are no idle workers to accept the next request, spawn more aggressively.
-		if int(c.uiWorkers.Load())-int(c.activeRequests.Load()) < 1 {
-			c.maybeSpawnWorker()
-			c.maybeSpawnWorker()
-		}
-
-		start := time.Now()
-		resp, proxyErr := c.forwardToTarget(req)
-		
-		c.activeRequests.Add(-1)
-		
-		if proxyErr != nil {
-			// Drain the request body fully before sending the error response.
-			// forwardToTarget may have failed before consuming the body; if we
-			// continue without draining, unconsumed body bytes remain at the
-			// head of `reader` and corrupt the next http.ReadRequest parse.
-			if req.Body != nil {
-				if _, drainErr := io.Copy(io.Discard, req.Body); drainErr != nil {
-					req.Body.Close()
-					// Drain failed — tunnel conn is unrecoverable; reconnect.
-					return drainErr, served
-				}
-				req.Body.Close()
-			}
-			if werr := writeErrorResponse(conn, 502, proxyErr.Error()); werr != nil {
-				return werr, served // tunnel conn is broken; let worker reconnect
-			}
-			continue
-		}
-
-		if err := resp.Write(conn); err != nil {
-			resp.Body.Close()
-			return err, served
-		}
-		resp.Body.Close()
-
-		served = true
-		addUIReq(c.name, req.Method, req.URL.RequestURI(), resp.StatusCode, time.Since(start))
+		go c.handleStream(stream)
 	}
+}
+
+func (c *Client) handleStream(stream net.Conn) {
+	defer stream.Close()
+
+	if c.tunnelType == "tcp" {
+		c.handleTCPWorker(0, stream, bufio.NewReader(stream))
+		return
+	}
+
+	reader := bufio.NewReader(stream)
+	req, err := http.ReadRequest(reader)
+	if err != nil {
+		return
+	}
+
+	if strings.ToLower(req.Header.Get("Upgrade")) == "websocket" {
+		c.handleWebSocket(0, stream, reader, req)
+		return
+	}
+
+	start := time.Now()
+	resp, proxyErr := c.forwardToTarget(req)
+	
+	if proxyErr != nil {
+		writeErrorResponse(stream, 502, proxyErr.Error())
+		return
+	}
+
+	if err := resp.Write(stream); err != nil {
+		resp.Body.Close()
+		return
+	}
+	resp.Body.Close()
+
+	addUIReq(c.name, req.Method, req.URL.RequestURI(), resp.StatusCode, time.Since(start))
 }
 
 // targetHost returns the host:port of the target address, stripping any scheme.

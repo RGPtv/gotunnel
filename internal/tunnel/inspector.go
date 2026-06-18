@@ -485,12 +485,11 @@ func (ins *Inspector) buildTunnelList() []TunnelEntry {
 	defer ins.srv.tunnelMetaMu.RUnlock()
 	defer ins.srv.mu.RUnlock()
 
-	if dc := len(ins.srv.pool); dc > 0 {
-		meta := ins.srv.tunnelMeta["(default)"]
+	for ep, meta := range ins.srv.tunnelMeta {
 		tunnels = append(tunnels, TunnelEntry{
-			Type:             "http",
-			Endpoint:         "(default)",
-			Connections:      dc,
+			Type:             meta.Type,
+			Endpoint:         ep,
+			Connections:      1,
 			HasAPIKey:        meta.APIKey != "",
 			APIKeyEnabled:    meta.APIKeyEnabled,
 			BasicAuthEnabled: meta.BasicAuthEnabled,
@@ -499,34 +498,9 @@ func (ins *Inspector) buildTunnelList() []TunnelEntry {
 			ClientIP:         meta.ClientIP,
 		})
 	}
-	for sub, pool := range ins.srv.httpPools {
-		meta := ins.srv.tunnelMeta[sub]
-		tunnels = append(tunnels, TunnelEntry{
-			Type:             "http",
-			Endpoint:         sub,
-			Connections:      len(pool),
-			HasAPIKey:        meta.APIKey != "",
-			APIKeyEnabled:    meta.APIKeyEnabled,
-			BasicAuthEnabled: meta.BasicAuthEnabled,
-			AIModeEnabled:    meta.AIMode,
-			ProxyURL:         meta.ProxyURL,
-			ClientIP:         meta.ClientIP,
-		})
-	}
-	for port, pool := range ins.srv.tcpPools {
-		meta := ins.srv.tunnelMeta[port]
-		tunnels = append(tunnels, TunnelEntry{
-			Type:             "tcp",
-			Endpoint:         port,
-			Connections:      len(pool),
-			HasAPIKey:        meta.APIKey != "",
-			APIKeyEnabled:    meta.APIKeyEnabled,
-			BasicAuthEnabled: meta.BasicAuthEnabled,
-			AIModeEnabled:    meta.AIMode,
-			ProxyURL:         meta.ProxyURL,
-			ClientIP:         meta.ClientIP,
-		})
-	}
+	
+	
+	
 	return tunnels
 }
 

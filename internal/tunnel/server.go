@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/RGPtv/gotunnel/internal/ipc"
+	"github.com/hashicorp/yamux"
 )
 
 // ── Per-IP rate limiter for tunnel authentication ─────────────────────────────
@@ -74,18 +75,6 @@ func (b *authBucket) expired() bool {
 	return time.Since(b.lastSeen) > authLimiterExpiry
 }
 
-// poolConn pairs a raw net.Conn with its persistent buffered reader so we
-// never lose bytes that were pre-read during authentication.
-// pool holds the channel this connection belongs to so enqueue can return it
-// to the correct pool (default, subdomain, or TCP).
-type poolConn struct {
-	conn     net.Conn
-	r        *bufio.Reader
-	pool     chan *poolConn // owning pool — never nil after construction
-	endpoint string         // the tunnel endpoint this connection belongs to
-	closed   int32          // atomic flag for idempotent close
-}
-
 // TunnelMeta stores per-tunnel metadata surfaced in the dashboard.
 type TunnelMeta struct {
 	APIKey           string
@@ -98,7 +87,7 @@ type TunnelMeta struct {
 	ProxyURL         string
 	ConnectedAt      time.Time
 	ClientIP         string
-	ActiveConns      int32 // total number of active connections (idle + busy)
+	Session          *yamux.Session
 }
 
 // SetTunnelAIMode enables or disables AI/Ollama optimisations for a tunnel.
@@ -165,10 +154,7 @@ type Server struct {
 	domain          string
 	httpAddr        string
 	httpsAddr       string
-	poolSize        int
-	pool            chan *poolConn
-	httpPools       map[string]chan *poolConn
-	tcpPools        map[string]chan *poolConn
+	
 	tcpListeners    map[string]net.Listener
 	mu              sync.RWMutex
 	count           atomic.Int64 // active tunnel connections
@@ -186,7 +172,7 @@ type Server struct {
 	// has been continuously empty for poolEmptyGrace — transient emptiness
 	// (workers mid-reconnect or all busy serving requests) does not trigger deletion.
 	// Protected by s.mu (always held by the janitor when it reads/writes this map).
-	poolEmptySince map[string]time.Time
+	
 }
 
 // hopByHopHeaders are headers that must not be forwarded through a proxy.
@@ -236,9 +222,7 @@ func RunServer(cfg *ServerConfig) {
 	inspectPass := cfg.InspectPass
 	inspect := cfg.Inspect
 	if inspect == "" { inspect = ":4040" }
-	poolSize := cfg.PoolSize
-	if poolSize <= 0 { poolSize = 512 }
-
+	
 	if token == "auto" {
 		b := make([]byte, 32)
 		if _, err := rand.Read(b); err != nil {
@@ -283,13 +267,10 @@ func RunServer(cfg *ServerConfig) {
 		domain:          cfg.Domain,
 		httpAddr:        httpAddr,
 		httpsAddr:       cfg.HTTPSAddr,
-		poolSize:        poolSize,
-		pool:            make(chan *poolConn, poolSize),
-		httpPools:       make(map[string]chan *poolConn),
-		tcpPools:        make(map[string]chan *poolConn),
+		
 		tcpListeners:    make(map[string]net.Listener),
 		tunnelMeta:      make(map[string]TunnelMeta),
-		poolEmptySince:  make(map[string]time.Time),
+		
 		startTime:       time.Now(),
 		allowedTCPPorts: cfg.AllowedTCPPorts,
 	}
@@ -302,19 +283,9 @@ func RunServer(cfg *ServerConfig) {
 		srv.mu.RLock()
 		srv.tunnelMetaMu.RLock()
 		var tunnels []ipc.TunnelInfo
-		for ep, tm := range srv.tunnelMeta {
-			conns := 0
-			if tm.Type == "tcp" {
-				if p, ok := srv.tcpPools[ep]; ok {
-					conns = len(p)
-				}
-			} else {
-				if ep == "(default)" {
-					conns = len(srv.pool)
-				} else if p, ok := srv.httpPools[ep]; ok {
-					conns = len(p)
-				}
-			}
+		for _, tm := range srv.tunnelMeta {
+			conns := 1
+			if tm.Session != nil { conns = 1 } else { conns = 0 }
 			tunnels = append(tunnels, ipc.TunnelInfo{
 				Endpoint:    tm.Endpoint,
 				Type:        tm.Type,
@@ -465,7 +436,7 @@ func RunServer(cfg *ServerConfig) {
 			delete(srv.tcpListeners, addr)
 		}
 		srv.mu.Unlock()
-		srv.drainPool()
+		srv.closeAllSessions()
 	}()
 
 	if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -622,43 +593,37 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 			return
 		}
 
-		// Probe the map without holding the lock across a blocking syscall.
 		s.mu.Lock()
-		pool, exists := s.tcpPools[remoteAddr]
-		s.mu.Unlock()
-
+		_, exists := s.tcpListeners[remoteAddr]
 		if !exists {
 			ln, err := net.Listen("tcp", remoteAddr)
 			if err != nil {
+				s.mu.Unlock()
 				fmt.Fprintf(conn, "ERROR %v\n", err)
 				conn.Close()
 				return
 			}
-			// Re-lock and double-check; another goroutine may have won the race.
-			s.mu.Lock()
-			if pool, exists = s.tcpPools[remoteAddr]; !exists {
-				pool = make(chan *poolConn, s.poolSize)
-				s.tcpPools[remoteAddr] = pool
-				s.tcpListeners[remoteAddr] = ln
-				go s.acceptTCPConns(ln, remoteAddr)
-				s.srvLog(LevelSuccess, "TCP listener opened on %s", remoteAddr)
-			} else {
-				ln.Close() // lost race — discard the listener we just bound
-				// pool is now correctly set to the winner's pool from the map
-			}
-			// A connecting worker resets any pending grace-period eviction timer.
-			delete(s.poolEmptySince, remoteAddr)
-			s.mu.Unlock()
+			s.tcpListeners[remoteAddr] = ln
+			go s.acceptTCPConns(ln, remoteAddr)
+			s.srvLog(LevelSuccess, "TCP listener opened on %s", remoteAddr)
 		}
+		s.mu.Unlock()
 
 		fmt.Fprintf(conn, "OK\n")
+		
+		session, err := yamux.Client(&bufferedConn{Conn: conn, r: r}, yamux.DefaultConfig())
+		if err != nil {
+			s.srvLog(LevelError, "yamux client err: %v", err)
+			conn.Close()
+			return
+		}
+		
 		n := s.count.Add(1)
 		s.srvLog(LevelSuccess, "tunnel connected %s → tcp:%s (active: %d)", conn.RemoteAddr(), remoteAddr, n)
 
 		s.tunnelMetaMu.Lock()
 		prev := s.tunnelMeta[remoteAddr]
 		s.tunnelMeta[remoteAddr] = TunnelMeta{
-			// Preserve dashboard-managed auth config across reconnects.
 			APIKey:           prev.APIKey,
 			APIKeyEnabled:    prev.APIKeyEnabled,
 			BasicAuth:        prev.BasicAuth,
@@ -669,34 +634,22 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 			ProxyURL:         "tcp://" + remoteAddr,
 			ConnectedAt:      time.Now(),
 			ClientIP:         conn.RemoteAddr().String(),
-			ActiveConns:      prev.ActiveConns + 1,
+			Session:          session,
 		}
 		s.tunnelMetaMu.Unlock()
-
-		pc := &poolConn{conn: conn, r: r, pool: pool, endpoint: remoteAddr}
-		select {
-		case pool <- pc:
-		default:
-			conn.Close()
-			s.count.Add(-1)
-			s.srvLog(LevelWarn, "pool full, rejected %s", conn.RemoteAddr())
-		}
 		return
 	}
 
 	if tunnelType == "http" && remoteAddr != "" {
-		s.mu.Lock()
-		pool, exists := s.httpPools[remoteAddr]
-		if !exists {
-			pool = make(chan *poolConn, s.poolSize)
-			s.httpPools[remoteAddr] = pool
-			s.srvLog(LevelSuccess, "HTTP subdomain tunnel: %s", remoteAddr)
-		}
-		// A connecting worker resets any pending grace-period eviction timer.
-		delete(s.poolEmptySince, remoteAddr)
-		s.mu.Unlock()
-
 		fmt.Fprintf(conn, "OK\n")
+		
+		session, err := yamux.Client(&bufferedConn{Conn: conn, r: r}, yamux.DefaultConfig())
+		if err != nil {
+			s.srvLog(LevelError, "yamux client err: %v", err)
+			conn.Close()
+			return
+		}
+
 		n := s.count.Add(1)
 		s.srvLog(LevelSuccess, "tunnel connected %s → http:%s (active: %d)", conn.RemoteAddr(), remoteAddr, n)
 
@@ -713,23 +666,22 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 			ProxyURL:         s.buildProxyURL("http", remoteAddr),
 			ConnectedAt:      time.Now(),
 			ClientIP:         conn.RemoteAddr().String(),
-			ActiveConns:      prev.ActiveConns + 1,
+			Session:          session,
 		}
 		s.tunnelMetaMu.Unlock()
-
-		pc := &poolConn{conn: conn, r: r, pool: pool, endpoint: remoteAddr}
-		select {
-		case pool <- pc:
-		default:
-			conn.Close()
-			s.count.Add(-1)
-			s.srvLog(LevelWarn, "pool full, rejected %s", conn.RemoteAddr())
-		}
 		return
 	}
 
 	// Default HTTP pool.
 	fmt.Fprintf(conn, "OK\n")
+	
+	session, err := yamux.Client(&bufferedConn{Conn: conn, r: r}, yamux.DefaultConfig())
+	if err != nil {
+		s.srvLog(LevelError, "yamux client err: %v", err)
+		conn.Close()
+		return
+	}
+
 	n := s.count.Add(1)
 	s.srvLog(LevelSuccess, "tunnel connected %s → http:(default) (active: %d)", conn.RemoteAddr(), n)
 
@@ -746,18 +698,9 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 		ProxyURL:         s.buildProxyURL("http", "(default)"),
 		ConnectedAt:      time.Now(),
 		ClientIP:         conn.RemoteAddr().String(),
-		ActiveConns:      prev.ActiveConns + 1,
+		Session:          session,
 	}
 	s.tunnelMetaMu.Unlock()
-
-	pc := &poolConn{conn: conn, r: r, pool: s.pool, endpoint: "(default)"}
-	select {
-	case s.pool <- pc:
-	default:
-		conn.Close()
-		s.count.Add(-1)
-		s.srvLog(LevelWarn, "pool full, rejected %s", conn.RemoteAddr())
-	}
 }
 
 // acceptTCPConns loops, accepting connections from external TCP clients.
@@ -784,21 +727,21 @@ func (s *Server) acceptTCPConns(l net.Listener, remoteAddr string) {
 func (s *Server) handleExternalTCPConn(conn net.Conn, remoteAddr string) {
 	defer conn.Close()
 
-	s.mu.Lock()
-	pool := s.tcpPools[remoteAddr]
-	s.mu.Unlock()
+	s.tunnelMetaMu.RLock()
+	tMeta, ok := s.tunnelMeta[remoteAddr]
+	s.tunnelMetaMu.RUnlock()
 
-	if pool == nil {
+	if !ok || tMeta.Session == nil || tMeta.Session.IsClosed() {
 		return
 	}
 
-	pc, ok := s.dequeueFrom(pool)
-	if !ok {
-		return // No available tunnel connections
+	stream, err := tMeta.Session.OpenStream()
+	if err != nil {
+		return
 	}
+	defer stream.Close()
 
-	if _, err := fmt.Fprintf(pc.conn, "START\n"); err != nil {
-		s.closeConn(pc, "tcp start write failed")
+	if _, err := fmt.Fprintf(stream, "START\n"); err != nil {
 		return
 	}
 
@@ -807,16 +750,12 @@ func (s *Server) handleExternalTCPConn(conn net.Conn, remoteAddr string) {
 		io.Copy(dst, src)
 		done <- struct{}{}
 	}
-	go cp(pc.conn, conn)
-	go cp(conn, pc.r) // Use buffered reader from poolConn!
+	go cp(stream, conn)
+	go cp(conn, stream)
 	<-done
-	// Close both sides so the second goroutine unblocks immediately instead of
-	// waiting for the remote peer to close — prevents a goroutine leak on half-close.
-	pc.conn.Close()
+	stream.Close()
 	conn.Close()
 	<-done
-
-	s.closeConn(pc, "tcp session closed")
 }
 
 // ServeHTTP handles incoming HTTP requests from end users.
@@ -880,16 +819,21 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // proxyHTTP forwards a regular HTTP request through a pooled tunnel connection.
 func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, reqBody *cappedBuffer) {
 	start := time.Now()
-	pool, sub := s.getHTTPPool(r.Host)
+	epKey := s.getEndpointKey(r.Host)
 
-	// Look up AI mode for this tunnel.
-	epKey := sub
-	if epKey == "" {
-		epKey = "(default)"
-	}
 	s.tunnelMetaMu.RLock()
-	tMeta := s.tunnelMeta[epKey]
+	tMeta, hasMeta := s.tunnelMeta[epKey]
 	s.tunnelMetaMu.RUnlock()
+	
+	if !hasMeta || tMeta.Session == nil || tMeta.Session.IsClosed() {
+		http.Error(w, "no tunnel clients connected — is the client running?", http.StatusServiceUnavailable)
+		return
+	}
+	
+	sub := ""
+	if epKey != "(default)" {
+		sub = epKey
+	}
 	aiMode := tMeta.AIMode
 
 	out := r.Clone(r.Context())
@@ -972,60 +916,47 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, reqBody *capp
 		}
 	}
 
-	// Try up to 2 tunnel connections — the first may be stale.
-	const maxAttempts = 2
-	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		// Reset body reader for each attempt.
-		if bodyBuf != nil {
-			out.Body = io.NopCloser(bytes.NewReader(bodyBuf))
-		}
+	if bodyBuf != nil {
+		out.Body = io.NopCloser(bytes.NewReader(bodyBuf))
+	}
 
-		pc, ok := s.dequeueFrom(pool)
-		if !ok {
-			http.Error(w, "no tunnel clients connected — is the client running?", http.StatusServiceUnavailable)
-			return
-		}
-
-		if err := out.Write(pc.conn); err != nil {
-			s.closeConn(pc, "write request")
-			if attempt < maxAttempts {
-				s.srvLog(LevelWarn, "tunnel write failed (attempt %d/%d), retrying", attempt, maxAttempts)
-				continue
-			}
-			http.Error(w, "tunnel write error", http.StatusBadGateway)
-			return
-		}
-
-		resp, err := http.ReadResponse(pc.r, out)
-		if err != nil {
-			s.closeConn(pc, "read response")
-			if attempt < maxAttempts {
-				s.srvLog(LevelWarn, "tunnel read failed (attempt %d/%d), retrying", attempt, maxAttempts)
-				continue
-			}
-			http.Error(w, "tunnel read error", http.StatusBadGateway)
-			return
-		}
-
-		// Success — stream the response.
-		s.streamResponse(w, resp, pc, aiMode)
-		elapsed := time.Since(start)
-		s.srvLog(LevelInfo, "%s %s → %d (%s)", r.Method, r.URL.Path, resp.StatusCode, elapsed.Round(time.Millisecond))
-		if s.inspector != nil {
-			var capturedBody []byte
-			if reqBody != nil {
-				reqBody.mu.Lock()
-				capturedBody = make([]byte, len(reqBody.buf))
-				copy(capturedBody, reqBody.buf)
-				reqBody.mu.Unlock()
-			}
-			ep := sub
-			if ep == "" {
-				ep = "(default)"
-			}
-			s.inspector.Record(ep, clientIP(r), r.Method, r.URL.RequestURI(), r.Host, resp.StatusCode, elapsed, r.Header, resp.Header, r.ContentLength, resp.ContentLength, capturedBody)
-		}
+	stream, err := tMeta.Session.OpenStream()
+	if err != nil {
+		http.Error(w, "failed to open stream to client", http.StatusBadGateway)
 		return
+	}
+	defer stream.Close()
+
+	if err := out.Write(stream); err != nil {
+		s.srvLog(LevelWarn, "tunnel write failed: %v", err)
+		http.Error(w, "tunnel write error", http.StatusBadGateway)
+		return
+	}
+
+	resp, err := http.ReadResponse(bufio.NewReader(stream), out)
+	if err != nil {
+		s.srvLog(LevelWarn, "tunnel read failed: %v", err)
+		http.Error(w, "tunnel read error", http.StatusBadGateway)
+		return
+	}
+
+	// Success — stream the response.
+	s.streamResponse(w, resp, stream, aiMode)
+	elapsed := time.Since(start)
+	s.srvLog(LevelInfo, "%s %s → %d (%s)", r.Method, r.URL.Path, resp.StatusCode, elapsed.Round(time.Millisecond))
+	if s.inspector != nil {
+		var capturedBody []byte
+		if reqBody != nil {
+			reqBody.mu.Lock()
+			capturedBody = make([]byte, len(reqBody.buf))
+			copy(capturedBody, reqBody.buf)
+			reqBody.mu.Unlock()
+		}
+		ep := sub
+		if ep == "" {
+			ep = "(default)"
+		}
+		s.inspector.Record(ep, clientIP(r), r.Method, r.URL.RequestURI(), r.Host, resp.StatusCode, elapsed, r.Header, resp.Header, r.ContentLength, resp.ContentLength, capturedBody)
 	}
 }
 
@@ -1035,10 +966,8 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, reqBody *capp
 // the tunnel connection to the pool when possible.
 // aiMode enables per-chunk flushing with a small read buffer so LLM streaming
 // tokens reach the browser immediately instead of waiting for a 32 KB fill.
-func (s *Server) streamResponse(w http.ResponseWriter, resp *http.Response, pc *poolConn, aiMode bool) {
+func (s *Server) streamResponse(w http.ResponseWriter, resp *http.Response, stream net.Conn, aiMode bool) {
 	defer resp.Body.Close()
-
-	reuse := keepAlive(resp)
 
 	for k, vv := range resp.Header {
 		if !isHopByHop(k) {
@@ -1063,7 +992,7 @@ func (s *Server) streamResponse(w http.ResponseWriter, resp *http.Response, pc *
 		n, rerr := resp.Body.Read(buf)
 		if n > 0 {
 			if _, werr := w.Write(buf[:n]); werr != nil {
-				reuse = false // Browser disconnected mid-stream; tunnel connection is dirty
+				
 				break
 			}
 			if canFlush {
@@ -1071,40 +1000,39 @@ func (s *Server) streamResponse(w http.ResponseWriter, resp *http.Response, pc *
 			}
 		}
 		if rerr != nil {
-			if rerr != io.EOF {
-				reuse = false // Tunnel connection failed mid-stream
-			}
 			break
 		}
-	}
-
-	if reuse {
-		s.enqueue(pc)
-	} else {
-		s.closeConn(pc, "connection: close")
 	}
 }
 
 // proxyWebSocket tunnels a browser WebSocket connection bidirectionally.
 func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request) {
-	pool, _ := s.getHTTPPool(r.Host)
-	pc, ok := s.dequeueFrom(pool)
-	if !ok {
+	epKey := s.getEndpointKey(r.Host)
+	s.tunnelMetaMu.RLock()
+	tMeta, ok := s.tunnelMeta[epKey]
+	s.tunnelMetaMu.RUnlock()
+
+	if !ok || tMeta.Session == nil || tMeta.Session.IsClosed() {
 		http.Error(w, "no tunnel clients connected", http.StatusServiceUnavailable)
 		return
 	}
+
+	stream, err := tMeta.Session.OpenStream()
+	if err != nil {
+		http.Error(w, "failed to open stream to client", http.StatusBadGateway)
+		return
+	}
+	defer stream.Close()
 
 	// Hijack the browser-side connection so we can speak raw TCP.
 	hj, ok := w.(http.Hijacker)
 	if !ok {
 		http.Error(w, "websocket not supported", http.StatusInternalServerError)
-		s.enqueue(pc)
 		return
 	}
 	browserConn, brw, err := hj.Hijack()
 	if err != nil {
 		http.Error(w, "hijack failed", http.StatusInternalServerError)
-		s.closeConn(pc, "hijack failed")
 		return
 	}
 	defer browserConn.Close()
@@ -1131,19 +1059,17 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request) {
 	out.Header.Set("X-Forwarded-Host", r.Host)
 	out.Header.Set("X-Forwarded-Proto", scheme(r))
 
-	if err := out.Write(pc.conn); err != nil {
-		s.closeConn(pc, "ws write request")
+	if err := out.Write(stream); err != nil {
 		fmt.Fprintf(browserConn, "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
 		return
 	}
 
 	// Read the 101 back from the client and relay it to the browser.
-	resp, err := http.ReadResponse(pc.r, out)
+	resp, err := http.ReadResponse(bufio.NewReader(stream), out)
 	if err != nil || resp.StatusCode != http.StatusSwitchingProtocols {
 		if err == nil {
 			resp.Body.Close()
 		}
-		s.closeConn(pc, "ws upgrade response")
 		fmt.Fprintf(browserConn, "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
 		return
 	}
@@ -1162,15 +1088,13 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request) {
 		io.Copy(dst, src)
 		done <- struct{}{}
 	}
-	go cp(pc.conn, brw.Reader) // browser → tunnel  (use buffered reader for pre-read bytes)
-	go cp(browserConn, pc.r)   // tunnel  → browser  (write directly, no intermediate buffer)
+	go cp(stream, brw.Reader) 
+	go cp(browserConn, stream)
 	<-done
 	browserConn.Close()
-	pc.conn.Close()
+	stream.Close()
 	<-done
 
-	// WebSocket connections are never returned to the pool.
-	s.closeConn(pc, "ws closed")
 	s.srvLog(LevelInfo, "ws tunnel closed: %s", r.URL.Path)
 }
 
@@ -1197,34 +1121,7 @@ func (c *cappedBuffer) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func (s *Server) getHTTPPool(host string) (chan *poolConn, string) {
-	hostOnly, _, err := net.SplitHostPort(host)
-	if err != nil {
-		hostOnly = host
-	}
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	// Primary: strict match using configured domain (e.g. "wg.example.com" → "wg").
-	if s.domain != "" && strings.HasSuffix(hostOnly, "."+s.domain) {
-		sub := strings.TrimSuffix(hostOnly, "."+s.domain)
-		if pool, ok := s.httpPools[sub]; ok {
-			return pool, sub
-		}
-	}
-
-	// Fallback: match host prefix against any known subdomain pool key.
-	// This handles cases where the server's 'domain' config is unset or does
-	// not match the incoming Host header (e.g. behind a reverse proxy).
-	for sub, pool := range s.httpPools {
-		if strings.HasPrefix(hostOnly, sub+".") {
-			return pool, sub
-		}
-	}
-
-	return s.pool, ""
-}
 
 // getEndpointKey returns the tunnel endpoint key for a given host (subdomain or "(default)").
 func (s *Server) getEndpointKey(host string) string {
@@ -1234,15 +1131,17 @@ func (s *Server) getEndpointKey(host string) string {
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	s.tunnelMetaMu.RLock()
+	defer s.tunnelMetaMu.RUnlock()
 	// Primary: strict domain match.
 	if s.domain != "" && strings.HasSuffix(hostOnly, "."+s.domain) {
 		sub := strings.TrimSuffix(hostOnly, "."+s.domain)
-		if _, ok := s.httpPools[sub]; ok {
+		if _, ok := s.tunnelMeta[sub]; ok {
 			return sub
 		}
 	}
 	// Fallback: prefix match against known pool keys.
-	for sub := range s.httpPools {
+	for sub := range s.tunnelMeta {
 		if strings.HasPrefix(hostOnly, sub+".") {
 			return sub
 		}
@@ -1258,15 +1157,17 @@ func (s *Server) getEndpointKeyLocked(host string) string {
 	if err != nil {
 		hostOnly = host
 	}
+	s.tunnelMetaMu.RLock()
+	defer s.tunnelMetaMu.RUnlock()
 	// Primary: strict domain match.
 	if s.domain != "" && strings.HasSuffix(hostOnly, "."+s.domain) {
 		sub := strings.TrimSuffix(hostOnly, "."+s.domain)
-		if _, ok := s.httpPools[sub]; ok {
+		if _, ok := s.tunnelMeta[sub]; ok {
 			return sub
 		}
 	}
 	// Fallback: prefix match against known pool keys.
-	for sub := range s.httpPools {
+	for sub := range s.tunnelMeta {
 		if strings.HasPrefix(hostOnly, sub+".") {
 			return sub
 		}
@@ -1301,88 +1202,13 @@ func (s *Server) buildProxyURL(tunnelType, endpoint string) string {
 	return "http://" + endpoint + s.httpAddr
 }
 
-func (s *Server) dequeueFrom(pool chan *poolConn) (*poolConn, bool) {
-	deadline := time.NewTimer(10 * time.Second)
-	defer deadline.Stop()
-	for {
-		// Fast-fail: if the pool is clearly empty, don't hold the goroutine for 10s.
-		// We still fall through to the select so a connection arriving just after
-		// the len check is not missed.
-		select {
-		case pc := <-pool:
-			// Quick liveness probe: a non-blocking read on a healthy idle
-			// connection returns a timeout error; a dead one returns EOF/reset.
-			pc.conn.SetReadDeadline(time.Now().Add(time.Millisecond))
-			_, err := pc.r.Peek(1)
-			pc.conn.SetReadDeadline(time.Time{})
-			if err != nil && !isTimeout(err) {
-				s.closeConn(pc, "dead on dequeue")
-				continue // try next connection
-			}
-			return pc, true
-		case <-deadline.C:
-			return nil, false
-		}
-	}
-}
 
-// isTimeout reports whether err is a net timeout (i.e. the connection is alive
-// but had nothing to read within the deadline).
-func isTimeout(err error) bool {
-	ne, ok := err.(net.Error)
-	return ok && ne.Timeout()
-}
 
-// enqueue returns pc to its own pool (the one it was dequeued from).
-// FIX: previously this always returned to s.pool, which broke subdomain and
-// TCP tunnels — connections from subdomain pools were returned to the wrong pool.
-func (s *Server) enqueue(pc *poolConn) {
-	select {
-	case pc.pool <- pc:
-	default:
-		s.closeConn(pc, "pool full on return")
-	}
-}
 
-func (s *Server) closeConn(pc *poolConn, reason string) {
-	if atomic.CompareAndSwapInt32(&pc.closed, 0, 1) {
-		pc.conn.Close()
-		n := s.count.Add(-1)
-		
-		s.tunnelMetaMu.Lock()
-		if meta, ok := s.tunnelMeta[pc.endpoint]; ok {
-			meta.ActiveConns--
-			s.tunnelMeta[pc.endpoint] = meta
-		}
-		s.tunnelMetaMu.Unlock()
 
-		s.srvLog(LevelInfo, "tunnel- (%s)  (active: %d)", reason, n)
-	}
-}
 
-// drainPool closes all idle connections in all pools.
-func (s *Server) drainPool() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 
-	drain := func(pool chan *poolConn) {
-		for {
-			select {
-			case pc := <-pool:
-				s.closeConn(pc, "draining")
-			default:
-				return
-			}
-		}
-	}
-	drain(s.pool)
-	for _, p := range s.httpPools {
-		drain(p)
-	}
-	for _, p := range s.tcpPools {
-		drain(p)
-	}
-}
+
 
 // startJanitor periodically scans all pools and removes dead connections.
 // Named pools (subdomain / TCP) are only deleted after they have been
@@ -1397,10 +1223,9 @@ func (s *Server) drainPool() {
 const poolEmptyGrace = 30 * time.Second
 
 func (s *Server) startJanitor() {
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 	for range ticker.C {
-		// Evict expired auth rate-limiter entries.
 		s.authLimiters.Range(func(key, value any) bool {
 			if b, ok := value.(*authBucket); ok && b.expired() {
 				s.authLimiters.Delete(key)
@@ -1408,133 +1233,35 @@ func (s *Server) startJanitor() {
 			return true
 		})
 
-		// 1. Snapshot all pool channels under a cheap RLock so we can clean them
-		// without holding any mutexes. Channel ops are goroutine-safe.
-		var poolsToClean []chan *poolConn
-		poolsToClean = append(poolsToClean, s.pool)
-
-		s.mu.RLock()
-		for _, p := range s.httpPools {
-			poolsToClean = append(poolsToClean, p)
-		}
-		for _, p := range s.tcpPools {
-			poolsToClean = append(poolsToClean, p)
-		}
-		s.mu.RUnlock()
-
-		// 2. Clean all pools (this does Peek(1ms) per connection, which blocks).
-		for _, p := range poolsToClean {
-			s.cleanPool(p)
-		}
-
-		type listenerClose struct {
-			addr string
-			ln   net.Listener
-		}
-		var toClose []listenerClose
-		var deletedSubs, deletedTCPs []string
-
-		// 3. Acquire both locks together so pool-empty detection and meta deletion
-		// are atomic with respect to handleTunnelConn.
-		s.mu.Lock()
 		s.tunnelMetaMu.Lock()
-
-		// Re-evaluate default pool emptiness while holding both locks.
-		if len(s.pool) == 0 {
-			if meta, ok := s.tunnelMeta["(default)"]; !ok || meta.ActiveConns <= 0 {
-				delete(s.tunnelMeta, "(default)")
-			}
-		}
-
-		for sub, p := range s.httpPools {
-			if meta, ok := s.tunnelMeta[sub]; ok && meta.ActiveConns > 0 {
-				// There are active connections proxying traffic, so the pool is not abandoned.
-				delete(s.poolEmptySince, sub)
-				continue
-			}
-			if len(p) == 0 {
-				// Pool is currently empty.  Start (or check) the grace timer.
-				if since, ok := s.poolEmptySince[sub]; ok {
-					if time.Since(since) >= poolEmptyGrace {
-						// Grace period expired — clients have not reconnected.
-						delete(s.httpPools, sub)
-						delete(s.tunnelMeta, sub)
-						delete(s.poolEmptySince, sub)
-						deletedSubs = append(deletedSubs, sub)
-					}
-					// else: still within grace window — leave the pool alive.
-				} else {
-					// First janitor cycle where this pool is empty.
-					s.poolEmptySince[sub] = time.Now()
+		for ep, meta := range s.tunnelMeta {
+			if meta.Session != nil && meta.Session.IsClosed() {
+				delete(s.tunnelMeta, ep)
+				s.mu.Lock()
+				if ln, ok := s.tcpListeners[ep]; ok {
+					ln.Close()
+					delete(s.tcpListeners, ep)
 				}
-			} else {
-				// Pool has live connections — clear any pending grace timer.
-				delete(s.poolEmptySince, sub)
+				s.mu.Unlock()
+				s.srvLog(LevelInfo, "tunnel session closed and removed: %s", ep)
+				s.count.Add(-1)
 			}
 		}
-		for addr, p := range s.tcpPools {
-			if meta, ok := s.tunnelMeta[addr]; ok && meta.ActiveConns > 0 {
-				delete(s.poolEmptySince, addr)
-				continue
-			}
-			if len(p) == 0 {
-				if since, ok := s.poolEmptySince[addr]; ok {
-					if time.Since(since) >= poolEmptyGrace {
-						delete(s.tcpPools, addr)
-						delete(s.tunnelMeta, addr)
-						delete(s.poolEmptySince, addr)
-						deletedTCPs = append(deletedTCPs, addr)
-						if ln, ok := s.tcpListeners[addr]; ok {
-							delete(s.tcpListeners, addr)
-							toClose = append(toClose, listenerClose{addr: addr, ln: ln})
-						}
-					}
-				} else {
-					s.poolEmptySince[addr] = time.Now()
-				}
-			} else {
-				delete(s.poolEmptySince, addr)
-			}
-		}
-
 		s.tunnelMetaMu.Unlock()
-		s.mu.Unlock()
-
-		// Perform blocking I/O and logging outside the lock.
-		for _, op := range toClose {
-			op.ln.Close()
-			s.srvLog(LevelInfo, "TCP listener closed: %s (no active clients)", op.addr)
-		}
-		for _, sub := range deletedSubs {
-			s.srvLog(LevelInfo, "subdomain pool removed: %s (no active clients)", sub)
-		}
 	}
 }
 
-// cleanPool pops all items, checks their liveness, and pushes back the healthy ones.
-func (s *Server) cleanPool(pool chan *poolConn) {
-	n := len(pool)
-	for i := 0; i < n; i++ {
-		select {
-		case pc := <-pool:
-			// A 1ms future deadline: healthy idle conn → timeout error; dead conn → EOF/reset.
-			pc.conn.SetReadDeadline(time.Now().Add(time.Millisecond))
-			_, err := pc.r.Peek(1)
-			pc.conn.SetReadDeadline(time.Time{})
-			if err != nil && !isTimeout(err) {
-				s.closeConn(pc, "client disconnected")
-			} else {
-				select {
-				case pool <- pc:
-				default:
-					s.closeConn(pc, "pool full in janitor")
-				}
-			}
-		default:
-			return
+func (s *Server) closeAllSessions() {
+	s.tunnelMetaMu.Lock()
+	for _, meta := range s.tunnelMeta {
+		if meta.Session != nil {
+			meta.Session.Close()
 		}
 	}
+	s.tunnelMetaMu.Unlock()
 }
+
+
 
 // keepAlive reports whether the tunnel connection should be returned to the
 // pool after this response (i.e. the server did not request close).
@@ -1606,3 +1333,12 @@ func (s *Server) isTCPPortAllowed(remoteAddr string) bool {
 	return false
 }
 
+
+type bufferedConn struct {
+	net.Conn
+	r *bufio.Reader
+}
+
+func (b *bufferedConn) Read(p []byte) (int, error) {
+	return b.r.Read(p)
+}

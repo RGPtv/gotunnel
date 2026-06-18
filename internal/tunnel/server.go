@@ -1063,6 +1063,7 @@ func (s *Server) streamResponse(w http.ResponseWriter, resp *http.Response, pc *
 		n, rerr := resp.Body.Read(buf)
 		if n > 0 {
 			if _, werr := w.Write(buf[:n]); werr != nil {
+				reuse = false // Browser disconnected mid-stream; tunnel connection is dirty
 				break
 			}
 			if canFlush {
@@ -1070,6 +1071,9 @@ func (s *Server) streamResponse(w http.ResponseWriter, resp *http.Response, pc *
 			}
 		}
 		if rerr != nil {
+			if rerr != io.EOF {
+				reuse = false // Tunnel connection failed mid-stream
+			}
 			break
 		}
 	}

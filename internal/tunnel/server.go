@@ -1391,8 +1391,24 @@ func (s *Server) startJanitor() {
 			return true
 		})
 
-		// Clean the default pool without any lock — channel ops are goroutine-safe.
-		s.cleanPool(s.pool)
+		// 1. Snapshot all pool channels under a cheap RLock so we can clean them
+		// without holding any mutexes. Channel ops are goroutine-safe.
+		var poolsToClean []chan *poolConn
+		poolsToClean = append(poolsToClean, s.pool)
+
+		s.mu.RLock()
+		for _, p := range s.httpPools {
+			poolsToClean = append(poolsToClean, p)
+		}
+		for _, p := range s.tcpPools {
+			poolsToClean = append(poolsToClean, p)
+		}
+		s.mu.RUnlock()
+
+		// 2. Clean all pools (this does Peek(1ms) per connection, which blocks).
+		for _, p := range poolsToClean {
+			s.cleanPool(p)
+		}
 
 		type listenerClose struct {
 			addr string
@@ -1401,7 +1417,7 @@ func (s *Server) startJanitor() {
 		var toClose []listenerClose
 		var deletedSubs, deletedTCPs []string
 
-		// Acquire both locks together so pool-empty detection and meta deletion
+		// 3. Acquire both locks together so pool-empty detection and meta deletion
 		// are atomic with respect to handleTunnelConn.
 		s.mu.Lock()
 		s.tunnelMetaMu.Lock()
@@ -1412,7 +1428,6 @@ func (s *Server) startJanitor() {
 		}
 
 		for sub, p := range s.httpPools {
-			s.cleanPool(p)
 			if len(p) == 0 {
 				// Pool is currently empty.  Start (or check) the grace timer.
 				if since, ok := s.poolEmptySince[sub]; ok {
@@ -1434,7 +1449,6 @@ func (s *Server) startJanitor() {
 			}
 		}
 		for addr, p := range s.tcpPools {
-			s.cleanPool(p)
 			if len(p) == 0 {
 				if since, ok := s.poolEmptySince[addr]; ok {
 					if time.Since(since) >= poolEmptyGrace {

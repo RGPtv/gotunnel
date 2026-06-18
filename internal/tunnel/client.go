@@ -362,8 +362,6 @@ func (c *Client) connectAndServe() error {
 	conn.SetDeadline(time.Time{})
 
 	c.setStatus("online")
-	c.uiWorkers.Add(1)
-	defer c.uiWorkers.Add(-1)
 
 	session, err := yamux.Server(conn, yamux.DefaultConfig())
 	if err != nil {
@@ -381,6 +379,8 @@ func (c *Client) connectAndServe() error {
 }
 
 func (c *Client) handleStream(stream net.Conn) {
+	c.uiWorkers.Add(1)
+	defer c.uiWorkers.Add(-1)
 	defer stream.Close()
 
 	if c.tunnelType == "tcp" {

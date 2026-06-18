@@ -486,10 +486,14 @@ func (ins *Inspector) buildTunnelList() []TunnelEntry {
 	defer ins.srv.mu.RUnlock()
 
 	for ep, meta := range ins.srv.tunnelMeta {
+		conns := 0
+		if meta.Session != nil {
+			conns = int(meta.Session.NumStreams())
+		}
 		tunnels = append(tunnels, TunnelEntry{
 			Type:             meta.Type,
 			Endpoint:         ep,
-			Connections:      1,
+			Connections:      conns,
 			HasAPIKey:        meta.APIKey != "",
 			APIKeyEnabled:    meta.APIKeyEnabled,
 			BasicAuthEnabled: meta.BasicAuthEnabled,

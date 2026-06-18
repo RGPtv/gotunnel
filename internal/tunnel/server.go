@@ -284,8 +284,8 @@ func RunServer(cfg *ServerConfig) {
 		srv.tunnelMetaMu.RLock()
 		var tunnels []ipc.TunnelInfo
 		for _, tm := range srv.tunnelMeta {
-			conns := 1
-			if tm.Session != nil { conns = 1 } else { conns = 0 }
+			conns := 0
+			if tm.Session != nil { conns = int(tm.Session.NumStreams()) }
 			tunnels = append(tunnels, ipc.TunnelInfo{
 				Endpoint:    tm.Endpoint,
 				Type:        tm.Type,

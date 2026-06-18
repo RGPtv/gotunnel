@@ -45,7 +45,6 @@ type Client struct {
 
 	uiStatusMu sync.RWMutex
 	uiStatus   string
-	uiWorkers  atomic.Int32
 	uiStreams  atomic.Int32
 
 	
@@ -363,8 +362,6 @@ func (c *Client) connectAndServe() error {
 	conn.SetDeadline(time.Time{})
 
 	c.setStatus("online")
-	c.uiWorkers.Add(1)
-	defer c.uiWorkers.Add(-1)
 
 	session, err := yamux.Server(conn, yamux.DefaultConfig())
 	if err != nil {
@@ -564,8 +561,7 @@ func startMultiIPC(clients []*Client) {
 				RemoteAddr: c.remoteAddr,
 				TargetAddr: c.targetAddr,
 				TunnelType: c.tunnelType,
-				Workers:    int(c.uiWorkers.Load()),
-				Streams:    int(c.uiStreams.Load()),
+				Workers:    int(c.uiStreams.Load()),
 			}
 		}
 

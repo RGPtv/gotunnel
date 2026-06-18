@@ -105,7 +105,7 @@ func drawClientFrame(ipcClient *ipc.Client) {
 
 	statsLine := statsBadge("STATUS", statusIcon+" "+statusLabel, statusColor) +
 		statsBadge("TUNNELS", fmt.Sprintf("%d", nTunnels), lteal) +
-		statsBadge("WORKERS", fmt.Sprintf("%d", totalWorkers), lteal)
+		statsBadge("CONNS", fmt.Sprintf("%d", totalWorkers), lteal)
 
 	statsVis := len([]rune(strings.TrimRight(stripANSI(statsLine), " ")))
 	padLen := (w - statsVis) / 2
@@ -118,15 +118,14 @@ func drawClientFrame(ipcClient *ipc.Client) {
 	// ── 3. Tunnels table ──────────────────────────────────────────────────────
 	//
 	// Column layout (all widths in visible runes, inside the panel: w-8):
-	//   NAME  TYPE  STATUS  REMOTE  TARGET  WORKERS  STREAMS
+	//   NAME  TYPE  STATUS  REMOTE  TARGET  CONNS
 	innerW := w - 8
 	nameW    := 14
 	typeW    := 8
 	tstatsW  := 18 // "● RECONNECTING" fits in 16, pad to 18
 	remoteW  := 25
-	workersW := 8
-	streamsW := 8
-	targetW  := innerW - nameW - typeW - tstatsW - remoteW - workersW - streamsW
+	connsW   := 8
+	targetW  := innerW - nameW - typeW - tstatsW - remoteW - connsW
 	if targetW < 8 {
 		targetW = 8
 	}
@@ -139,7 +138,7 @@ func drawClientFrame(ipcClient *ipc.Client) {
 		pad("STATUS", tstatsW) +
 		pad("REMOTE/SUB", remoteW) +
 		pad("TARGET", targetW) +
-		pad("WORKERS", workersW) + reset
+		pad("CONNS", connsW) + reset
 	panelRow(&b, th, w) // 1 line
 	panelSep(&b, w)     // 1 line
 
@@ -171,16 +170,14 @@ func drawClientFrame(ipcClient *ipc.Client) {
 			statusStr = string([]rune(statusStr)[:tstatsW-4]) + "…"
 		}
 
-		wStr := fmt.Sprintf("%d", t.Workers)
-		sStr := fmt.Sprintf("%d", t.Streams)
+		cStr := fmt.Sprintf("%d", t.Workers)
 
 		row := bold + pad(t.Name, nameW) + reset +
 			tColor + pad(tType, typeW) + reset +
 			sColor + pad(statusStr, tstatsW) + reset +
 			dim + pad(remote, remoteW) + reset +
 			lteal + pad(t.TargetAddr, targetW) + reset +
-			dim + rpad(wStr, workersW) + reset +
-			dim + rpad(sStr, streamsW) + reset
+			dim + rpad(cStr, connsW) + reset
 		panelRow(&b, row, w) // 1 line per tunnel
 	}
 

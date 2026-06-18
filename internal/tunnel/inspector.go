@@ -57,7 +57,6 @@ type TunnelEntry struct {
 	Type             string `json:"type"`
 	Endpoint         string `json:"endpoint"`
 	Connections      int    `json:"connections"`
-	Streams          int    `json:"streams"`
 	HasAPIKey        bool   `json:"hasApiKey"`
 	APIKeyEnabled    bool   `json:"apikey_enabled"`
 	BasicAuthEnabled bool   `json:"basicauth_enabled"`
@@ -488,16 +487,13 @@ func (ins *Inspector) buildTunnelList() []TunnelEntry {
 
 	for ep, meta := range ins.srv.tunnelMeta {
 		conns := 0
-		streams := 0
 		if meta.Session != nil {
-			conns = 1
-			streams = int(meta.Session.NumStreams())
+			conns = int(meta.Session.NumStreams())
 		}
 		tunnels = append(tunnels, TunnelEntry{
 			Type:             meta.Type,
 			Endpoint:         ep,
 			Connections:      conns,
-			Streams:          streams,
 			HasAPIKey:        meta.APIKey != "",
 			APIKeyEnabled:    meta.APIKeyEnabled,
 			BasicAuthEnabled: meta.BasicAuthEnabled,

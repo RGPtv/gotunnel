@@ -285,16 +285,13 @@ func RunServer(cfg *ServerConfig) {
 		var tunnels []ipc.TunnelInfo
 		for _, tm := range srv.tunnelMeta {
 			conns := 0
-			streams := 0
 			if tm.Session != nil {
-				conns = 1
-				streams = int(tm.Session.NumStreams())
+				conns = int(tm.Session.NumStreams())
 			}
 			tunnels = append(tunnels, ipc.TunnelInfo{
 				Endpoint:    tm.Endpoint,
 				Type:        tm.Type,
 				Connections: conns,
-				Streams:     streams,
 				ClientIP:    tm.ClientIP,
 				ProxyURL:    tm.ProxyURL,
 			})

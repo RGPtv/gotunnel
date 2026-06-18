@@ -582,14 +582,16 @@ func (c *Client) forwardToTarget(req *http.Request) (*http.Response, error) {
 
 // writeErrorResponse writes a minimal HTTP/1.1 error response to w.
 func writeErrorResponse(w io.Writer, code int, msg string) error {
+	bodyMsg := msg + "\n"
 	resp := &http.Response{
-		StatusCode: code,
-		Status:     fmt.Sprintf("%d %s", code, http.StatusText(code)),
-		Proto:      "HTTP/1.1",
-		ProtoMajor: 1,
-		ProtoMinor: 1,
-		Header:     http.Header{"Content-Type": {"text/plain; charset=utf-8"}},
-		Body:       io.NopCloser(strings.NewReader(msg + "\n")),
+		StatusCode:    code,
+		Status:        fmt.Sprintf("%d %s", code, http.StatusText(code)),
+		Proto:         "HTTP/1.1",
+		ProtoMajor:    1,
+		ProtoMinor:    1,
+		Header:        http.Header{"Content-Type": {"text/plain; charset=utf-8"}},
+		Body:          io.NopCloser(strings.NewReader(bodyMsg)),
+		ContentLength: int64(len(bodyMsg)),
 	}
 	return resp.Write(w)
 }

@@ -285,7 +285,7 @@ func RunServer(cfg *ServerConfig) {
 		var tunnels []ipc.TunnelInfo
 		for _, tm := range srv.tunnelMeta {
 			conns := 0
-			if tm.Session != nil { conns = int(tm.Session.NumStreams()) }
+			if tm.Session != nil { conns = 1 }
 			tunnels = append(tunnels, ipc.TunnelInfo{
 				Endpoint:    tm.Endpoint,
 				Type:        tm.Type,

@@ -488,7 +488,7 @@ func (ins *Inspector) buildTunnelList() []TunnelEntry {
 	for ep, meta := range ins.srv.tunnelMeta {
 		conns := 0
 		if meta.Session != nil {
-			conns = int(meta.Session.NumStreams())
+			conns = 1
 		}
 		tunnels = append(tunnels, TunnelEntry{
 			Type:             meta.Type,

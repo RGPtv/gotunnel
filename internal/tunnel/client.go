@@ -53,6 +53,12 @@ type uiRequest struct {
 	dur    time.Duration
 }
 
+type clientRuntime struct {
+	name              string
+	configuredWorkers int
+	client            *Client
+}
+
 var (
 	uiMu   sync.Mutex
 	uiReqs []uiRequest
@@ -146,6 +152,7 @@ func RunClient(cfg *ClientConfig) {
 	fmt.Fprintf(os.Stderr, "  %-14s %d\n", "Tunnels", len(cfg.Tunnels))
 	fmt.Fprintln(os.Stderr)
 
+	runtimes := make([]clientRuntime, 0, len(cfg.Tunnels))
 	var wg sync.WaitGroup
 
 	for idx, t := range cfg.Tunnels {
@@ -193,6 +200,16 @@ func RunClient(cfg *ClientConfig) {
 			cancel:    cancel,
 		}
 
+		label := t.Name
+		if label == "" {
+			label = fmt.Sprintf("tunnel-%d", idx+1)
+		}
+		runtimes = append(runtimes, clientRuntime{
+			name:              label,
+			configuredWorkers: workers,
+			client:            c,
+		})
+
 		if singleTunnel {
 			// Single-tunnel mode: full banner + interactive TUI.
 			fmt.Fprintf(os.Stderr, "  %-14s %s\n", "Type", tunnelType)
@@ -208,13 +225,8 @@ func RunClient(cfg *ClientConfig) {
 				fmt.Fprintf(os.Stderr, "  %-14s disabled (skipTLSVerify: true)\n", "TLS Verify")
 			}
 			fmt.Fprintln(os.Stderr)
-			c.startIPC()
 		} else {
 			// Multi-tunnel mode: compact per-tunnel summary line.
-			label := t.Name
-			if label == "" {
-				label = fmt.Sprintf("tunnel-%d", idx+1)
-			}
 			fmt.Fprintf(os.Stderr, "  [%s] %s → %s  (%d workers)\n", label, tunnelType, t.Target, workers)
 			if tunnelType == "tcp" {
 				fmt.Fprintf(os.Stderr, "         remote: %s\n", t.Remote)
@@ -231,6 +243,12 @@ func RunClient(cfg *ClientConfig) {
 				c.runWorker(id)
 			}(i + 1)
 		}
+	}
+
+	if singleTunnel {
+		runtimes[0].client.startIPC()
+	} else {
+		startMultiClientIPC(serverAddr, runtimes)
 	}
 
 	wg.Wait()
@@ -530,8 +548,8 @@ func (c *Client) handleWebSocket(id int, tunnelConn net.Conn, tunnelReader *bufi
 		io.Copy(dst, src)
 		done <- struct{}{}
 	}
-	go cp(targetConn, tunnelReader)  
-	go cp(tunnelConn, targetReader)  
+	go cp(targetConn, tunnelReader)
+	go cp(tunnelConn, targetReader)
 	<-done
 	targetConn.Close()
 	tunnelConn.Close()
@@ -552,7 +570,7 @@ func (c *Client) forwardToTarget(req *http.Request) (*http.Response, error) {
 	if req.Host == "" {
 		req.Host = req.URL.Host
 	}
-	req.RequestURI = "" 
+	req.RequestURI = ""
 
 	return c.httpClient.Do(req)
 }
@@ -598,9 +616,85 @@ func (c *Client) startIPC() {
 			TargetAddr: c.targetAddr,
 			TunnelType: c.tunnelType,
 			Workers:    int(c.uiWorkers.Load()),
+			Tunnels: []ipc.ClientTunnelState{
+				clientTunnelState("", c, 0),
+			},
+			Requests: reqs,
+		}
+	}); err != nil {
+		log.Printf("IPC server failed to start: %v", err)
+	}
+}
+
+func startMultiClientIPC(serverAddr string, runtimes []clientRuntime) {
+	if _, err := ipc.StartIPCServer(41401, func() interface{} {
+		tunnels := make([]ipc.ClientTunnelState, 0, len(runtimes))
+		totalWorkers := 0
+		onlineTunnels := 0
+
+		for _, rt := range runtimes {
+			state := clientTunnelState(rt.name, rt.client, rt.configuredWorkers)
+			tunnels = append(tunnels, state)
+			totalWorkers += state.Workers
+			if state.Workers > 0 {
+				onlineTunnels++
+			}
+		}
+
+		status := "connecting..."
+		switch {
+		case onlineTunnels == len(runtimes):
+			status = "online"
+		case onlineTunnels > 0:
+			status = "partial"
+		case len(runtimes) > 0:
+			status = tunnels[0].Status
+		}
+
+		uiMu.Lock()
+		reqs := make([]ipc.UIRequest, len(uiReqs))
+		for i, r := range uiReqs {
+			reqs[i] = ipc.UIRequest{
+				Method: r.method,
+				Path:   r.path,
+				Status: r.status,
+				Dur:    r.dur.Milliseconds(),
+			}
+		}
+		uiMu.Unlock()
+
+		return ipc.ClientState{
+			Status:     status,
+			ServerAddr: serverAddr,
+			RemoteAddr: "",
+			TargetAddr: fmt.Sprintf("%d tunnels", len(runtimes)),
+			TunnelType: "multi",
+			Workers:    totalWorkers,
+			Tunnels:    tunnels,
 			Requests:   reqs,
 		}
 	}); err != nil {
 		log.Printf("IPC server failed to start: %v", err)
+	}
+}
+
+func clientTunnelState(name string, c *Client, configuredWorkers int) ipc.ClientTunnelState {
+	c.uiStatusMu.RLock()
+	status := c.uiStatus
+	c.uiStatusMu.RUnlock()
+
+	workers := int(c.uiWorkers.Load())
+	if workers > 0 {
+		status = "online"
+	}
+
+	return ipc.ClientTunnelState{
+		Name:              name,
+		Status:            status,
+		RemoteAddr:        c.remoteAddr,
+		TargetAddr:        c.targetAddr,
+		TunnelType:        c.tunnelType,
+		Workers:           workers,
+		ConfiguredWorkers: configuredWorkers,
 	}
 }

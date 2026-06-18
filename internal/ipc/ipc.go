@@ -41,13 +41,24 @@ type LogEntry struct {
 
 // ClientState represents the live state of the tunnel client.
 type ClientState struct {
-	Status     string      `json:"status"`
-	ServerAddr string      `json:"serverAddr"`
-	RemoteAddr string      `json:"remoteAddr"`
-	TargetAddr string      `json:"targetAddr"`
-	TunnelType string      `json:"tunnelType"`
-	Workers    int         `json:"workers"`
-	Requests   []UIRequest `json:"requests"`
+	Status     string              `json:"status"`
+	ServerAddr string              `json:"serverAddr"`
+	RemoteAddr string              `json:"remoteAddr"`
+	TargetAddr string              `json:"targetAddr"`
+	TunnelType string              `json:"tunnelType"`
+	Workers    int                 `json:"workers"`
+	Tunnels    []ClientTunnelState `json:"tunnels,omitempty"`
+	Requests   []UIRequest         `json:"requests"`
+}
+
+type ClientTunnelState struct {
+	Name              string `json:"name"`
+	Status            string `json:"status"`
+	RemoteAddr        string `json:"remoteAddr"`
+	TargetAddr        string `json:"targetAddr"`
+	TunnelType        string `json:"tunnelType"`
+	Workers           int    `json:"workers"`
+	ConfiguredWorkers int    `json:"configuredWorkers"`
 }
 
 type UIRequest struct {

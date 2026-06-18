@@ -46,8 +46,6 @@ type Client struct {
 	uiStatusMu sync.RWMutex
 	uiStatus   string
 	uiStreams  atomic.Int32
-
-	
 }
 
 type uiRequest struct {
@@ -201,7 +199,7 @@ func RunClient(cfg *ClientConfig) {
 			uiStatus:  "connecting...",
 			ctx:       ctx,
 			cancel:    cancel,
-					}
+		}
 
 		if singleTunnel {
 			// Single-tunnel mode: full banner.
@@ -292,7 +290,7 @@ func (c *Client) connectAndServe() error {
 		return err
 	}
 	defer conn.Close()
-	
+
 	go func() {
 		<-c.ctx.Done()
 		conn.Close()
@@ -401,7 +399,7 @@ func (c *Client) handleStream(stream net.Conn) {
 
 	start := time.Now()
 	resp, proxyErr := c.forwardToTarget(req)
-	
+
 	if proxyErr != nil {
 		writeErrorResponse(stream, 502, proxyErr.Error())
 		return
@@ -498,8 +496,8 @@ func (c *Client) handleWebSocket(id int, tunnelConn net.Conn, tunnelReader *bufi
 		io.Copy(dst, src)
 		done <- struct{}{}
 	}
-	go cp(targetConn, tunnelReader)  
-	go cp(tunnelConn, targetReader)  
+	go cp(targetConn, tunnelReader)
+	go cp(tunnelConn, targetReader)
 	<-done
 	targetConn.Close()
 	tunnelConn.Close()
@@ -520,7 +518,7 @@ func (c *Client) forwardToTarget(req *http.Request) (*http.Response, error) {
 	if req.Host == "" {
 		req.Host = req.URL.Host
 	}
-	req.RequestURI = "" 
+	req.RequestURI = ""
 
 	return c.httpClient.Do(req)
 }

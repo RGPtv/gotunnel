@@ -34,15 +34,15 @@ const (
 	bgCyan  = "\x1b[46m"
 
 	// 256-color helpers
-	teal    = "\x1b[38;5;30m"
-	lblue   = "\x1b[38;5;39m"
-	lgreen  = "\x1b[38;5;82m"
-	amber   = "\x1b[38;5;214m"
-	lpink   = "\x1b[38;5;213m"
-	white   = "\x1b[38;5;231m"
-	grey    = "\x1b[38;5;245m"
-	lred    = "\x1b[38;5;196m"
-	lteal   = "\x1b[38;5;123m"
+	teal   = "\x1b[38;5;30m"
+	lblue  = "\x1b[38;5;39m"
+	lgreen = "\x1b[38;5;82m"
+	amber  = "\x1b[38;5;214m"
+	lpink  = "\x1b[38;5;213m"
+	white  = "\x1b[38;5;231m"
+	grey   = "\x1b[38;5;245m"
+	lred   = "\x1b[38;5;196m"
+	lteal  = "\x1b[38;5;123m"
 
 	bgTeal  = "\x1b[48;5;24m"
 	bgLblue = "\x1b[48;5;39m"
@@ -50,10 +50,10 @@ const (
 	bgLred  = "\x1b[48;5;52m"
 )
 
-func hideCursor()  { os.Stdout.WriteString(esc + "?25l") }
-func showCursor()  { os.Stdout.WriteString(esc + "?25h") }
-func altScreen()   { os.Stdout.WriteString(esc + "?1049h") }
-func mainScreen()  { os.Stdout.WriteString(esc + "?1049l") }
+func hideCursor() { os.Stdout.WriteString(esc + "?25l") }
+func showCursor() { os.Stdout.WriteString(esc + "?25h") }
+func altScreen()  { os.Stdout.WriteString(esc + "?1049h") }
+func mainScreen() { os.Stdout.WriteString(esc + "?1049l") }
 
 func termSize() (w, h int) {
 	w, h, err := term.GetSize(int(os.Stdout.Fd()))
@@ -101,7 +101,7 @@ func writeLine(b *strings.Builder, s string, _ int) {
 // Terminals that don't recognise the sequence silently ignore it.
 func flush(b *strings.Builder) {
 	const syncBegin = "\x1b[?2026h"
-	const syncEnd   = "\x1b[?2026l"
+	const syncEnd = "\x1b[?2026l"
 	payload := syncBegin + b.String() + syncEnd
 	os.Stdout.Write([]byte(payload))
 	b.Reset()
@@ -320,5 +320,3 @@ func orDash(s string) string {
 	}
 	return s
 }
-
-

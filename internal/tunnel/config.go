@@ -125,6 +125,9 @@ func validateConfig(cfg *AppConfig) error {
 }
 
 func validateServerConfig(s *ServerConfig) error {
+	if s.Token == "" {
+		return errors.New("invalid serverConfig: 'token' is required (use token: auto to generate one at startup)")
+	}
 	if s.HTTPSAddr != "" && (s.CertFile == "" || s.KeyFile == "") {
 		return errors.New(
 			"invalid serverConfig: 'https' requires both 'cert' and 'key' to be set",

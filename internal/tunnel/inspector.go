@@ -30,9 +30,10 @@ const maxAPIBodySize = 64 * 1024 // 64 KB limit on dashboard API request bodies
 
 // loginRateLimit controls brute-force protection on the dashboard login.
 const (
-	loginRateLimit  = 5
-	loginRateWindow = 60 * time.Second
-	loginFailDelay  = 500 * time.Millisecond
+	loginRateLimit     = 5
+	loginRateWindow    = 60 * time.Second
+	loginFailDelay     = 500 * time.Millisecond
+	loginLimiterExpiry = 15 * time.Minute
 )
 
 // CapturedRequest holds metadata about a single proxied HTTP request.
@@ -102,12 +103,14 @@ type sessionData struct {
 type loginBucket struct {
 	mu       sync.Mutex
 	attempts []time.Time
+	lastSeen time.Time
 }
 
 func (b *loginBucket) allow() bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	now := time.Now()
+	b.lastSeen = now
 	cutoff := now.Add(-loginRateWindow)
 	valid := b.attempts[:0]
 	for _, t := range b.attempts {
@@ -121,6 +124,12 @@ func (b *loginBucket) allow() bool {
 	}
 	b.attempts = append(b.attempts, now)
 	return true
+}
+
+func (b *loginBucket) expired() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return time.Since(b.lastSeen) > loginLimiterExpiry
 }
 
 // NewInspector creates a new request inspector.
@@ -167,6 +176,12 @@ func (ins *Inspector) cleanSessions() {
 				}
 			}
 			ins.sessionsMu.Unlock()
+			ins.loginLimiters.Range(func(key, value any) bool {
+				if b, ok := value.(*loginBucket); ok && b.expired() {
+					ins.loginLimiters.Delete(key)
+				}
+				return true
+			})
 		case <-ins.done:
 			return
 		}
@@ -502,9 +517,7 @@ func (ins *Inspector) buildTunnelList() []TunnelEntry {
 			ClientIP:         meta.ClientIP,
 		})
 	}
-	
-	
-	
+
 	return tunnels
 }
 
@@ -614,7 +627,6 @@ func (ins *Inspector) handleTunnelBasicAuthCreds(w http.ResponseWriter, r *http.
 		"password": password,
 	})
 }
-
 
 // POST /api/tunnels/auth
 //
@@ -733,8 +745,6 @@ func (ins *Inspector) handleTunnelBasicAuth(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]bool{"enabled": req.Enabled})
 }
-
-
 
 // handleToken returns the server token on an explicit authenticated GET request.
 // The token is never pushed automatically (not in SSE or status) so a passive

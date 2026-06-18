@@ -1183,12 +1183,23 @@ func (s *Server) getHTTPPool(host string) (chan *poolConn, string) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	// Primary: strict match using configured domain (e.g. "wg.example.com" → "wg").
 	if s.domain != "" && strings.HasSuffix(hostOnly, "."+s.domain) {
 		sub := strings.TrimSuffix(hostOnly, "."+s.domain)
 		if pool, ok := s.httpPools[sub]; ok {
 			return pool, sub
 		}
 	}
+
+	// Fallback: match host prefix against any known subdomain pool key.
+	// This handles cases where the server's 'domain' config is unset or does
+	// not match the incoming Host header (e.g. behind a reverse proxy).
+	for sub, pool := range s.httpPools {
+		if strings.HasPrefix(hostOnly, sub+".") {
+			return pool, sub
+		}
+	}
+
 	return s.pool, ""
 }
 
@@ -1200,9 +1211,16 @@ func (s *Server) getEndpointKey(host string) string {
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	// Primary: strict domain match.
 	if s.domain != "" && strings.HasSuffix(hostOnly, "."+s.domain) {
 		sub := strings.TrimSuffix(hostOnly, "."+s.domain)
 		if _, ok := s.httpPools[sub]; ok {
+			return sub
+		}
+	}
+	// Fallback: prefix match against known pool keys.
+	for sub := range s.httpPools {
+		if strings.HasPrefix(hostOnly, sub+".") {
 			return sub
 		}
 	}
@@ -1217,9 +1235,16 @@ func (s *Server) getEndpointKeyLocked(host string) string {
 	if err != nil {
 		hostOnly = host
 	}
+	// Primary: strict domain match.
 	if s.domain != "" && strings.HasSuffix(hostOnly, "."+s.domain) {
 		sub := strings.TrimSuffix(hostOnly, "."+s.domain)
 		if _, ok := s.httpPools[sub]; ok {
+			return sub
+		}
+	}
+	// Fallback: prefix match against known pool keys.
+	for sub := range s.httpPools {
+		if strings.HasPrefix(hostOnly, sub+".") {
 			return sub
 		}
 	}

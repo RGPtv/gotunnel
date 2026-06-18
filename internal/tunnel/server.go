@@ -405,17 +405,31 @@ func RunServer(cfg *ServerConfig) {
 	}
 
 	// Start native HTTPS listener if configured.
+	// We use a manual tls.NewListener with LoadTLSConfigForHTTPS instead of
+	// ListenAndServeTLS so that GetCertificate (SNI-aware) is used.  This is
+	// required for wildcard certs (e.g. *.gotunnel.rgptv.site): without it the
+	// TLS stack only matches the cert's exact SAN entries and hangs/rejects
+	// connections to subdomains that are not explicitly listed in the cert.
 	var httpsSrv *http.Server
 	if cfg.HTTPSAddr != "" {
+		httpsTLSCfg, err := LoadTLSConfigForHTTPS(cfg.CertFile, cfg.KeyFile)
+		if err != nil {
+			srv.srvLog(LevelError, "HTTPS TLS setup: %v", err)
+			os.Exit(1)
+		}
+		httpsLn, err := tls.Listen("tcp", cfg.HTTPSAddr, httpsTLSCfg)
+		if err != nil {
+			srv.srvLog(LevelError, "HTTPS listen %s: %v", cfg.HTTPSAddr, err)
+			os.Exit(1)
+		}
 		httpsSrv = &http.Server{
-			Addr:              cfg.HTTPSAddr,
 			Handler:           srv,
 			ReadHeaderTimeout: 10 * time.Second,
 			ReadTimeout:       60 * time.Second,
 			IdleTimeout:       120 * time.Second,
 		}
 		go func() {
-			if err := httpsSrv.ListenAndServeTLS(cfg.CertFile, cfg.KeyFile); err != nil && err != http.ErrServerClosed {
+			if err := httpsSrv.Serve(httpsLn); err != nil && err != http.ErrServerClosed {
 				srv.srvLog(LevelError, "HTTPS server: %v", err)
 				os.Exit(1)
 			}

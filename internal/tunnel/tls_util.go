@@ -46,6 +46,36 @@ func makeTLSConfig(certFile, keyFile string) (*tls.Config, error) {
 	}, nil
 }
 
+// LoadTLSConfigForHTTPS returns a tls.Config suitable for the public HTTPS
+// listener. It uses GetCertificate (SNI-aware) so the same cert is served for
+// all subdomains — essential when using a wildcard cert such as
+// *.gotunnel.rgptv.site. Without this, Go's default TLS stack only matches
+// the cert's exact SAN entries and hangs/rejects subdomain connections.
+func LoadTLSConfigForHTTPS(certFile, keyFile string) (*tls.Config, error) {
+	if certFile == "" || keyFile == "" {
+		return nil, fmt.Errorf("cert and key files are required for the HTTPS listener")
+	}
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return nil, fmt.Errorf("load HTTPS TLS cert: %w", err)
+	}
+	log.Printf("HTTPS TLS cert loaded from %s", certFile)
+	return &tls.Config{
+		// GetCertificate is called for every TLS handshake with the client's
+		// SNI hostname. Returning the same cert regardless of ServerName means
+		// a wildcard cert (e.g. *.gotunnel.rgptv.site) is served correctly
+		// for any subdomain without needing an entry per subdomain.
+		GetCertificate: func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+			return &cert, nil
+		},
+		MinVersion: tls.VersionTLS12,
+		CurvePreferences: []tls.CurveID{
+			tls.X25519,
+			tls.CurveP384,
+		},
+	}, nil
+}
+
 // generateSelfSignedCert creates an in-memory ECDSA P-256 certificate valid
 // for one year.
 func generateSelfSignedCert() (tls.Certificate, error) {

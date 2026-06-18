@@ -178,6 +178,13 @@ type Server struct {
 	startTime       time.Time
 	authLimiters    sync.Map       // IP → *authBucket for rate-limiting tunnel auth
 	allowedTCPPorts []string       // if non-empty, only these remote addrs are allowed for TCP tunnels
+
+	// poolEmptySince tracks when each named pool (http subdomain or TCP addr)
+	// was first observed empty by the janitor.  A pool is only removed once it
+	// has been continuously empty for poolEmptyGrace — transient emptiness
+	// (workers mid-reconnect or all busy serving requests) does not trigger deletion.
+	// Protected by s.mu (always held by the janitor when it reads/writes this map).
+	poolEmptySince map[string]time.Time
 }
 
 // hopByHopHeaders are headers that must not be forwarded through a proxy.
@@ -280,6 +287,7 @@ func RunServer(cfg *ServerConfig) {
 		tcpPools:        make(map[string]chan *poolConn),
 		tcpListeners:    make(map[string]net.Listener),
 		tunnelMeta:      make(map[string]TunnelMeta),
+		poolEmptySince:  make(map[string]time.Time),
 		startTime:       time.Now(),
 		allowedTCPPorts: cfg.AllowedTCPPorts,
 	}
@@ -622,6 +630,8 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 				ln.Close() // lost race — discard the listener we just bound
 				// pool is now correctly set to the winner's pool from the map
 			}
+			// A connecting worker resets any pending grace-period eviction timer.
+			delete(s.poolEmptySince, remoteAddr)
 			s.mu.Unlock()
 		}
 
@@ -665,6 +675,8 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 			s.httpPools[remoteAddr] = pool
 			s.srvLog(LevelSuccess, "HTTP subdomain tunnel: %s", remoteAddr)
 		}
+		// A connecting worker resets any pending grace-period eviction timer.
+		delete(s.poolEmptySince, remoteAddr)
 		s.mu.Unlock()
 
 		fmt.Fprintf(conn, "OK\n")
@@ -1317,15 +1329,17 @@ func (s *Server) drainPool() {
 }
 
 // startJanitor periodically scans all pools and removes dead connections.
-// When a named pool (subdomain or TCP) becomes empty after cleaning, it is
-// removed from the map so future requests immediately get a 503 instead of
-// waiting 10 s for a connection that will never come.
+// Named pools (subdomain / TCP) are only deleted after they have been
+// continuously empty for poolEmptyGrace — a transient empty pool (all
+// workers busy serving a request, or mid-reconnect) does not trigger deletion.
 //
 // Both s.mu and s.tunnelMetaMu are held simultaneously during map cleanup so
 // that handleTunnelConn cannot insert new metadata for an endpoint between
 // the moment we decide to delete its pool and the moment we delete its meta
 // (TOCTOU fix). Blocking I/O (listener close) and logging are deferred until
 // after the locks are released to avoid holding the write mutex during syscalls.
+const poolEmptyGrace = 30 * time.Second
+
 func (s *Server) startJanitor() {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
@@ -1361,21 +1375,44 @@ func (s *Server) startJanitor() {
 		for sub, p := range s.httpPools {
 			s.cleanPool(p)
 			if len(p) == 0 {
-				delete(s.httpPools, sub)
-				delete(s.tunnelMeta, sub)
-				deletedSubs = append(deletedSubs, sub)
+				// Pool is currently empty.  Start (or check) the grace timer.
+				if since, ok := s.poolEmptySince[sub]; ok {
+					if time.Since(since) >= poolEmptyGrace {
+						// Grace period expired — clients have not reconnected.
+						delete(s.httpPools, sub)
+						delete(s.tunnelMeta, sub)
+						delete(s.poolEmptySince, sub)
+						deletedSubs = append(deletedSubs, sub)
+					}
+					// else: still within grace window — leave the pool alive.
+				} else {
+					// First janitor cycle where this pool is empty.
+					s.poolEmptySince[sub] = time.Now()
+				}
+			} else {
+				// Pool has live connections — clear any pending grace timer.
+				delete(s.poolEmptySince, sub)
 			}
 		}
 		for addr, p := range s.tcpPools {
 			s.cleanPool(p)
 			if len(p) == 0 {
-				delete(s.tcpPools, addr)
-				delete(s.tunnelMeta, addr)
-				deletedTCPs = append(deletedTCPs, addr)
-				if ln, ok := s.tcpListeners[addr]; ok {
-					delete(s.tcpListeners, addr)
-					toClose = append(toClose, listenerClose{addr: addr, ln: ln})
+				if since, ok := s.poolEmptySince[addr]; ok {
+					if time.Since(since) >= poolEmptyGrace {
+						delete(s.tcpPools, addr)
+						delete(s.tunnelMeta, addr)
+						delete(s.poolEmptySince, addr)
+						deletedTCPs = append(deletedTCPs, addr)
+						if ln, ok := s.tcpListeners[addr]; ok {
+							delete(s.tcpListeners, addr)
+							toClose = append(toClose, listenerClose{addr: addr, ln: ln})
+						}
+					}
+				} else {
+					s.poolEmptySince[addr] = time.Now()
 				}
+			} else {
+				delete(s.poolEmptySince, addr)
 			}
 		}
 

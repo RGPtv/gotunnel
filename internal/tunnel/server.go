@@ -79,10 +79,11 @@ func (b *authBucket) expired() bool {
 // pool holds the channel this connection belongs to so enqueue can return it
 // to the correct pool (default, subdomain, or TCP).
 type poolConn struct {
-	conn   net.Conn
-	r      *bufio.Reader
-	pool   chan *poolConn // owning pool — never nil after construction
-	closed int32          // atomic flag for idempotent close
+	conn     net.Conn
+	r        *bufio.Reader
+	pool     chan *poolConn // owning pool — never nil after construction
+	endpoint string         // the tunnel endpoint this connection belongs to
+	closed   int32          // atomic flag for idempotent close
 }
 
 // TunnelMeta stores per-tunnel metadata surfaced in the dashboard.
@@ -97,6 +98,7 @@ type TunnelMeta struct {
 	ProxyURL         string
 	ConnectedAt      time.Time
 	ClientIP         string
+	ActiveConns      int32 // total number of active connections (idle + busy)
 }
 
 // SetTunnelAIMode enables or disables AI/Ollama optimisations for a tunnel.
@@ -667,10 +669,11 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 			ProxyURL:         "tcp://" + remoteAddr,
 			ConnectedAt:      time.Now(),
 			ClientIP:         conn.RemoteAddr().String(),
+			ActiveConns:      prev.ActiveConns + 1,
 		}
 		s.tunnelMetaMu.Unlock()
 
-		pc := &poolConn{conn: conn, r: r, pool: pool}
+		pc := &poolConn{conn: conn, r: r, pool: pool, endpoint: remoteAddr}
 		select {
 		case pool <- pc:
 		default:
@@ -710,10 +713,11 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 			ProxyURL:         s.buildProxyURL("http", remoteAddr),
 			ConnectedAt:      time.Now(),
 			ClientIP:         conn.RemoteAddr().String(),
+			ActiveConns:      prev.ActiveConns + 1,
 		}
 		s.tunnelMetaMu.Unlock()
 
-		pc := &poolConn{conn: conn, r: r, pool: pool}
+		pc := &poolConn{conn: conn, r: r, pool: pool, endpoint: remoteAddr}
 		select {
 		case pool <- pc:
 		default:
@@ -742,10 +746,11 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 		ProxyURL:         s.buildProxyURL("http", "(default)"),
 		ConnectedAt:      time.Now(),
 		ClientIP:         conn.RemoteAddr().String(),
+		ActiveConns:      prev.ActiveConns + 1,
 	}
 	s.tunnelMetaMu.Unlock()
 
-	pc := &poolConn{conn: conn, r: r, pool: s.pool}
+	pc := &poolConn{conn: conn, r: r, pool: s.pool, endpoint: "(default)"}
 	select {
 	case s.pool <- pc:
 	default:
@@ -1339,6 +1344,14 @@ func (s *Server) closeConn(pc *poolConn, reason string) {
 	if atomic.CompareAndSwapInt32(&pc.closed, 0, 1) {
 		pc.conn.Close()
 		n := s.count.Add(-1)
+		
+		s.tunnelMetaMu.Lock()
+		if meta, ok := s.tunnelMeta[pc.endpoint]; ok {
+			meta.ActiveConns--
+			s.tunnelMeta[pc.endpoint] = meta
+		}
+		s.tunnelMetaMu.Unlock()
+
 		s.srvLog(LevelInfo, "tunnel- (%s)  (active: %d)", reason, n)
 	}
 }
@@ -1424,10 +1437,17 @@ func (s *Server) startJanitor() {
 
 		// Re-evaluate default pool emptiness while holding both locks.
 		if len(s.pool) == 0 {
-			delete(s.tunnelMeta, "(default)")
+			if meta, ok := s.tunnelMeta["(default)"]; !ok || meta.ActiveConns <= 0 {
+				delete(s.tunnelMeta, "(default)")
+			}
 		}
 
 		for sub, p := range s.httpPools {
+			if meta, ok := s.tunnelMeta[sub]; ok && meta.ActiveConns > 0 {
+				// There are active connections proxying traffic, so the pool is not abandoned.
+				delete(s.poolEmptySince, sub)
+				continue
+			}
 			if len(p) == 0 {
 				// Pool is currently empty.  Start (or check) the grace timer.
 				if since, ok := s.poolEmptySince[sub]; ok {
@@ -1449,6 +1469,10 @@ func (s *Server) startJanitor() {
 			}
 		}
 		for addr, p := range s.tcpPools {
+			if meta, ok := s.tunnelMeta[addr]; ok && meta.ActiveConns > 0 {
+				delete(s.poolEmptySince, addr)
+				continue
+			}
 			if len(p) == 0 {
 				if since, ok := s.poolEmptySince[addr]; ok {
 					if time.Since(since) >= poolEmptyGrace {

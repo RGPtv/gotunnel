@@ -452,8 +452,9 @@ func (c *Client) connectAndServe(id int) (error, bool) {
 		}
 
 		c.activeRequests.Add(1)
-		// Lazy scale up: if there are no idle workers to accept the next request, spawn one.
+		// Lazy scale up: if there are no idle workers to accept the next request, spawn more aggressively.
 		if int(c.uiWorkers.Load())-int(c.activeRequests.Load()) < 1 {
+			c.maybeSpawnWorker()
 			c.maybeSpawnWorker()
 		}
 

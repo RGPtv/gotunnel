@@ -699,11 +699,6 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 
 	s.tunnelMetaMu.Lock()
 	prev := s.tunnelMeta["(default)"]
-	// Close any existing session for this endpoint to prevent count leak.
-	if prev.Session != nil && !prev.Session.IsClosed() {
-		prev.Session.Close()
-		s.count.Add(-1)
-	}
 	s.tunnelMeta["(default)"] = TunnelMeta{
 		APIKey:           prev.APIKey,
 		APIKeyEnabled:    prev.APIKeyEnabled,
@@ -940,17 +935,6 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, reqBody *capp
 	}
 	defer stream.Close()
 
-	reqDone := make(chan struct{})
-	defer close(reqDone)
-	go func() {
-		select {
-		case <-r.Context().Done():
-			stream.SetDeadline(time.Now())
-			stream.Close()
-		case <-reqDone:
-		}
-	}()
-
 	if err := out.Write(stream); err != nil {
 		s.srvLog(LevelWarn, "tunnel write failed: %v", err)
 		http.Error(w, "tunnel write error", http.StatusBadGateway)
@@ -1016,7 +1000,7 @@ func (s *Server) streamResponse(w http.ResponseWriter, resp *http.Response, stre
 		n, rerr := resp.Body.Read(buf)
 		if n > 0 {
 			if _, werr := w.Write(buf[:n]); werr != nil {
-				stream.Close()
+				
 				break
 			}
 			if canFlush {
@@ -1116,7 +1100,6 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request) {
 	go cp(browserConn, stream)
 	<-done
 	browserConn.Close()
-	stream.SetDeadline(time.Now())
 	stream.Close()
 	<-done
 

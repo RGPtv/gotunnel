@@ -940,6 +940,16 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, reqBody *capp
 	}
 	defer stream.Close()
 
+	reqDone := make(chan struct{})
+	defer close(reqDone)
+	go func() {
+		select {
+		case <-r.Context().Done():
+			stream.Close()
+		case <-reqDone:
+		}
+	}()
+
 	if err := out.Write(stream); err != nil {
 		s.srvLog(LevelWarn, "tunnel write failed: %v", err)
 		http.Error(w, "tunnel write error", http.StatusBadGateway)

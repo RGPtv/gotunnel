@@ -699,6 +699,11 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 
 	s.tunnelMetaMu.Lock()
 	prev := s.tunnelMeta["(default)"]
+	// Close any existing session for this endpoint to prevent count leak.
+	if prev.Session != nil && !prev.Session.IsClosed() {
+		prev.Session.Close()
+		s.count.Add(-1)
+	}
 	s.tunnelMeta["(default)"] = TunnelMeta{
 		APIKey:           prev.APIKey,
 		APIKeyEnabled:    prev.APIKeyEnabled,
@@ -1000,7 +1005,7 @@ func (s *Server) streamResponse(w http.ResponseWriter, resp *http.Response, stre
 		n, rerr := resp.Body.Read(buf)
 		if n > 0 {
 			if _, werr := w.Write(buf[:n]); werr != nil {
-				
+				stream.Close()
 				break
 			}
 			if canFlush {

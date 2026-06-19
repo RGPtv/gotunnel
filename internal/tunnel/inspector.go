@@ -30,10 +30,9 @@ const maxAPIBodySize = 64 * 1024 // 64 KB limit on dashboard API request bodies
 
 // loginRateLimit controls brute-force protection on the dashboard login.
 const (
-	loginRateLimit     = 5
-	loginRateWindow    = 60 * time.Second
-	loginFailDelay     = 500 * time.Millisecond
-	loginLimiterExpiry = 15 * time.Minute
+	loginRateLimit  = 5
+	loginRateWindow = 60 * time.Second
+	loginFailDelay  = 500 * time.Millisecond
 )
 
 // CapturedRequest holds metadata about a single proxied HTTP request.
@@ -103,14 +102,12 @@ type sessionData struct {
 type loginBucket struct {
 	mu       sync.Mutex
 	attempts []time.Time
-	lastSeen time.Time
 }
 
 func (b *loginBucket) allow() bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	now := time.Now()
-	b.lastSeen = now
 	cutoff := now.Add(-loginRateWindow)
 	valid := b.attempts[:0]
 	for _, t := range b.attempts {
@@ -124,12 +121,6 @@ func (b *loginBucket) allow() bool {
 	}
 	b.attempts = append(b.attempts, now)
 	return true
-}
-
-func (b *loginBucket) expired() bool {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return time.Since(b.lastSeen) > loginLimiterExpiry
 }
 
 // NewInspector creates a new request inspector.
@@ -176,12 +167,6 @@ func (ins *Inspector) cleanSessions() {
 				}
 			}
 			ins.sessionsMu.Unlock()
-			ins.loginLimiters.Range(func(key, value any) bool {
-				if b, ok := value.(*loginBucket); ok && b.expired() {
-					ins.loginLimiters.Delete(key)
-				}
-				return true
-			})
 		case <-ins.done:
 			return
 		}
@@ -495,10 +480,8 @@ func (ins *Inspector) buildTunnelList() []TunnelEntry {
 	if ins.srv == nil {
 		return tunnels
 	}
-	ins.srv.mu.RLock()
 	ins.srv.tunnelMetaMu.RLock()
 	defer ins.srv.tunnelMetaMu.RUnlock()
-	defer ins.srv.mu.RUnlock()
 
 	for ep, meta := range ins.srv.tunnelMeta {
 		conns := 0
@@ -517,7 +500,9 @@ func (ins *Inspector) buildTunnelList() []TunnelEntry {
 			ClientIP:         meta.ClientIP,
 		})
 	}
-
+	
+	
+	
 	return tunnels
 }
 
@@ -627,6 +612,7 @@ func (ins *Inspector) handleTunnelBasicAuthCreds(w http.ResponseWriter, r *http.
 		"password": password,
 	})
 }
+
 
 // POST /api/tunnels/auth
 //
@@ -745,6 +731,8 @@ func (ins *Inspector) handleTunnelBasicAuth(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]bool{"enabled": req.Enabled})
 }
+
+
 
 // handleToken returns the server token on an explicit authenticated GET request.
 // The token is never pushed automatically (not in SSE or status) so a passive
@@ -901,14 +889,13 @@ func (ins *Inspector) handleReplay(w http.ResponseWriter, r *http.Request) {
 
 	// Re-apply gateway auth so the replayed request passes the server's auth check.
 	if ins.srv != nil {
-		// Acquire locks in consistent order (mu before tunnelMetaMu) to match
-		// the janitor and avoid lock-order inversion.
-		ins.srv.mu.RLock()
+		// getEndpointKeyLocked requires caller to hold tunnelMetaMu (read or write).
+		// We do NOT hold mu here: s.domain is immutable after start, and mu only
+		// guards tcpListeners which we do not access.
 		ins.srv.tunnelMetaMu.RLock()
 		endpointKey := ins.srv.getEndpointKeyLocked(targetReq.Host)
 		tMeta, ok := ins.srv.tunnelMeta[endpointKey]
 		ins.srv.tunnelMetaMu.RUnlock()
-		ins.srv.mu.RUnlock()
 
 		if ok && tMeta.APIKeyEnabled && tMeta.APIKey != "" {
 			newReq.Header.Set("X-API-Key", tMeta.APIKey)

@@ -46,6 +46,8 @@ type Client struct {
 	uiStatusMu sync.RWMutex
 	uiStatus   string
 	uiStreams  atomic.Int32
+
+	
 }
 
 type uiRequest struct {
@@ -199,7 +201,7 @@ func RunClient(cfg *ClientConfig) {
 			uiStatus:  "connecting...",
 			ctx:       ctx,
 			cancel:    cancel,
-		}
+					}
 
 		if singleTunnel {
 			// Single-tunnel mode: full banner.
@@ -290,9 +292,14 @@ func (c *Client) connectAndServe() error {
 		return err
 	}
 	defer conn.Close()
-
+	
+	// connCtx is cancelled when connectAndServe returns (normal or error), so
+	// the close-on-shutdown goroutine below exits promptly instead of leaking
+	// until the whole program shuts down.
+	connCtx, connCancel := context.WithCancel(c.ctx)
+	defer connCancel()
 	go func() {
-		<-c.ctx.Done()
+		<-connCtx.Done()
 		conn.Close()
 	}()
 
@@ -399,7 +406,7 @@ func (c *Client) handleStream(stream net.Conn) {
 
 	start := time.Now()
 	resp, proxyErr := c.forwardToTarget(req)
-
+	
 	if proxyErr != nil {
 		writeErrorResponse(stream, 502, proxyErr.Error())
 		return
@@ -445,7 +452,17 @@ func (c *Client) handleTCPWorker(id int, tunnelConn net.Conn, tunnelReader *bufi
 
 	log.Printf("[w%d] tcp session started: %s", id, c.targetAddr)
 
-	proxyBidirectional(targetConn, tunnelReader, tunnelConn, targetConn)
+	done := make(chan struct{}, 2)
+	cp := func(dst io.Writer, src io.Reader) {
+		io.Copy(dst, src)
+		done <- struct{}{}
+	}
+	go cp(targetConn, tunnelReader)
+	go cp(tunnelConn, targetConn)
+	<-done
+	tunnelConn.Close()
+	targetConn.Close()
+	<-done
 
 	log.Printf("[w%d] tcp session closed", id)
 	return nil
@@ -481,7 +498,17 @@ func (c *Client) handleWebSocket(id int, tunnelConn net.Conn, tunnelReader *bufi
 
 	log.Printf("[w%d] ws open: %s", id, req.URL.Path)
 
-	proxyBidirectional(targetConn, targetReader, tunnelConn, tunnelReader)
+	done := make(chan struct{}, 2)
+	cp := func(dst io.Writer, src io.Reader) {
+		io.Copy(dst, src)
+		done <- struct{}{}
+	}
+	go cp(targetConn, tunnelReader)  
+	go cp(tunnelConn, targetReader)  
+	<-done
+	targetConn.Close()
+	tunnelConn.Close()
+	<-done
 
 	log.Printf("[w%d] ws closed: %s", id, req.URL.Path)
 	return nil
@@ -498,7 +525,7 @@ func (c *Client) forwardToTarget(req *http.Request) (*http.Response, error) {
 	if req.Host == "" {
 		req.Host = req.URL.Host
 	}
-	req.RequestURI = ""
+	req.RequestURI = "" 
 
 	return c.httpClient.Do(req)
 }

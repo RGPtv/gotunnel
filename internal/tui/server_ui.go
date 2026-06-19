@@ -87,7 +87,7 @@ func drawServerFrame(ipcClient *ipc.Client) {
 		padLen = 0
 	}
 	writeLine(&b, strings.Repeat(" ", padLen)+statsLine, w) // 1 line
-	writeLine(&b, "", w)                                    // 1 line (spacer)
+	writeLine(&b, "", w)                                     // 1 line (spacer)
 
 	// ── 3. Config panel ───────────────────────────────────────────────────────
 	inspectUrl := "—"
@@ -101,12 +101,12 @@ func drawServerFrame(ipcClient *ipc.Client) {
 
 	col := (w - 8) / 2
 
-	panelTop(&b, "Configuration", w)                                                                                                                       // 1 line
-	panelRow(&b, cfgCell(" HTTP Proxy ", state.HTTPAddr, col)+cfgCell(" Tunnel Port", state.TunAddr, w-8-col), w)                                          // 1 line
-	panelRow(&b, cfgCell(" HTTPS      ", orDash(state.HTTPSAddr), col)+cfgCell(" Dashboard  ", inspectUrl, w-8-col), w)                                    // 1 line
+	panelTop(&b, "Configuration", w)                                                                                                  // 1 line
+	panelRow(&b, cfgCell(" HTTP Proxy ", state.HTTPAddr, col)+cfgCell(" Tunnel Port", state.TunAddr, w-8-col), w)                     // 1 line
+	panelRow(&b, cfgCell(" HTTPS      ", orDash(state.HTTPSAddr), col)+cfgCell(" Dashboard  ", inspectUrl, w-8-col), w)               // 1 line
 	panelRow(&b, cfgCell(" Token      ", maskSecret(state.Token), col)+cfgCell(" Login      ", state.DashUser+"/"+maskSecret(state.DashPass), w-8-col), w) // 1 line
-	panelBottom(&b, w)                                                                                                                                     // 1 line
-	writeLine(&b, "", w)                                                                                                                                   // 1 line (spacer)
+	panelBottom(&b, w)                                                                                                                 // 1 line
+	writeLine(&b, "", w)                                                                                                               // 1 line (spacer)
 
 	// ── 4. Tunnels table ──────────────────────────────────────────────────────
 	//
@@ -122,9 +122,9 @@ func drawServerFrame(ipcClient *ipc.Client) {
 	//
 	// So the budget for variable rows = h - 9 - 7 - 1 = h - 17
 	const (
-		fixedAbove  = 9 // lines drawn before panelTop("Active Tunnels")
-		fixedInside = 7 // fixed box-chrome lines inside the two panels
-		fixedBelow  = 1 // footer
+		fixedAbove  = 9  // lines drawn before panelTop("Active Tunnels")
+		fixedInside = 7  // fixed box-chrome lines inside the two panels
+		fixedBelow  = 1  // footer
 	)
 
 	panelTop(&b, "Active Tunnels", w) // 1 line (counted in fixedInside)
@@ -233,8 +233,8 @@ func drawServerFrame(ipcClient *ipc.Client) {
 	panelBottom(&b, w) // 1 line (counted in fixedInside)
 
 	// ── 5. Event log ──────────────────────────────────────────────────────────
-	writeLine(&b, "", w)         // 1 line (counted in fixedInside)
-	panelTop(&b, "Event Log", w) // 1 line (counted in fixedInside)
+	writeLine(&b, "", w)            // 1 line (counted in fixedInside)
+	panelTop(&b, "Event Log", w)   // 1 line (counted in fixedInside)
 
 	last := state.Logs
 	if len(last) > maxLogs {

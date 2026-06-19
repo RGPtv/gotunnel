@@ -25,7 +25,7 @@ import (
 	"time"
 
 	"github.com/RGPtv/gotunnel/internal/ipc"
-	"github.com/hashicorp/yamux"
+	"github.com/RGPtv/gotunnel/internal/mux"
 )
 
 // Client connects to the tunnel server and forwards HTTP requests to the
@@ -368,7 +368,7 @@ func (c *Client) connectAndServe() error {
 
 	c.setStatus("online")
 
-	session, err := yamux.Server(conn, yamux.DefaultConfig())
+	session, err := mux.Server(conn, mux.DefaultConfig())
 	if err != nil {
 		return err
 	}

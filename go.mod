@@ -8,6 +8,5 @@ require (
 )
 
 require (
-	github.com/hashicorp/yamux v0.1.2 // indirect
 	golang.org/x/sys v0.46.0 // indirect
 )

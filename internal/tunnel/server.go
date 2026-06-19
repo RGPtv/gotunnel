@@ -27,7 +27,7 @@ import (
 	"time"
 
 	"github.com/RGPtv/gotunnel/internal/ipc"
-	"github.com/hashicorp/yamux"
+	"github.com/RGPtv/gotunnel/internal/mux"
 )
 
 // ── Per-IP rate limiter for tunnel authentication ─────────────────────────────
@@ -87,7 +87,7 @@ type TunnelMeta struct {
 	ProxyURL         string
 	ConnectedAt      time.Time
 	ClientIP         string
-	Session          *yamux.Session
+	Session          *mux.Session
 }
 
 // SetTunnelAIMode enables or disables AI/Ollama optimisations for a tunnel.
@@ -613,9 +613,9 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 
 		fmt.Fprintf(conn, "OK\n")
 		
-		session, err := yamux.Client(&bufferedConn{Conn: conn, r: r}, yamux.DefaultConfig())
+		session, err := mux.Client(&bufferedConn{Conn: conn, r: r}, mux.DefaultConfig())
 		if err != nil {
-			s.srvLog(LevelError, "yamux client err: %v", err)
+			s.srvLog(LevelError, "mux session err: %v", err)
 			conn.Close()
 			return
 		}
@@ -650,9 +650,9 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 	if tunnelType == "http" && remoteAddr != "" {
 		fmt.Fprintf(conn, "OK\n")
 		
-		session, err := yamux.Client(&bufferedConn{Conn: conn, r: r}, yamux.DefaultConfig())
+		session, err := mux.Client(&bufferedConn{Conn: conn, r: r}, mux.DefaultConfig())
 		if err != nil {
-			s.srvLog(LevelError, "yamux client err: %v", err)
+			s.srvLog(LevelError, "mux session err: %v", err)
 			conn.Close()
 			return
 		}
@@ -687,9 +687,9 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 	// Default HTTP pool.
 	fmt.Fprintf(conn, "OK\n")
 	
-	session, err := yamux.Client(&bufferedConn{Conn: conn, r: r}, yamux.DefaultConfig())
+	session, err := mux.Client(&bufferedConn{Conn: conn, r: r}, mux.DefaultConfig())
 	if err != nil {
-		s.srvLog(LevelError, "yamux client err: %v", err)
+		s.srvLog(LevelError, "mux session err: %v", err)
 		conn.Close()
 		return
 	}
@@ -699,6 +699,11 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 
 	s.tunnelMetaMu.Lock()
 	prev := s.tunnelMeta["(default)"]
+	// Close any existing session for this endpoint to prevent count leak.
+	if prev.Session != nil && !prev.Session.IsClosed() {
+		prev.Session.Close()
+		s.count.Add(-1)
+	}
 	s.tunnelMeta["(default)"] = TunnelMeta{
 		APIKey:           prev.APIKey,
 		APIKeyEnabled:    prev.APIKeyEnabled,
@@ -968,12 +973,15 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, reqBody *capp
 	}
 }
 
-// streamResponse writes the upstream response to the HTTP client and returns
-// the tunnel connection to the pool when possible.
-// streamResponse writes the upstream response to the HTTP client and returns
-// the tunnel connection to the pool when possible.
+// streamResponse copies the upstream HTTP response to the browser.
 // aiMode enables per-chunk flushing with a small read buffer so LLM streaming
 // tokens reach the browser immediately instead of waiting for a 32 KB fill.
+//
+// stream is passed explicitly so we can close it immediately when the browser
+// disconnects: without this, defer resp.Body.Close() in the caller would block
+// draining up to 256 KB from the mux stream before releasing it, keeping the
+// stream counted in session.NumStreams() far longer than necessary and making
+// the "conns" counter on the dashboard climb on every page refresh or navigate.
 func (s *Server) streamResponse(w http.ResponseWriter, resp *http.Response, stream net.Conn, aiMode bool) {
 	defer resp.Body.Close()
 
@@ -1000,8 +1008,13 @@ func (s *Server) streamResponse(w http.ResponseWriter, resp *http.Response, stre
 		n, rerr := resp.Body.Read(buf)
 		if n > 0 {
 			if _, werr := w.Write(buf[:n]); werr != nil {
-				
-				break
+				// Browser disconnected (page refresh / navigate away).
+				// Close the mux stream immediately so that the deferred
+				// resp.Body.Close() above hits an error and returns at once
+				// rather than draining up to 256 KB from the upstream.
+				// The caller's defer stream.Close() is idempotent.
+				stream.Close()
+				return
 			}
 			if canFlush {
 				flusher.Flush()
@@ -1245,7 +1258,7 @@ func (s *Server) startJanitor() {
 		// getEndpointKey (mu → tunnelMetaMu) and cause a deadlock.
 		type closedEntry struct {
 			ep   string
-			sess *yamux.Session
+			sess *mux.Session
 		}
 		var closed []closedEntry
 		s.tunnelMetaMu.Lock()

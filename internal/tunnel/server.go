@@ -945,6 +945,7 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, reqBody *capp
 	go func() {
 		select {
 		case <-r.Context().Done():
+			stream.SetDeadline(time.Now())
 			stream.Close()
 		case <-reqDone:
 		}
@@ -1115,6 +1116,7 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request) {
 	go cp(browserConn, stream)
 	<-done
 	browserConn.Close()
+	stream.SetDeadline(time.Now())
 	stream.Close()
 	<-done
 

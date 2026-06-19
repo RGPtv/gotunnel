@@ -412,11 +412,23 @@ func (c *Client) handleStream(stream net.Conn) {
 		return
 	}
 
-	if err := resp.Write(stream); err != nil {
-		resp.Body.Close()
+	monitorDone := make(chan struct{})
+	go func() {
+		defer close(monitorDone)
+		b := make([]byte, 1)
+		stream.Read(b)
+		stream.SetDeadline(time.Now())
+	}()
+
+	err = resp.Write(stream)
+	resp.Body.Close()
+
+	stream.SetDeadline(time.Now())
+	<-monitorDone
+
+	if err != nil {
 		return
 	}
-	resp.Body.Close()
 
 	addUIReq(c.name, req.Method, req.URL.RequestURI(), resp.StatusCode, time.Since(start))
 }

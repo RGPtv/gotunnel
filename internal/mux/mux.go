@@ -64,6 +64,9 @@ const (
 	initialWindow = 256 * 1024
 	// maxFramePayload caps a single DATA frame to prevent monopolising the wire.
 	maxFramePayload = 32 * 1024
+	// maxSendWin caps the accumulated send window so a peer cannot grant
+	// unbounded credit (flow-control bypass) or cause int64 overflow.
+	maxSendWin = initialWindow * 64 // 16 MiB
 	// defaultAcceptBacklog is the number of unaccepted streams buffered before
 	// new SYNs are rejected with RST.
 	defaultAcceptBacklog = 256
@@ -379,6 +382,10 @@ func (s *Session) readLoop() {
 		// encode their value in the length field without a payload body.
 		var payload []byte
 		if typ == typeData && length > 0 {
+			if length > maxFramePayload {
+				s.closeWithError(errors.New("mux: oversized DATA frame"))
+				return
+			}
 			payload = make([]byte, length)
 			if _, err := io.ReadFull(s.conn, payload); err != nil {
 				s.closeWithError(err)
@@ -460,12 +467,9 @@ func (s *Session) handleData(flags uint16, streamID uint32, payload []byte) erro
 		st, ok := s.streams[streamID]
 		s.streamsMu.RUnlock()
 		if ok && st.synAckCh != nil {
-			// close is idempotent; safe to call from readLoop only once.
-			select {
-			case <-st.synAckCh: // already closed
-			default:
-				close(st.synAckCh)
-			}
+			// synAckOnce ensures close(synAckCh) is called exactly once,
+			// even if forceClose races this ACK handler from another goroutine.
+			st.synAckOnce.Do(func() { close(st.synAckCh) })
 		}
 		if len(payload) == 0 && flags&flagFIN == 0 {
 			return nil
@@ -532,6 +536,9 @@ func (s *Session) handleWindowUpdate(streamID uint32, delta uint32) error {
 	}
 	st.sendWinMu.Lock()
 	st.sendWin += int64(delta)
+	if st.sendWin > maxSendWin {
+		st.sendWin = maxSendWin
+	}
 	st.sendWinMu.Unlock()
 	// Wake any Write blocked waiting for window space.
 	select {
@@ -583,7 +590,8 @@ type Stream struct {
 
 	// synAckCh is closed by the readLoop when ACK arrives for this stream's SYN.
 	// Non-nil only for streams created by OpenStream().
-	synAckCh chan struct{}
+	synAckCh   chan struct{}
+	synAckOnce sync.Once // guards the single close(synAckCh)
 
 	// Receive side.
 	recvMu     sync.Mutex
@@ -634,11 +642,7 @@ func (st *Stream) forceClose(err error) {
 		}
 		// Unblock any OpenStream waiting for ACK.
 		if st.synAckCh != nil {
-			select {
-			case <-st.synAckCh:
-			default:
-				close(st.synAckCh)
-			}
+			st.synAckOnce.Do(func() { close(st.synAckCh) })
 		}
 	})
 }
@@ -742,11 +746,17 @@ func (st *Stream) Write(b []byte) (int, error) {
 			return sent, err
 		}
 
-		// How many bytes can we send in one frame?
+		// Compute chunk size and decrement the window atomically so that
+		// concurrent Write calls cannot both observe the same positive window
+		// and both over-commit (TOCTOU).
 		st.sendWinMu.Lock()
 		avail := st.sendWin
-		st.sendWinMu.Unlock()
-
+		if avail <= 0 {
+			// Another concurrent Write drained the window between
+			// waitSendWindow returning and now; loop back and wait again.
+			st.sendWinMu.Unlock()
+			continue
+		}
 		chunk := b[sent:]
 		if int64(len(chunk)) > avail {
 			chunk = chunk[:avail]
@@ -754,8 +764,6 @@ func (st *Stream) Write(b []byte) (int, error) {
 		if len(chunk) > maxFramePayload {
 			chunk = chunk[:maxFramePayload]
 		}
-
-		st.sendWinMu.Lock()
 		st.sendWin -= int64(len(chunk))
 		st.sendWinMu.Unlock()
 

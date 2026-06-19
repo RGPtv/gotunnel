@@ -625,9 +625,14 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 
 		s.tunnelMetaMu.Lock()
 		prev := s.tunnelMeta[remoteAddr]
-		// Close any existing session for this endpoint to prevent count leak.
-		if prev.Session != nil && !prev.Session.IsClosed() {
-			prev.Session.Close()
+		// Always decrement for any pre-existing session so the count stays
+		// correct even when the old session already closed itself (network drop)
+		// before this reconnect — the janitor can no longer find it after we
+		// overwrite the map entry below.
+		if prev.Session != nil {
+			if !prev.Session.IsClosed() {
+				prev.Session.Close()
+			}
 			s.count.Add(-1)
 		}
 		s.tunnelMeta[remoteAddr] = TunnelMeta{
@@ -662,9 +667,11 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 
 		s.tunnelMetaMu.Lock()
 		prev := s.tunnelMeta[remoteAddr]
-		// Close any existing session for this endpoint to prevent count leak.
-		if prev.Session != nil && !prev.Session.IsClosed() {
-			prev.Session.Close()
+		// Always decrement for any pre-existing session (see TCP block comment).
+		if prev.Session != nil {
+			if !prev.Session.IsClosed() {
+				prev.Session.Close()
+			}
 			s.count.Add(-1)
 		}
 		s.tunnelMeta[remoteAddr] = TunnelMeta{
@@ -699,9 +706,11 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 
 	s.tunnelMetaMu.Lock()
 	prev := s.tunnelMeta["(default)"]
-	// Close any existing session for this endpoint to prevent count leak.
-	if prev.Session != nil && !prev.Session.IsClosed() {
-		prev.Session.Close()
+	// Always decrement for any pre-existing session (see TCP block comment).
+	if prev.Session != nil {
+		if !prev.Session.IsClosed() {
+			prev.Session.Close()
+		}
 		s.count.Add(-1)
 	}
 	s.tunnelMeta["(default)"] = TunnelMeta{

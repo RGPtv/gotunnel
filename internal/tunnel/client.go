@@ -368,7 +368,9 @@ func (c *Client) connectAndServe() error {
 
 	c.setStatus("online")
 
-	session, err := mux.Server(conn, mux.DefaultConfig())
+	// Wrap conn so that mux.Server drains any bytes already buffered in reader
+	// before falling back to the raw conn — identical to the server-side fix.
+	session, err := mux.Server(&bufferedConn{Conn: conn, r: reader}, mux.DefaultConfig())
 	if err != nil {
 		return err
 	}
@@ -406,9 +408,10 @@ func (c *Client) handleStream(stream net.Conn) {
 
 	start := time.Now()
 	resp, proxyErr := c.forwardToTarget(req)
-	
+
 	if proxyErr != nil {
-		writeErrorResponse(stream, 502, proxyErr.Error())
+		log.Printf("[stream] forward error (not exposed to client): %v", proxyErr)
+		writeErrorResponse(stream, 502, "Bad Gateway")
 		return
 	}
 
@@ -525,9 +528,12 @@ func (c *Client) forwardToTarget(req *http.Request) (*http.Response, error) {
 	if req.Host == "" {
 		req.Host = req.URL.Host
 	}
-	req.RequestURI = "" 
+	req.RequestURI = ""
 
-	return c.httpClient.Do(req)
+	// Propagate the client's lifecycle context so that a shutdown or
+	// disconnection cancels the upstream request immediately instead of
+	// waiting up to ResponseHeaderTimeout (10 min).
+	return c.httpClient.Do(req.WithContext(c.ctx))
 }
 
 // writeErrorResponse writes a minimal HTTP/1.1 error response to w.

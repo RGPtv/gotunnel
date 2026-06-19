@@ -1,6 +1,6 @@
 # GoTunnel
 
-`GoTunnel` is a reverse tunneling solution written in Go. Expose local HTTP, WebSocket, or raw TCP services to the public internet via a remote server — similar to ngrok or Cloudflare Tunnels, but self-hosted.
+`GoTunnel` is a self-hosted reverse tunnel written in Go. Expose local HTTP, WebSocket, or raw TCP services to the public internet via a remote VPS — no third-party services required.
 
 ```text
 Local machine                       Public VPS
@@ -14,16 +14,15 @@ Local machine                       Public VPS
 
 ## Features
 
-- **Zero-flag Startup**: All configuration lives in a single `config.yaml` file. Run `./gotunnel` with no arguments.
-- **YAML Configuration**: Human-readable, well-commented config. No CLI flags to memorise.
-- **Multiple Tunnels**: Define any number of tunnels in one config file — all start concurrently.
-- **Protocol Support**: HTTP, WebSockets, and raw TCP tunnels.
-- **Subdomain Routing**: Route traffic to multiple local services using subdomains.
-- **Rich Terminal UI**: Beautiful, real-time traffic monitoring and event logs for both the Server and Client.
-- **Background Daemon**: Runs as a background daemon automatically. Detach from the UI (`ctrl+d`) while keeping tunnels alive, and re-attach anytime.
-- **Modern Web Dashboard**: Tabbed inspector at `localhost:4040` with metrics, token display, and request replay.
-- **Security**: HTTP Basic Auth, auto-generated TLS certificates, per-tunnel API key authentication.
-- **Minimal Dependencies**: Only `gopkg.in/yaml.v3` beyond the Go standard library.
+- **Zero-flag Startup** — all configuration lives in a single `config.yaml`. Run `./gotunnel` with no arguments.
+- **Multiple Tunnels** — define any number of tunnels in one config file; all start concurrently.
+- **Protocol Support** — HTTP, WebSockets, and raw TCP tunnels.
+- **Subdomain Routing** — route traffic to multiple local services using subdomains.
+- **Rich Terminal UI** — real-time traffic monitoring and event logs for both the server and client.
+- **Background Daemon** — runs detached automatically. Press `ctrl+d` to leave tunnels alive and re-attach anytime with `./gotunnel`.
+- **Web Dashboard** — tabbed inspector at `localhost:4040` with live metrics, token display, and request replay.
+- **Security** — HMAC-SHA256 challenge/response auth, TLS on the tunnel port, per-tunnel API key gating, HTTP Basic Auth.
+- **Minimal Dependencies** — only `gopkg.in/yaml.v3` (config parsing) and `golang.org/x/term` (terminal raw mode). Stream multiplexing is implemented with a purpose-built stdlib-only engine — no external mux library.
 
 ---
 
@@ -49,12 +48,13 @@ GoTunnel reads **`config.yml`** or **`config.yaml`** from the current working di
 ./gotunnel
 ```
 
-That's it. No subcommands. No flags.
+When you run `./gotunnel` it starts a background daemon and attaches a real-time Terminal UI.
 
-When you run `./gotunnel`, it starts the background daemon and attaches a real-time Terminal UI.
-- Press `ctrl+d` to detach from the UI and leave the tunnel running in the background.
-- Press `ctrl+c` to stop the background daemon entirely.
-- Run `./gotunnel` again anytime to re-attach to the running daemon.
+| Key | Action |
+|-----|--------|
+| `ctrl+d` | Detach from the UI — daemon and tunnels keep running |
+| `ctrl+c` | Stop the daemon entirely |
+| `./gotunnel` (again) | Re-attach to the running daemon |
 
 ---
 
@@ -77,8 +77,8 @@ Then run:
 ```
 
 > [!NOTE]
-> - If `token` is set to `"auto"`, a secure 256-bit token is auto-generated and printed on startup. Copy it from the dashboard or the console.
-> - Ensure your firewall allows the HTTP port (e.g., `8080`) and the tunnel port (e.g., `2222`).
+> If `token` is set to `"auto"`, a secure 256-bit token is auto-generated and printed on startup.
+> Ensure your firewall allows the HTTP port (e.g. `8080`) and the tunnel port (e.g. `2222`).
 
 ---
 
@@ -90,12 +90,12 @@ Create `config.yaml` on your local machine:
 clientConfig:
   server: "vps.example.com:2222"
   token:  "YOUR_SECRET_TOKEN"
-  skipTLSVerify: true   # required when server uses self-signed cert
+  skipTLSVerify: true   # required when server uses a self-signed cert
 
   tunnels:
-    - name:   "web"
-      target: "localhost:3000"
-      type:   "http"
+    - name:    "web"
+      target:  "localhost:3000"
+      type:    "http"
       workers: 10
 ```
 
@@ -121,7 +121,7 @@ Your local service at `:3000` is now accessible at `http://vps.example.com:8080`
 | `token` | `""` | Shared auth token — auto-generated if set to `"auto"` |
 | `cert` | *(auto)* | Path to TLS certificate PEM file |
 | `key` | *(auto)* | Path to TLS private key PEM file |
-| `auth` | *(off)* | HTTP Basic Auth for all traffic (`user:pass`) |
+| `auth` | *(off)* | HTTP Basic Auth for all proxied traffic (`user:pass`) |
 | `domain` | *(off)* | Base domain for subdomain routing (e.g. `example.com`) |
 | `inspect` | `:4040` | Web dashboard address — omit or set `""` to disable |
 | `inspectUser` | `admin` | Dashboard login username |
@@ -156,15 +156,13 @@ serverConfig:
 |-------|---------|-------------|
 | `server` | *(required)* | Server address — `host:port` or `https://host[:port]` |
 | `token` | *(required)* | Must match server's `token` |
-| `skipTLSVerify` | `false` | Skip TLS cert check (required for self-signed certs) |
-| `noTLS` | `false` | Use plain TCP (when server uses `noTLS: true`) |
+| `skipTLSVerify` | `false` | Skip TLS cert check (use with self-signed certs) |
+| `noTLS` | `false` | Use plain TCP (when server sets `noTLS: true`) |
 | `tunnels` | *(required)* | List of tunnel definitions — see below |
 
 ---
 
 ### Tunnel Fields (`tunnels:`)
-
-Each entry in `tunnels:` is a tunnel that starts when `./gotunnel` runs.
 
 | Field | Default | Description |
 |-------|---------|-------------|
@@ -173,7 +171,7 @@ Each entry in `tunnels:` is a tunnel that starts when `./gotunnel` runs.
 | `type` | `http` | Tunnel type: `http` or `tcp` |
 | `subdomain` | *(optional)* | Request a subdomain — requires server `domain` to be set |
 | `remote` | *(required for tcp)* | Port opened on the server for TCP traffic (e.g. `:22222`) |
-| `apiKey` | *(optional)* | Bearer token gate — use `"auto"` to generate one |
+| `apiKey` | *(optional)* | Bearer token gate — set `"auto"` to generate one on startup |
 | `workers` | `10` | Parallel tunnel connections to maintain |
 
 **Full example — multiple tunnels:**
@@ -183,7 +181,6 @@ clientConfig:
   server:        "vps.example.com:2222"
   token:         "YOUR_TOKEN"
   skipTLSVerify: false
-  noTLS:         false
 
   tunnels:
     - name:      "api"
@@ -215,7 +212,7 @@ GoTunnel validates your config on startup and exits with a descriptive error if 
 |-------|-------|
 | `No configuration file found` | No `config.yml` or `config.yaml` in CWD |
 | `both 'serverConfig' and 'clientConfig' are present` | Only one root section is allowed |
-| `neither 'serverConfig' nor 'clientConfig' is present` | Config file has no recognised root section |
+| `neither 'serverConfig' nor 'clientConfig' is present` | No recognised root section |
 | `field X not found in type ...` | Unknown YAML key — includes line number |
 | `tunnel "ssh" (type 'tcp') requires 'remote' field` | TCP tunnel missing `remote` |
 | `'server' is required` | Missing required client field |
@@ -224,7 +221,7 @@ GoTunnel validates your config on startup and exits with a descriptive error if 
 
 ## Web Dashboard & Traffic Inspector
 
-When the server is running, navigate to `http://127.0.0.1:4040` (or your configured `inspect` address) to access the dashboard.
+Navigate to `http://127.0.0.1:4040` (or your configured `inspect` address) while the server is running.
 
 > [!IMPORTANT]
 > The default username is `admin`. If `inspectPass` is not set, a random password is generated on startup and saved to `.gotunnel-admin` in the server's working directory.
@@ -306,10 +303,10 @@ tunnels:
   - name:   "private-api"
     target: "localhost:8000"
     type:   "http"
-    apiKey: "auto"   # printed on startup; use a fixed string to set your own
+    apiKey: "auto"   # printed on startup; set a fixed string to use your own
 ```
 
-Clients must then pass the key in one of:
+Clients must pass the key in one of:
 ```
 X-API-Key: <key>
 Authorization: Bearer <key>
@@ -352,7 +349,7 @@ serverConfig:
   http:  ":8080"
   tun:   ":4444"
   token: "YOUR_TOKEN"
-  noTLS: true   # proxy handles TLS — no double-wrap
+  noTLS: true   # proxy handles TLS — avoids double-wrapping
 ```
 
 **NGINX config (tunnel port):**
@@ -387,11 +384,62 @@ clientConfig:
 
 ---
 
-## Architecture Overview
+## Architecture
 
-1. The **server** exposes two listeners: one for external HTTP/WebSocket traffic, and one for incoming tunnel client connections.
-2. The **client** connects to the tunnel listener, authenticates via HMAC-SHA256 challenge/response, and maintains a pool of idle worker connections.
-3. **HTTP/WS Proxying**: The server reads each incoming HTTP request, dequeues an idle tunnel connection from the pool, forwards the request, and streams the response back. WebSocket connections are spliced bidirectionally at the TCP level.
-4. **TCP Tunneling**: The server opens a dedicated TCP listener per `remote` port. When an external connection arrives, it signals a pooled tunnel worker to start a raw bidirectional pipe to the local target.
-5. **Pool Management**: A background janitor probes idle connections every 5 seconds and evicts dead ones. Named pools (per subdomain or TCP remote) are cleaned up automatically when all clients disconnect.
-6. **Daemon & IPC**: `gotunnel` automatically runs as a background process. The frontend CLI attaches to the daemon via local IPC (port 41400 for server, 41401 for client) to render the real-time Terminal UI, allowing you to seamlessly detach and re-attach without dropping connections.
+```
+                              ┌────────────────────────────────────────┐
+                              │            GoTunnel Server             │
+   Browser / app              │                                        │
+        │                     │  ┌──────────┐     ┌─────────────────┐ │
+        │  HTTP / WS          │  │  HTTP    │     │  Tunnel         │ │
+        └────────────────────►│  │  Proxy   │◄───►│  Listener :2222 │ │
+                              │  │  :8080   │     └────────┬────────┘ │
+                              │  └──────────┘              │          │
+                              └───────────────────────────┼──────────┘
+                                                          │ TLS + HMAC auth
+                                                          │
+                              ┌───────────────────────────┼──────────┐
+                              │           GoTunnel Client  │          │
+                              │                            │          │
+                              │  ┌─────────────────────────┘          │
+                              │  │  mux.Session (stdlib multiplexer)  │
+                              │  │  ┌────────┐ ┌────────┐ ┌────────┐ │
+                              │  │  │Stream 1│ │Stream 2│ │Stream N│ │
+                              │  └──┴────────┴─┴────────┴─┴────────┘ │
+                              │             │                          │
+                              │  ┌──────────▼──────────┐              │
+                              │  │  Local service       │              │
+                              │  │  localhost:PORT      │              │
+                              │  └─────────────────────┘              │
+                              └────────────────────────────────────────┘
+```
+
+### How it works
+
+1. **Authentication** — the client connects to the tunnel port and completes an HMAC-SHA256 challenge/response. Invalid tokens are rejected and rate-limited per IP.
+
+2. **Multiplexing (`internal/mux`)** — a single authenticated TCP connection is promoted into a full-duplex multiplexed session using GoTunnel's built-in stream multiplexer (`internal/mux`). This engine is written entirely against the Go standard library with no external dependencies. It provides:
+   - Bidirectional streams with independent flow control (256 KB per-stream window)
+   - Graceful half-close (FIN) and hard reset (RST)
+   - SYN/ACK stream handshake
+   - Ping/Pong keepalive (30 s interval, 10 s timeout)
+   - Full `net.Conn` compliance including deadline support
+
+3. **HTTP/WebSocket proxying** — the server opens a new mux stream for each incoming HTTP request, forwards the request, and streams the response back. WebSocket upgrades are spliced at the TCP level through the same stream.
+
+4. **TCP tunneling** — the server opens a dedicated TCP listener per `remote` port. Each inbound connection opens a mux stream and pipes raw bytes bidirectionally to the client's local target.
+
+5. **Daemon & IPC** — `./gotunnel` automatically daemonises. The CLI frontend attaches to the daemon via local IPC to render the Terminal UI and can detach or re-attach without dropping tunnels.
+
+6. **Janitor** — a background goroutine runs every 10 seconds to detect dead sessions (via yamux's `IsClosed()`), close their TCP listeners, and correct the active-connection counter.
+
+---
+
+## Dependencies
+
+| Package | Purpose |
+|---------|---------|
+| `gopkg.in/yaml.v3` | YAML config parsing |
+| `golang.org/x/term` | Terminal raw mode and size detection for the TUI |
+
+All other functionality — TLS, HTTP, stream multiplexing, cryptography, IPC — uses the Go standard library only.

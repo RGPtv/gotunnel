@@ -38,8 +38,6 @@ clientConfig:
       target:    "localhost:3000"
       type:      "http"
       subdomain: "api"           # optional: requests api.example.com
-      apiKey:    ""              # optional: Bearer token gate ("auto" to generate)
-      workers:   10
 
     # - name:    "ssh"
     #   target:  "localhost:22"

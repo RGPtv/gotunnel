@@ -341,17 +341,18 @@ func (ins *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/logout":
 		ins.handleLogout(w, r)
 		return
-	// Static assets: served without auth so the login page can load its own CSS/JS.
-	case "/login.css":
+	// Static assets, nested to mirror the ui/login and ui/dashboard folders.
+	// Served without auth so the login page can load its own CSS/JS.
+	case "/login/styles.css":
 		serveStaticFile(w, "ui/login/styles.css", "text/css; charset=utf-8")
 		return
-	case "/login.js":
+	case "/login/script.js":
 		serveStaticFile(w, "ui/login/script.js", "application/javascript; charset=utf-8")
 		return
-	case "/dashboard.css":
+	case "/dashboard/styles.css":
 		serveStaticFile(w, "ui/dashboard/styles.css", "text/css; charset=utf-8")
 		return
-	case "/dashboard.js":
+	case "/dashboard/script.js":
 		serveStaticFile(w, "ui/dashboard/script.js", "application/javascript; charset=utf-8")
 		return
 	}

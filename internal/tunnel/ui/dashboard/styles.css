@@ -65,6 +65,34 @@ nav {
 }
 
 
+.hamburger {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  margin-right: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-2);
+  cursor: pointer;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.hamburger:hover { color: var(--text); border-color: var(--border-2); }
+
+.sidebar-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.5);
+  z-index: 150;
+  opacity: 0;
+  transition: opacity .2s ease;
+}
+.sidebar-backdrop.show { display: block; opacity: 1; }
+
 .nav-brand {
   display: flex;
   align-items: center;
@@ -731,14 +759,109 @@ nav {
 }
 
 /* ── Responsive ─────────────────────────────── */
+
+/* Tablet: narrower sidebar, tighter overview cards */
 @media (max-width: 1024px) {
   .sidebar { width: 220px; min-width: 220px; }
+  #view-overview > div { padding: 24px 28px !important; }
 }
+
+/* Touch devices (any width): hover-only affordances need a always-on fallback,
+   and small icon buttons need a bigger hit area since there's no cursor precision. */
+@media (hover: none) {
+  .replay-btn { opacity: 1; }
+  .token-btn  { width: 30px; height: 30px; }
+  .chip-btn   { padding: 4px 6px; }
+  .expand-icon { width: 18px; height: 18px; }
+}
+
+/* Phone: collapsible drawer sidebar, card-style request rows, stacked details */
 @media (max-width: 700px) {
-  .sidebar { display: none; }
-  .table-head,
-  .req-row {
-    grid-template-columns: 70px 80px 60px 1fr 52px 72px 72px;
-    padding: 0 14px;
+  .hamburger { display: flex; }
+
+  nav { padding: 0 14px; }
+  .nav-brand { margin-right: 10px; }
+  .nav-right { gap: 8px; }
+  .token-chip { padding: 5px 8px; }
+  .chip-label { display: none; }
+  #nav-token-val { max-width: 90px; }
+  .token-chip:hover #nav-token-val { max-width: 140px; }
+
+  /* Sidebar becomes a slide-in drawer over the content instead of a column. */
+  .sidebar {
+    position: fixed;
+    top: 60px;
+    left: 0;
+    bottom: 0;
+    width: 82%;
+    max-width: 300px;
+    min-width: 0;
+    background: var(--bg);
+    border-right: 1px solid var(--border);
+    padding: 16px 12px;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
+    transform: translateX(-100%);
+    transition: transform .25s cubic-bezier(.16,1,.3,1);
+    z-index: 200;
+    box-shadow: 12px 0 32px rgba(0,0,0,.45);
   }
+  .sidebar.open { transform: translateX(0); }
+
+  .sub-nav { padding: 10px 14px; overflow-x: auto; }
+  .toolbar { padding: 0 14px; }
+
+  /* Overview cards: single column, tighter padding so nothing overflows. */
+  #view-overview > div {
+    padding: 16px !important;
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+  }
+
+  /* Request list: each row becomes a two-line card instead of a 7-column
+     table row, since a table layout can't fit on a phone width. Column
+     headers are hidden since they no longer correspond to fixed positions. */
+  .table-head { display: none; }
+  .req-row {
+    display: grid;
+    grid-template-columns: auto 1fr auto auto;
+    grid-template-areas:
+      "method path   path   status"
+      "time   ip     dur    actions";
+    align-items: center;
+    column-gap: 10px;
+    row-gap: 6px;
+    height: auto;
+    padding: 12px 14px;
+  }
+  .r-method   { grid-area: method; }
+  .r-path     { grid-area: path; min-width: 0; }
+  .r-status   { grid-area: status; justify-self: end; }
+  .r-time     { grid-area: time; }
+  .r-clientip { grid-area: ip; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .r-dur      { grid-area: dur; justify-self: end; }
+  .r-actions  { grid-area: actions; justify-self: end; }
+
+  .detail-grid { grid-template-columns: 1fr; gap: 16px; }
+  .req-detail { padding: 14px; }
+
+  /* Floating elements: smaller, closer to the edge, and clear of the home
+     indicator / gesture bar on iOS. */
+  .status-footer {
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    right: 12px;
+    padding: 5px 10px 5px 5px;
+  }
+  #toast-container {
+    bottom: calc(60px + env(safe-area-inset-bottom));
+    right: 12px;
+    left: 12px;
+  }
+  .toast { max-width: none; }
 }
+
+/* Small phones: trim further so nothing wraps awkwardly */
+@media (max-width: 380px) {
+  .nav-name { display: none; }
+  .nav-uptime { display: none; }
+}
+

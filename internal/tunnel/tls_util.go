@@ -68,7 +68,7 @@ func LoadTLSConfigForHTTPS(certFile, keyFile string) (*tls.Config, error) {
 		GetCertificate: func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 			return &cert, nil
 		},
-		MinVersion: tls.VersionTLS12,
+		MinVersion: tls.VersionTLS13,
 		CurvePreferences: []tls.CurveID{
 			tls.X25519,
 			tls.CurveP384,

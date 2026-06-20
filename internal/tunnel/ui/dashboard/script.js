@@ -155,7 +155,10 @@ function tokenReveal() {
     return;
   }
 
-  fetch('/api/token')
+  fetch('/api/token', {
+    method: 'POST',
+    headers: { 'X-CSRF-Token': getCsrfToken() }
+  })
     .then(r => { if (!r.ok) throw new Error(); return r.json(); })
     .then(data => {
       if (!data.token) return;
@@ -183,7 +186,10 @@ function _maskToken() {
 function tokenCopy() {
   const chip = document.getElementById('nav-token-chip');
 
-  fetch('/api/token')
+  fetch('/api/token', {
+    method: 'POST',
+    headers: { 'X-CSRF-Token': getCsrfToken() }
+  })
     .then(r => { if (!r.ok) throw new Error(); return r.json(); })
     .then(data => {
       const tok = data.token;

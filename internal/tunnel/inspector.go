@@ -811,12 +811,15 @@ func (ins *Inspector) handleTunnelBasicAuth(w http.ResponseWriter, r *http.Reque
 	json.NewEncoder(w).Encode(map[string]bool{"enabled": req.Enabled})
 }
 
-// handleToken returns the server token on an explicit authenticated GET request.
-// The token is never pushed automatically (not in SSE or status) so a passive
-// XSS beacon cannot exfiltrate it without simulating a deliberate user action.
+// handleToken returns the server token on an explicit authenticated POST request.
+// Uses POST (not GET) so browser prefetch/cache/history cannot leak the token.
+// CSRF is validated to ensure the request was deliberately initiated by the user.
 func (ins *Inspector) handleToken(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !ins.validateCSRF(w, r) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

@@ -323,6 +323,7 @@ func (s *Session) newStream(id uint32) *Stream {
 		localAddr:  s.conn.LocalAddr(),
 		remoteAddr: s.conn.RemoteAddr(),
 		sendWin:    initialWindow,
+		recvWin:    initialWindow,
 	}
 }
 
@@ -499,15 +500,23 @@ func (s *Session) handleData(flags uint16, streamID uint32, payload []byte) erro
 
 	// ── Deliver data ─────────────────────────────────────────────────────────
 	if len(payload) > 0 {
+		// Enforce receive-side flow control: the peer must not send more
+		// bytes than the window we have granted.  If it does, the stream
+		// is in protocol violation — RST it.
 		st.recvMu.Lock()
+		if int64(len(payload)) > st.recvWin {
+			st.recvMu.Unlock()
+			st.forceClose(ErrStreamReset)
+			s.removeStream(streamID)
+			return s.sendCtrl(streamID, typeData, flagRST, 0)
+		}
+		st.recvWin -= int64(len(payload))
 		st.recvBuf = append(st.recvBuf, payload...)
 		st.recvMu.Unlock()
 		select {
 		case st.recvNotify <- struct{}{}:
 		default:
 		}
-		// WindowUpdate is sent in Stream.Read() after bytes are consumed,
-		// providing genuine backpressure.  (No update here.)
 	}
 
 	// ── FIN: remote half-closed ───────────────────────────────────────────────
@@ -567,16 +576,23 @@ func (s *Session) keepAliveLoop() {
 		}
 
 		timer := time.NewTimer(s.cfg.KeepAliveTimeout)
-		select {
-		case <-s.pongCh:
-			timer.Stop()
-		case <-timer.C:
-			s.closeWithError(errors.New("mux: keepalive timeout"))
-			return
-		case <-s.closedCh:
-			timer.Stop()
-			return
+		gotPong := false
+		for !gotPong {
+			select {
+			case id := <-s.pongCh:
+				if id == seq {
+					gotPong = true
+				}
+				// else: stale pong from a previous ping — drain and retry
+			case <-timer.C:
+				s.closeWithError(errors.New("mux: keepalive timeout"))
+				return
+			case <-s.closedCh:
+				timer.Stop()
+				return
+			}
 		}
+		timer.Stop()
 	}
 }
 
@@ -596,6 +612,7 @@ type Stream struct {
 	// Receive side.
 	recvMu     sync.Mutex
 	recvBuf    []byte
+	recvWin    int64        // remaining receive window; protected by recvMu
 	recvNotify chan struct{} // capacity-1; pinged when data appended
 
 	// Send flow-control window.
@@ -668,8 +685,22 @@ func (st *Stream) Read(b []byte) (int, error) {
 			if n == len(st.recvBuf) {
 				st.recvBuf = nil
 			} else {
-				st.recvBuf = st.recvBuf[n:]
+				remaining := st.recvBuf[n:]
+				// Compact the backing array when the remainder is small
+				// relative to the capacity — prevents retaining a large
+				// backing array for the life of the stream.
+				const compactThreshold = 4 * 1024
+				if cap(st.recvBuf) > compactThreshold && len(remaining) <= compactThreshold/4 {
+					fresh := make([]byte, len(remaining))
+					copy(fresh, remaining)
+					st.recvBuf = fresh
+				} else {
+					st.recvBuf = remaining
+				}
 			}
+			// Replenish the receive window before releasing the lock so
+			// that the readLoop's recvWin check sees the updated value.
+			st.recvWin += int64(n)
 			st.recvMu.Unlock()
 			// Notify the remote that it may send more bytes.
 			if err := st.sess.sendWindowUpdate(st.id, uint32(n)); err != nil {

@@ -122,7 +122,7 @@ func normalizeTargetAddr(addr string) string {
 
 func RunClient(cfg *ClientConfig) {
 	// Set up log file output (shared across all tunnels).
-	if f, err := os.OpenFile("gotunnel.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666); err == nil {
+	if f, err := os.OpenFile("gotunnel.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600); err == nil {
 		log.SetOutput(f)
 	} else {
 		fmt.Fprintf(os.Stderr, "warning: cannot open gotunnel.log: %v — logging disabled\n", err)
@@ -140,7 +140,10 @@ func RunClient(cfg *ClientConfig) {
 	}()
 
 	serverAddr := normalizeServerAddr(cfg.Server)
-	tlsCfg := &tls.Config{InsecureSkipVerify: cfg.SkipTLSVerify}
+	tlsCfg := &tls.Config{
+		InsecureSkipVerify: cfg.SkipTLSVerify,
+		MinVersion:         tls.VersionTLS13,
+	}
 	singleTunnel := len(cfg.Tunnels) == 1
 
 	// ── Startup banner ───────────────────────────────────────────────────────
@@ -261,16 +264,21 @@ func (c *Client) run() {
 		c.setStatus("reconnecting")
 		err := c.connectAndServe()
 		if err != nil {
-			c.setStatus(fmt.Sprintf("connecting... (retrying in %v)", backoff))
+			// Apply jitter: ±25% of current backoff.
+			jitter := time.Duration(mrand.Int63n(int64(backoff/2 + 1))) - backoff/4
+			wait := backoff + jitter
+			if wait < 0 {
+				wait = 0
+			}
+			c.setStatus(fmt.Sprintf("connecting... (retrying in %v)", wait.Round(time.Millisecond)))
 			select {
-			case <-time.After(backoff):
+			case <-time.After(wait):
 			case <-c.ctx.Done():
 				return
 			}
-			jitter := time.Duration(mrand.Int63n(int64(backoff/2 + 1)))
-			backoff = backoff*2 + jitter
-			if backoff > 10*time.Second {
-				backoff = 10 * time.Second
+			backoff *= 2
+			if backoff > 30*time.Second {
+				backoff = 30 * time.Second
 			}
 		} else {
 			backoff = time.Second
@@ -395,11 +403,15 @@ func (c *Client) handleStream(stream net.Conn) {
 		return
 	}
 
+	// Brief deadline on the initial request read so a stuck stream doesn't
+	// hold a goroutine indefinitely.  Cleared before any I/O proxy begins.
+	stream.SetReadDeadline(time.Now().Add(30 * time.Second))
 	reader := bufio.NewReader(stream)
 	req, err := http.ReadRequest(reader)
 	if err != nil {
 		return
 	}
+	stream.SetReadDeadline(time.Time{}) // clear before proxying
 
 	if strings.ToLower(req.Header.Get("Upgrade")) == "websocket" {
 		c.handleWebSocket(0, stream, reader, req)
@@ -436,7 +448,9 @@ func targetHost(addr string) string {
 }
 
 func (c *Client) handleTCPWorker(id int, tunnelConn net.Conn, tunnelReader *bufio.Reader) error {
+	tunnelConn.SetReadDeadline(time.Now().Add(30 * time.Second))
 	line, err := tunnelReader.ReadString('\n')
+	tunnelConn.SetReadDeadline(time.Time{})
 	if err != nil {
 		return fmt.Errorf("read tcp start: %w", err)
 	}
@@ -457,7 +471,9 @@ func (c *Client) handleTCPWorker(id int, tunnelConn net.Conn, tunnelReader *bufi
 
 	done := make(chan struct{}, 2)
 	cp := func(dst io.Writer, src io.Reader) {
-		io.Copy(dst, src)
+		bp := copyBufPool.Get().(*[]byte)
+		io.CopyBuffer(dst, src, *bp)
+		copyBufPool.Put(bp)
 		done <- struct{}{}
 	}
 	go cp(targetConn, tunnelReader)
@@ -503,7 +519,9 @@ func (c *Client) handleWebSocket(id int, tunnelConn net.Conn, tunnelReader *bufi
 
 	done := make(chan struct{}, 2)
 	cp := func(dst io.Writer, src io.Reader) {
-		io.Copy(dst, src)
+		bp := copyBufPool.Get().(*[]byte)
+		io.CopyBuffer(dst, src, *bp)
+		copyBufPool.Put(bp)
 		done <- struct{}{}
 	}
 	go cp(targetConn, tunnelReader)  

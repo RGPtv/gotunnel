@@ -167,13 +167,22 @@ func StartIPCServer(port int, getState func() interface{}) (net.Listener, error)
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		// Flush before exiting so the client receives the 200.
+		// Flush before triggering shutdown so the client receives the 200.
 		if f, ok := w.(http.Flusher); ok {
 			f.Flush()
 		}
 		go func() {
 			time.Sleep(50 * time.Millisecond)
-			os.Exit(0)
+			// Send SIGINT to our own process so registered signal handlers
+			// and deferred cleanup run.  Falls back to os.Exit if the
+			// signal cannot be sent (e.g. on some Windows configurations).
+			p, err := os.FindProcess(os.Getpid())
+			if err != nil {
+				os.Exit(0)
+			}
+			if err := p.Signal(os.Interrupt); err != nil {
+				os.Exit(0)
+			}
 		}()
 	})
 

@@ -539,7 +539,7 @@ nav {
 
 .table-head {
   display: grid;
-  grid-template-columns: 80px 100px 72px 1fr 64px 90px 88px;
+  grid-template-columns: 80px 125px 75px 1fr 64px 90px 88px;
   padding: 0 20px;
   height: 36px;
   align-items: center;
@@ -580,7 +580,7 @@ nav {
 /* Request rows */
 .req-row {
   display: grid;
-  grid-template-columns: 80px 100px 72px 1fr 64px 90px 88px;
+  grid-template-columns: 80px 125px 75px 1fr 64px 90px 88px;
   align-items: center;
   padding: 0 20px;
   height: 42px;

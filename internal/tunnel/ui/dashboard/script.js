@@ -1009,6 +1009,9 @@ function renderTunnels(tunnels) {
 }
 
 // ── Boot ───────────────────────────────────────
+// Wire hamburger toggle via JS (avoids relying on inline onclick + defer race)
+if ($hamburger) $hamburger.addEventListener('click', toggleSidebar);
+
 document.addEventListener('click', (e) => {
   const menu = document.getElementById('brand-menu');
   if (menu && menu.classList.contains('open')) {

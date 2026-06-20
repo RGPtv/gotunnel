@@ -364,10 +364,15 @@ func (ins *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Security headers on every authenticated response.
-	// CSP: script/style/connect only from same origin — blocks exfiltration even
-	// if injected JS manages to call /api/token with the victim's live session.
+	// CSP: connect only to same origin — blocks exfiltration even if injected
+	// JS manages to call /api/token with the victim's live session.
+	// NOTE: script-src/style-src must keep 'unsafe-inline' — the dashboard
+	// markup uses inline style="" attributes and onclick=/onchange= handlers
+	// extensively (not just the old <style>/<script> blocks), and CSP's
+	// unsafe-inline keyword governs those too. Dropping it silently breaks
+	// all dashboard styling and interactivity in a real browser.
 	w.Header().Set("Content-Security-Policy",
-		"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'")
+		"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'")
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "no-referrer")

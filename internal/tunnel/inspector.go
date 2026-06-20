@@ -371,8 +371,12 @@ func (ins *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// extensively (not just the old <style>/<script> blocks), and CSP's
 	// unsafe-inline keyword governs those too. Dropping it silently breaks
 	// all dashboard styling and interactivity in a real browser.
+	// style-src/font-src also allowlist Google Fonts: the dashboard's <head>
+	// loads the Geist font from fonts.googleapis.com (CSS) and fonts.gstatic.com
+	// (the actual font files) — without these, that stylesheet link is
+	// silently blocked by the browser and the page falls back to system fonts.
 	w.Header().Set("Content-Security-Policy",
-		"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'")
+		"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'")
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "no-referrer")

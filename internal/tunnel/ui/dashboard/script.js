@@ -26,9 +26,6 @@ const $uptime   = document.getElementById('uptime');
 const $tunList  = document.getElementById('tunnel-list');
 const $apiVal   = document.getElementById('api-val');
 const $chipLbl  = document.getElementById('filter-label');
-const $sidebar  = document.getElementById('sidebar');
-const $backdrop = document.getElementById('sidebar-backdrop');
-const $hamburger = document.getElementById('hamburger-btn');
 
 // ── Navigation ─────────────────────────────────
 function switchTab(tab) {
@@ -41,24 +38,6 @@ function switchTab(tab) {
   document.getElementById('view-inspector').style.display = tab === 'inspector' ? 'flex' : 'none';
 }
 
-// ── Mobile sidebar drawer ───────────────────────
-function openSidebar() {
-  $sidebar.classList.add('open');
-  $backdrop.classList.add('show');
-  $hamburger.setAttribute('aria-expanded', 'true');
-}
-function closeSidebar() {
-  $sidebar.classList.remove('open');
-  $backdrop.classList.remove('show');
-  $hamburger.setAttribute('aria-expanded', 'false');
-}
-function toggleSidebar() {
-  $sidebar.classList.contains('open') ? closeSidebar() : openSidebar();
-}
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') closeSidebar();
-});
-
 function selectTunnel(ep) {
   _maskApiKey();
   _baCreds         = { user: '', pass: '' };
@@ -69,7 +48,6 @@ function selectTunnel(ep) {
   document.querySelectorAll('.tunnel-entry').forEach(el => {
     el.classList.toggle('active', el.dataset.ep === ep);
   });
-  closeSidebar(); // no-op on desktop; collapses the drawer on mobile after a pick
 
   if (!ep) {
     document.getElementById('nav-tabs').style.display = 'none';
@@ -1009,9 +987,6 @@ function renderTunnels(tunnels) {
 }
 
 // ── Boot ───────────────────────────────────────
-// Wire hamburger toggle via JS (avoids relying on inline onclick + defer race)
-if ($hamburger) $hamburger.addEventListener('click', toggleSidebar);
-
 document.addEventListener('click', (e) => {
   const menu = document.getElementById('brand-menu');
   if (menu && menu.classList.contains('open')) {

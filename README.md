@@ -96,7 +96,6 @@ clientConfig:
     - name:    "web"
       target:  "localhost:3000"
       type:    "http"
-      workers: 10
 ```
 
 Then run:
@@ -128,6 +127,7 @@ Your local service at `:3000` is now accessible at `http://vps.example.com:8080`
 | `inspectPass` | *(auto)* | Dashboard password — auto-generated and saved to `.gotunnel-admin` |
 | `noTLS` | `false` | Disable TLS on tunnel port (use when behind a TLS-terminating proxy) |
 | `poolSize` | `512` | Max idle connections per tunnel pool |
+| `allowedTCPPorts`| *(optional)* | List of allowed remote addresses for TCP tunnels (e.g. `[":22222"]`) |
 
 **Full example:**
 
@@ -171,8 +171,6 @@ serverConfig:
 | `type` | `http` | Tunnel type: `http` or `tcp` |
 | `subdomain` | *(optional)* | Request a subdomain — requires server `domain` to be set |
 | `remote` | *(required for tcp)* | Port opened on the server for TCP traffic (e.g. `:22222`) |
-| `apiKey` | *(optional)* | Bearer token gate — set `"auto"` to generate one on startup |
-| `workers` | `10` | Parallel tunnel connections to maintain |
 
 **Full example — multiple tunnels:**
 
@@ -187,19 +185,15 @@ clientConfig:
       target:    "localhost:3000"
       type:      "http"
       subdomain: "api"
-      apiKey:    "auto"
-      workers:   10
 
     - name:      "ollama"
       target:    "localhost:11434"
       type:      "http"
-      workers:   5
 
     - name:      "ssh"
       target:    "localhost:22"
       type:      "tcp"
       remote:    ":22222"
-      workers:   3
 ```
 
 ---
@@ -229,7 +223,7 @@ Navigate to `http://127.0.0.1:4040` (or your configured `inspect` address) while
 ### Overview Panel
 - Real-time metrics: total requests, active connections, proxy endpoints, tunnel ports
 - Client auth token: view, reveal, and copy
-- Per-tunnel API key display
+- Dynamic per-tunnel settings: toggle API Key auth, Basic Auth, and AI/Ollama optimizations
 
 ### Traffic Inspector
 - Live HTTP request stream with method, path, status, and duration
@@ -294,23 +288,14 @@ ssh user@vps.example.com -p 22222
 
 ---
 
-### Per-Tunnel API Key Authentication
+### Per-Tunnel API Key and Basic Auth
 
-Secure a specific tunnel so only requests bearing a valid API key are forwarded:
+Secure specific HTTP tunnels on the fly via the Web Dashboard. Tunnels can be dynamically gated with:
+- **API Key Auth**: Clients must pass the key in `X-API-Key: <key>` or `Authorization: Bearer <key>`.
+- **Basic Auth**: Standard HTTP Basic Authentication.
+- **AI Mode**: Specific optimizations (CORS, no body cap, long timeouts) for AI services like Ollama.
 
-```yaml
-tunnels:
-  - name:   "private-api"
-    target: "localhost:8000"
-    type:   "http"
-    apiKey: "auto"   # printed on startup; set a fixed string to use your own
-```
-
-Clients must pass the key in one of:
-```
-X-API-Key: <key>
-Authorization: Bearer <key>
-```
+These settings are managed in the Dashboard's Overview panel for each active tunnel.
 
 ---
 

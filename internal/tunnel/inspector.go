@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"crypto/subtle"
-	_ "embed"
+	"embed"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -19,11 +19,8 @@ import (
 	"time"
 )
 
-//go:embed ui/dashboard.html
-var inspectorHTML string
-
-//go:embed ui/login.html
-var loginHTML string
+//go:embed ui/dashboard ui/login
+var staticFiles embed.FS
 
 const maxCapturedRequests = 500
 const maxAPIBodySize = 64 * 1024 // 64 KB limit on dashboard API request bodies
@@ -83,7 +80,7 @@ type Inspector struct {
 	// Auth
 	Username      string
 	Password      string
-	sessionsMu    sync.Mutex
+	sessionsMu    sync.RWMutex           // FIX: RWMutex so concurrent reads don't block each other
 	sessions      map[string]sessionData // token → session info (expiry + CSRF)
 	loginLimiters sync.Map               // IP → *loginBucket
 
@@ -123,6 +120,19 @@ func (b *loginBucket) allow() bool {
 	return true
 }
 
+// hasActiveAttempts returns true if this bucket has attempts within the rate window.
+func (b *loginBucket) hasActiveAttempts() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	cutoff := time.Now().Add(-loginRateWindow)
+	for _, t := range b.attempts {
+		if t.After(cutoff) {
+			return true
+		}
+	}
+	return false
+}
+
 // NewInspector creates a new request inspector.
 func NewInspector(serverAddr, tunAddr, token, username, password string, activeConns *atomic.Int64, srv *Server) *Inspector {
 	ins := &Inspector{
@@ -139,6 +149,7 @@ func NewInspector(serverAddr, tunAddr, token, username, password string, activeC
 		done:        make(chan struct{}),
 	}
 	go ins.cleanSessions()
+	go ins.cleanLoginLimiters()
 	return ins
 }
 
@@ -173,6 +184,26 @@ func (ins *Inspector) cleanSessions() {
 	}
 }
 
+// cleanLoginLimiters periodically evicts loginBucket entries with no recent
+// attempts, preventing unbounded growth of the loginLimiters sync.Map.
+func (ins *Inspector) cleanLoginLimiters() {
+	ticker := time.NewTicker(10 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			ins.loginLimiters.Range(func(k, v any) bool {
+				if !v.(*loginBucket).hasActiveAttempts() {
+					ins.loginLimiters.Delete(k)
+				}
+				return true
+			})
+		case <-ins.done:
+			return
+		}
+	}
+}
+
 // isAuthenticated returns true if the request carries a valid session cookie.
 // If no password is configured, authentication always fails — the dashboard
 // will remain inaccessible until a password is set.
@@ -184,9 +215,11 @@ func (ins *Inspector) isAuthenticated(r *http.Request) bool {
 	if err != nil {
 		return false
 	}
-	ins.sessionsMu.Lock()
+	// FIX: use RLock for read-only map access — avoids exclusive lock contention
+	// on every authenticated request.
+	ins.sessionsMu.RLock()
 	sd, ok := ins.sessions[cookie.Value]
-	ins.sessionsMu.Unlock()
+	ins.sessionsMu.RUnlock()
 	return ok && time.Now().Before(sd.expiry)
 }
 
@@ -196,9 +229,10 @@ func (ins *Inspector) getCSRFToken(r *http.Request) string {
 	if err != nil {
 		return ""
 	}
-	ins.sessionsMu.Lock()
+	// FIX: use RLock for read-only map access.
+	ins.sessionsMu.RLock()
 	sd, ok := ins.sessions[cookie.Value]
-	ins.sessionsMu.Unlock()
+	ins.sessionsMu.RUnlock()
 	if !ok {
 		return ""
 	}
@@ -284,15 +318,41 @@ func (ins *Inspector) subscribe() (chan CapturedRequest, func()) {
 	}
 }
 
+// serveStaticFile reads a file from the embedded FS and writes it with the given
+// content type. Cache-Control is set to allow short-term caching of static assets.
+func serveStaticFile(w http.ResponseWriter, path, contentType string) {
+	data, err := staticFiles.ReadFile(path)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "max-age=3600")
+	w.Write(data)
+}
+
 // ServeHTTP routes all dashboard requests.
 func (ins *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Login / logout bypass auth check.
+	// Public routes — no auth required. Must be listed before the auth gate.
 	switch r.URL.Path {
 	case "/login":
 		ins.handleLogin(w, r)
 		return
 	case "/logout":
 		ins.handleLogout(w, r)
+		return
+	// Static assets: served without auth so the login page can load its own CSS/JS.
+	case "/login.css":
+		serveStaticFile(w, "ui/login/styles.css", "text/css; charset=utf-8")
+		return
+	case "/login.js":
+		serveStaticFile(w, "ui/login/script.js", "application/javascript; charset=utf-8")
+		return
+	case "/dashboard.css":
+		serveStaticFile(w, "ui/dashboard/styles.css", "text/css; charset=utf-8")
+		return
+	case "/dashboard.js":
+		serveStaticFile(w, "ui/dashboard/script.js", "application/javascript; charset=utf-8")
 		return
 	}
 
@@ -306,7 +366,7 @@ func (ins *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// CSP: script/style/connect only from same origin — blocks exfiltration even
 	// if injected JS manages to call /api/token with the victim's live session.
 	w.Header().Set("Content-Security-Policy",
-		"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'")
+		"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'")
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "no-referrer")
@@ -321,13 +381,20 @@ func (ins *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Path:     "/",
 			SameSite: http.SameSiteStrictMode,
 			Secure:   r.TLS != nil,
+			// HttpOnly intentionally omitted: JS must read this cookie to implement
+			// the Double Submit Cookie CSRF pattern (send it as X-CSRF-Token header).
 		})
 	}
 
 	switch r.URL.Path {
 	case "/":
+		data, err := staticFiles.ReadFile("ui/dashboard/index.html")
+		if err != nil {
+			http.Error(w, "dashboard unavailable", http.StatusInternalServerError)
+			return
+		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprint(w, inspectorHTML)
+		w.Write(data)
 	case "/api/requests":
 		ins.mu.RLock()
 		data := make([]CapturedRequest, len(ins.requests))
@@ -443,8 +510,13 @@ func (ins *Inspector) handleLogin(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login?error=1", http.StatusFound)
 		return
 	}
+	data, err := staticFiles.ReadFile("ui/login/index.html")
+	if err != nil {
+		http.Error(w, "login page unavailable", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, loginHTML)
+	w.Write(data)
 }
 
 // handleLogout clears the session and redirects to the login page.
@@ -500,9 +572,6 @@ func (ins *Inspector) buildTunnelList() []TunnelEntry {
 			ClientIP:         meta.ClientIP,
 		})
 	}
-	
-	
-	
 	return tunnels
 }
 
@@ -538,13 +607,12 @@ func (ins *Inspector) handleTunnelAIMode(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 	json.NewEncoder(w).Encode(map[string]bool{"enabled": req.Enabled})
 }
 
-// handleTunnelAuth handles GET (reveal) and POST (enable/disable/regenerate) for API keys.
-//
-//	GET  /api/tunnels/apikey?endpoint=X          → returns {"apikey":"..."}
-//	POST /api/tunnels/auth  body: {"endpoint":"X","enabled":true,"regenerate":false,"apikey":"custom"}
+// handleTunnelAPIKey reveals the current API key for a tunnel.
+// GET /api/tunnels/apikey?endpoint=X → returns {"apikey":"..."}
 func (ins *Inspector) handleTunnelAPIKey(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -613,7 +681,7 @@ func (ins *Inspector) handleTunnelBasicAuthCreds(w http.ResponseWriter, r *http.
 	})
 }
 
-
+// handleTunnelAuth enables/disables API key auth and optionally regenerates the key.
 // POST /api/tunnels/auth
 //
 //	{"endpoint":"X","enabled":true,"regenerate":false,"apikey":"optional-custom-key"}
@@ -729,10 +797,9 @@ func (ins *Inspector) handleTunnelBasicAuth(w http.ResponseWriter, r *http.Reque
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 	json.NewEncoder(w).Encode(map[string]bool{"enabled": req.Enabled})
 }
-
-
 
 // handleToken returns the server token on an explicit authenticated GET request.
 // The token is never pushed automatically (not in SSE or status) so a passive
@@ -762,16 +829,27 @@ func (ins *Inspector) handleSSE(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
+	// FIX: tell nginx/caddy not to buffer SSE responses, or streaming breaks.
+	w.Header().Set("X-Accel-Buffering", "no")
 	flusher.Flush()
 
 	ch, unsub := ins.subscribe()
 	defer unsub()
+
+	// FIX: heartbeat ticker keeps the connection alive through idle periods so
+	// intermediary proxies don't silently drop it. SSE comment lines (:) are
+	// ignored by EventSource and do not trigger onmessage.
+	heartbeat := time.NewTicker(15 * time.Second)
+	defer heartbeat.Stop()
 
 	for {
 		select {
 		case cr := <-ch:
 			data, _ := json.Marshal(cr)
 			fmt.Fprintf(w, "data: %s\n\n", data)
+			flusher.Flush()
+		case <-heartbeat.C:
+			fmt.Fprintf(w, ": heartbeat\n\n")
 			flusher.Flush()
 		case <-r.Context().Done():
 			return
@@ -790,6 +868,8 @@ func (ins *Inspector) handleStatusSSE(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
+	// FIX: tell nginx/caddy not to buffer SSE responses.
+	w.Header().Set("X-Accel-Buffering", "no")
 	flusher.Flush()
 
 	ticker := time.NewTicker(time.Second)
@@ -848,7 +928,7 @@ func (ins *Inspector) handleReplay(w http.ResponseWriter, r *http.Request) {
 	var targetReq *CapturedRequest
 	for i := range ins.requests {
 		if ins.requests[i].ID == req.ID {
-			cr := ins.requests[i] // copy to avoid holding lock
+			cr := ins.requests[i] // copy to avoid holding lock during replay
 			targetReq = &cr
 			break
 		}
@@ -889,9 +969,6 @@ func (ins *Inspector) handleReplay(w http.ResponseWriter, r *http.Request) {
 
 	// Re-apply gateway auth so the replayed request passes the server's auth check.
 	if ins.srv != nil {
-		// getEndpointKeyLocked requires caller to hold tunnelMetaMu (read or write).
-		// We do NOT hold mu here: s.domain is immutable after start, and mu only
-		// guards tcpListeners which we do not access.
 		ins.srv.tunnelMetaMu.RLock()
 		endpointKey := ins.srv.getEndpointKeyLocked(targetReq.Host)
 		tMeta, ok := ins.srv.tunnelMeta[endpointKey]
@@ -912,9 +989,10 @@ func (ins *Inspector) handleReplay(w http.ResponseWriter, r *http.Request) {
 			log.Printf("replay error: %v", err)
 			return
 		}
-		// Drain and close body to return the connection to the pool.
+		// FIX: defer Close so body is always released even if io.Copy fails.
+		defer resp.Body.Close()
+		// Drain body to return the connection to the pool.
 		io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
 	}()
 
 	w.WriteHeader(http.StatusAccepted)

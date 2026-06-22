@@ -439,6 +439,8 @@ func (ins *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		})
 	case "/api/token":
 		ins.handleToken(w, r)
+	case "/api/token/regen":
+		ins.handleTokenRegen(w, r)
 	case "/api/tunnels/apikey":
 		ins.handleTunnelAPIKey(w, r)
 	case "/api/tunnels/auth":
@@ -902,6 +904,41 @@ func (ins *Inspector) handleToken(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	json.NewEncoder(w).Encode(map[string]string{"token": ins.Token})
+}
+
+// handleTokenRegen generates a new token, updates config.yaml and the in-memory token.
+func (ins *Inspector) handleTokenRegen(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !ins.validateCSRF(w, r) {
+		return
+	}
+
+	b := make([]byte, 20)
+	if _, err := rand.Read(b); err != nil {
+		http.Error(w, "failed to generate token", http.StatusInternalServerError)
+		return
+	}
+	newToken := hex.EncodeToString(b)
+
+	if err := UpdateTokenInConfig(newToken); err != nil {
+		http.Error(w, "failed to update config file: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	ins.mu.Lock()
+	ins.Token = newToken
+	ins.mu.Unlock()
+
+	if ins.srv != nil {
+		ins.srv.UpdateToken(newToken)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	json.NewEncoder(w).Encode(map[string]string{"token": newToken})
 }
 
 func (ins *Inspector) handleTunnels(w http.ResponseWriter, r *http.Request) {

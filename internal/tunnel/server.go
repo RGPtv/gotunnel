@@ -148,6 +148,13 @@ func (s *Server) SetTunnelBasicAuth(endpoint string, enabled bool, creds string)
 	return nil
 }
 
+// UpdateToken updates the server token used for new tunnel connections.
+func (s *Server) UpdateToken(newToken string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.token = newToken
+}
+
 // Server accepts tunnel client connections and proxies incoming HTTP requests
 // through them to the target service on the other end.
 
@@ -589,8 +596,11 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 	if len(parts) > 3 && parts[3] != "-" {
 		remoteAddr = parts[3]
 	}
+	s.mu.RLock()
+	serverToken := s.token
+	s.mu.RUnlock()
 
-	mac := hmac.New(sha256.New, []byte(s.token))
+	mac := hmac.New(sha256.New, []byte(serverToken))
 	mac.Write([]byte(nonceHex))
 	expectedHmac := hex.EncodeToString(mac.Sum(nil))
 

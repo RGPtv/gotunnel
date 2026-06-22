@@ -181,3 +181,48 @@ func validateClientConfig(c *ClientConfig) error {
 
 	return nil
 }
+
+// UpdateTokenInConfig reads the config file, updates the server token, and saves it.
+// It uses simple string replacement to preserve comments and layout.
+func UpdateTokenInConfig(newToken string) error {
+	data, filename, err := readConfigFile()
+	if err != nil {
+		return err
+	}
+
+	lines := strings.Split(string(data), "\n")
+	inServerConfig := false
+	updated := false
+	for i, line := range lines {
+		// Detect serverConfig block
+		if strings.HasPrefix(line, "serverConfig:") {
+			inServerConfig = true
+			continue
+		}
+		// If we hit clientConfig or another unindented root block, we're out of serverConfig
+		if inServerConfig && len(line) > 0 && !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") && !strings.HasPrefix(line, "#") && !strings.HasPrefix(line, "\r") {
+			inServerConfig = false
+		}
+
+		if inServerConfig {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "token:") {
+				idx := strings.Index(line, "token:")
+				// Preserve whitespace before "token:"
+				lines[i] = line[:idx] + fmt.Sprintf(`token: "%s"`, newToken)
+				// If there's a trailing \r, add it back (since we split on \n)
+				if strings.HasSuffix(line, "\r") {
+					lines[i] += "\r"
+				}
+				updated = true
+				break
+			}
+		}
+	}
+
+	if !updated {
+		return errors.New("could not find 'token:' field under 'serverConfig:' in " + filename)
+	}
+
+	return os.WriteFile(filename, []byte(strings.Join(lines, "\n")), 0644)
+}

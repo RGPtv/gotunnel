@@ -313,6 +313,28 @@ function tokenCopy() {
     .catch(() => showToast('Could not copy token', 'error'));
 }
 
+function tokenRegenerate() {
+  if (!confirm('Generate a new Auth Token? Old clients will be disconnected / unable to connect.')) return;
+
+  fetch('/api/token/regen', { method: 'POST', headers: { 'X-CSRF-Token': getCsrfToken() } })
+    .then(r => { if (!r.ok) return r.text().then(t => { throw new Error(t || 'Server error ' + r.status); }); return r.json(); })
+    .then(d => {
+      if (!d.token) { showToast('Token not available', 'error'); return; }
+      const val = document.getElementById('home-token-val');
+      const btn = document.getElementById('home-token-reveal');
+      if (val) {
+        val.textContent = d.token;
+        val.classList.remove('masked');
+        val.style.display = '';
+      }
+      if (btn) btn.title = 'Hide';
+      clearTimeout(_tokenHideTimer);
+      _tokenHideTimer = setTimeout(_maskToken, 30000);
+      showToast('New Auth Token generated', 'success');
+    })
+    .catch(err => showToast('Could not regenerate token: ' + (err.message || 'unknown error'), 'error'));
+}
+
 // ── API Key ───────────────────────────────────────────────────
 function _applyApikeyState(enabled, skipServer) {
   const toggle  = document.getElementById('apikey-toggle');
@@ -1009,6 +1031,7 @@ document.getElementById('logout-btn')?.addEventListener('click', () => {
 // Token
 document.getElementById('home-token-reveal')?.addEventListener('click', tokenReveal);
 document.getElementById('home-token-copy')?.addEventListener('click',   tokenCopy);
+document.getElementById('home-token-regen')?.addEventListener('click',  tokenRegenerate);
 
 // Desktop nav tabs
 document.getElementById('tab-overview')?.addEventListener('click',  () => switchTab('overview'));

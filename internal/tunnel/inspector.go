@@ -451,6 +451,8 @@ func (ins *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ins.handleTunnelAIMode(w, r)
 	case "/api/tunnels":
 		ins.handleTunnels(w, r)
+	case "/api/events":
+		ins.handleEventsSSE(w, r)
 	case "/api/requests/stream":
 		ins.handleSSE(w, r)
 	case "/api/status/stream":
@@ -907,7 +909,66 @@ func (ins *Inspector) handleToken(w http.ResponseWriter, r *http.Request) {
 func (ins *Inspector) handleTunnels(w http.ResponseWriter, r *http.Request) {
 	tunnels := ins.buildTunnelList()
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(tunnels)
+	json.NewEncoder(w).Encode(map[string]any{"tunnels": tunnels})
+}
+
+// handleEventsSSE is the unified SSE endpoint consumed by the dashboard JS.
+// It sends three named event types that match the JS addEventListener calls:
+//   - "tunnels" → {tunnels: [...]}          (every second, via ticker)
+//   - "uptime"  → {seconds: N}              (every second, via ticker)
+//   - "request" → CapturedRequest           (on every proxied request)
+//
+// The previous /api/requests/stream and /api/status/stream endpoints sent
+// unnamed data frames (no "event:" line), so JS named listeners never fired.
+func (ins *Inspector) handleEventsSSE(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "SSE not supported", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	flusher.Flush()
+
+	ch, unsub := ins.subscribe()
+	defer unsub()
+
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	heartbeat := time.NewTicker(15 * time.Second)
+	defer heartbeat.Stop()
+
+	for {
+		select {
+		case cr := <-ch:
+			// Named "request" event — JS: evs.addEventListener('request', ...)
+			data, _ := json.Marshal(cr)
+			fmt.Fprintf(w, "event: request\ndata: %s\n\n", data)
+			flusher.Flush()
+
+		case <-ticker.C:
+			// Named "tunnels" event — JS: evs.addEventListener('tunnels', ...)
+			tunnels := ins.buildTunnelList()
+			tData, _ := json.Marshal(map[string]any{"tunnels": tunnels})
+			fmt.Fprintf(w, "event: tunnels\ndata: %s\n\n", tData)
+
+			// Named "uptime" event — JS: evs.addEventListener('uptime', ...)
+			uData, _ := json.Marshal(map[string]any{"seconds": int(time.Since(ins.StartTime).Seconds())})
+			fmt.Fprintf(w, "event: uptime\ndata: %s\n\n", uData)
+			flusher.Flush()
+
+		case <-heartbeat.C:
+			// SSE comment line — ignored by EventSource, keeps proxies alive.
+			fmt.Fprintf(w, ": heartbeat\n\n")
+			flusher.Flush()
+
+		case <-r.Context().Done():
+			return
+		}
+	}
 }
 
 func (ins *Inspector) handleSSE(w http.ResponseWriter, r *http.Request) {

@@ -19,11 +19,6 @@ let _baPassHideTimer  = null;
 let _apikeyEnabled    = false;
 let _baEnabled        = false;
 let _aiEnabled        = false;
-// Pending flags: prevent the status stream from overriding the UI while a
-// toggle fetch is in-flight or while the basic-auth credential form is open.
-let _apikeyPending    = false;
-let _baPendingEnable  = false;
-let _aiPending        = false;
 
 // ── DOM refs ─────────────────────────────────────────────────
 const $list     = document.getElementById('req-list');
@@ -201,38 +196,19 @@ function _applyTunnelInfo(t) {
   const authSection = document.getElementById('tunnel-auth-section');
   if (authSection) authSection.style.display = 'block';
 
-  // Only update each section if no local change is in-flight.
-  // Without these guards the SSE status tick (every 1 s) would immediately
-  // revert the UI while the user's toggle fetch is still pending, making
-  // toasts invisible and the basic-auth credential form close by itself.
-  if (!_apikeyPending) {
-    _apikeyEnabled = !!t.apikey_enabled;
-    _applyApikeyState(_apikeyEnabled, false);
-  }
-  if (!_baPendingEnable) {
-    _baEnabled = !!t.basicauth_enabled;
-    _applyBasicAuthState(_baEnabled);
-  }
-  if (!_aiPending) {
-    _aiEnabled = !!t.aimode_enabled;
-    _applyAiModeState(_aiEnabled);
-  }
+  _apikeyEnabled = !!t.apikey_enabled;
+  _baEnabled     = !!t.basicauth_enabled;
+  _aiEnabled     = !!t.aimode_enabled;
+
+  _applyApikeyState(_apikeyEnabled, false);
+  _applyBasicAuthState(_baEnabled);
+  _applyAiModeState(_aiEnabled);
 }
 
 // ── Toast notifications ───────────────────────────────────────
 function showToast(msg, type = 'info', duration = 3000) {
-  let container = document.getElementById('toast-container');
-  if (!container) {
-    // Fallback: create the container on the fly so toasts always work even if
-    // the HTML was served from an older build that lacks the element.
-    container = document.createElement('div');
-    container.id = 'toast-container';
-    container.setAttribute('role', 'region');
-    container.setAttribute('aria-live', 'polite');
-    container.setAttribute('aria-label', 'Notifications');
-    container.style.cssText = 'position:fixed;bottom:60px;right:16px;z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none;max-width:calc(100vw - 32px)';
-    document.body.appendChild(container);
-  }
+  const container = document.getElementById('toast-container');
+  if (!container) return;
   const toast = document.createElement('div');
   toast.className = 'toast' + (type !== 'info' ? ' ' + type : '');
   toast.textContent = msg;
@@ -313,7 +289,6 @@ function apikeyToggleChanged() {
   if (!toggle || !activeTunnel) return;
   const enabled = toggle.checked;
 
-  _apikeyPending = true;
   fetch('/api/tunnels/auth', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
@@ -322,12 +297,10 @@ function apikeyToggleChanged() {
     .then(r => { if (!r.ok) return r.text().then(t => { throw new Error(t); }); return r.json(); })
     .then(() => {
       _apikeyEnabled = enabled;
-      _apikeyPending = false;
       _applyApikeyState(enabled, false);
       showToast('API key auth ' + (enabled ? 'enabled' : 'disabled'), 'success');
     })
     .catch(err => {
-      _apikeyPending = false;
       showToast('Failed to update API key: ' + (err.message || 'unknown error'), 'error');
       toggle.checked = _apikeyEnabled; // revert
     });
@@ -482,7 +455,6 @@ function aiModeToggleChanged() {
   if (!toggle || !activeTunnel) return;
   const enabled = toggle.checked;
 
-  _aiPending = true;
   fetch('/api/tunnels/aimode', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
@@ -491,12 +463,10 @@ function aiModeToggleChanged() {
     .then(r => { if (!r.ok) return r.text().then(t => { throw new Error(t); }); return r.json(); })
     .then(() => {
       _aiEnabled = enabled;
-      _aiPending = false;
       _applyAiModeState(enabled);
       showToast('AI optimization ' + (enabled ? 'enabled' : 'disabled'), 'success');
     })
     .catch(err => {
-      _aiPending = false;
       showToast('Failed to update AI mode: ' + (err.message || ''), 'error');
       toggle.checked = _aiEnabled;
     });
@@ -526,10 +496,7 @@ function basicAuthToggleChanged() {
   const enabled = toggle.checked;
 
   if (enabled) {
-    // Show the edit form so user can set credentials first.
-    // Set _baPendingEnable so the SSE status stream doesn't close the form
-    // before the user has a chance to fill in and save their credentials.
-    _baPendingEnable = true;
+    // Show the edit form so user can set credentials first
     _applyBasicAuthState(false);
     const controls  = document.getElementById('basicauth-controls');
     const credView  = document.getElementById('basicauth-cred-view');
@@ -553,7 +520,6 @@ function basicAuthToggleChanged() {
     .then(r => { if (!r.ok) return r.text().then(t => { throw new Error(t); }); return r.json(); })
     .then(() => {
       _baEnabled = false;
-      _baPendingEnable = false;
       _applyBasicAuthState(false);
       showToast('Basic auth disabled', 'success');
     })
@@ -574,7 +540,6 @@ function baCancelEdit() {
   const credView = document.getElementById('basicauth-cred-view');
   const controls = document.getElementById('basicauth-controls');
   if (!_baEnabled) {
-    _baPendingEnable = false;
     const toggle = document.getElementById('basicauth-toggle');
     if (toggle) toggle.checked = false;
     _applyBasicAuthState(false);
@@ -617,7 +582,6 @@ function basicAuthSave() {
     .then(r => { if (!r.ok) return r.text().then(t => { throw new Error(t); }); return r.json(); })
     .then(() => {
       _baEnabled = true;
-      _baPendingEnable = false;
       _applyBasicAuthState(true);
       userInput.value = '';
       passInput.value = '';
@@ -847,7 +811,7 @@ function clearReqs() {
 
 function replayReq(id) {
   if (!activeTunnel) return;
-  fetch('/api/replay', {
+  fetch('/api/tunnels/replay', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
     body: JSON.stringify({ endpoint: activeTunnel, requestId: id })

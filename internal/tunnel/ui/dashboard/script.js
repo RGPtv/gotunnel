@@ -814,6 +814,8 @@ function _renderList() {
 
 function prependReq(r) {
   if (!reqsByTunnel[r.endpoint]) reqsByTunnel[r.endpoint] = [];
+  // Deduplicate: SSE stream may echo requests already seeded from /api/requests
+  if (reqsByTunnel[r.endpoint].some(x => x.id === r.id)) return;
   reqsByTunnel[r.endpoint].unshift(r);
 
   // Only update the DOM if this request belongs to the currently viewed tunnel
@@ -1021,6 +1023,25 @@ $tunList?.addEventListener('keydown', e => {
 
 // ── Boot ─────────────────────────────────────────────────────
 (function boot() {
+  // ── Seed per-tunnel request history from REST ─────────────
+  // Do this FIRST, before connecting the SSE stream, so that
+  // when requests start arriving they are deduped against
+  // what we already have. We key each request into reqsByTunnel
+  // by its endpoint field — same field the SSE stream uses.
+  fetch('/api/requests', { headers: { 'X-CSRF-Token': getCsrfToken() } })
+    .then(r => r.ok ? r.json() : [])
+    .then(arr => {
+      if (!Array.isArray(arr)) return;
+      // Server returns oldest-first; store newest-first per tunnel
+      arr.forEach(r => {
+        if (!r.endpoint) return;
+        if (!reqsByTunnel[r.endpoint]) reqsByTunnel[r.endpoint] = [];
+        reqsByTunnel[r.endpoint].push(r);
+      });
+      // Re-render if a tunnel is already selected (e.g. auto-selected)
+      _renderList();
+    })
+    .catch(() => {});
   // ── Initial tunnel list ───────────────────────────────────
   // /api/tunnels returns a flat JSON array of TunnelEntry objects.
   fetch('/api/tunnels', { headers: { 'X-CSRF-Token': getCsrfToken() } })

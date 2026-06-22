@@ -341,9 +341,19 @@ nav {
   box-sizing: border-box;
 }
 .home-token-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-width: 260px;
+}
+.home-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 .home-hint {
   font-size: 11px;

@@ -78,17 +78,25 @@
     <!-- Home View -->
     <div id="view-empty" class="home-view" role="main">
       <div class="home-token-card">
-        <div class="token-chip" id="home-token-chip" title="Session token">
-          <span class="chip-label">Token:</span>
-          <span id="home-token-val" class="masked" aria-label="Token value">••••••••</span>
-          <button class="chip-btn" id="home-token-reveal" title="Reveal token" aria-label="Reveal token">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-          </button>
-          <button class="chip-btn" id="home-token-copy" title="Copy token" aria-label="Copy token">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-          </button>
+        <div class="card-section-head">
+          <div style="display:flex;align-items:center;gap:6px">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            <span class="card-section-title">Session Token</span>
+          </div>
         </div>
-        <p class="home-hint">Select a tunnel from the sidebar</p>
+        <div class="home-card-body">
+          <div class="token-chip" id="home-token-chip" title="Session token">
+            <span class="chip-label">Token:</span>
+            <span id="home-token-val" class="masked" aria-label="Token value">••••••••</span>
+            <button class="chip-btn" id="home-token-reveal" title="Reveal token" aria-label="Reveal token">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+            <button class="chip-btn" id="home-token-copy" title="Copy token" aria-label="Copy token">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </button>
+          </div>
+          <p class="home-hint">Select a tunnel from the sidebar to get started</p>
+        </div>
       </div>
     </div>
 

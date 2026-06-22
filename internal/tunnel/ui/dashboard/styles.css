@@ -1567,10 +1567,7 @@ nav {
     width: 100%;
   }
 
-  /* Sub-nav: hide desktop tabs, use mobile tabs instead */
-  .sub-nav {
-    display: none !important;
-  }
+  /* Sub-nav: visible on mobile devices per user request */
 
   /* Mobile tabs become visible on mobile screens via CSS when a tunnel is active */
   /* (JS clears the inline display:none style on #mobile-tabs) */

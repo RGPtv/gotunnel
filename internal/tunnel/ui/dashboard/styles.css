@@ -801,6 +801,7 @@ nav {
 }
 .toast.success { border-color: rgba(34,197,94,.3); background: rgba(34,197,94,.08); color: var(--green); }
 .toast.error   { border-color: rgba(239,68,68,.3); background: rgba(239,68,68,.08); color: var(--red); }
+.toast.info    { border-color: rgba(59,130,246,.3); background: rgba(59,130,246,.08); color: #60a5fa; }
 @keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
 /* ── Mobile bottom tabs ───────────────────────────────────── */

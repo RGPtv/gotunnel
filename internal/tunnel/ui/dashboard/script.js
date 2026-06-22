@@ -19,6 +19,7 @@ let _baPassHideTimer  = null;
 let _apikeyEnabled    = false;
 let _baEnabled        = false;
 let _aiEnabled        = false;
+let _baPending        = false; // true while user is entering credentials to enable basic auth
 
 // ── DOM refs ─────────────────────────────────────────────────
 const $list     = document.getElementById('req-list');
@@ -77,6 +78,7 @@ function switchTab(tab) {
 
 function selectTunnel(ep) {
   closeMobileMenu();
+  _baPending  = false; // cancel any pending basic auth credential entry
   activeTunnel = ep;
 
   // Update active tunnel name shown in mobile nav
@@ -197,11 +199,19 @@ function _applyTunnelInfo(t) {
   if (authSection) authSection.style.display = 'block';
 
   _apikeyEnabled = !!t.apikey_enabled;
-  _baEnabled     = !!t.basicauth_enabled;
   _aiEnabled     = !!t.aimode_enabled;
 
-  _applyApikeyState(_apikeyEnabled, false);
-  _applyBasicAuthState(_baEnabled);
+  // skipServer=true: do NOT call _maskApiKey() on every SSE tick — that would
+  // wipe a just-revealed key every second.
+  _applyApikeyState(_apikeyEnabled, true);
+
+  // While _baPending the user is mid-form filling credentials.  Don't let the
+  // SSE stream reset the toggle or hide the credential controls.
+  if (!_baPending) {
+    _baEnabled = !!t.basicauth_enabled;
+    _applyBasicAuthState(_baEnabled);
+  }
+
   _applyAiModeState(_aiEnabled);
 }
 
@@ -232,9 +242,9 @@ function tokenReveal() {
   }
 
   fetch('/api/token', { method: 'POST', headers: { 'X-CSRF-Token': getCsrfToken() } })
-    .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+    .then(r => { if (!r.ok) return r.text().then(t => { throw new Error(t || 'Server error ' + r.status); }); return r.json(); })
     .then(d => {
-      if (!d.token) return;
+      if (!d.token) { showToast('Token not available', 'error'); return; }
       val.textContent = d.token;
       val.classList.remove('masked');
       val.style.display = '';
@@ -242,7 +252,7 @@ function tokenReveal() {
       clearTimeout(_tokenHideTimer);
       _tokenHideTimer = setTimeout(_maskToken, 30000);
     })
-    .catch(() => showToast('Could not fetch token', 'error'));
+    .catch(err => showToast('Could not fetch token: ' + (err.message || 'unknown error'), 'error'));
 }
 
 function _maskToken() {
@@ -497,6 +507,7 @@ function basicAuthToggleChanged() {
 
   if (enabled) {
     // Show the edit form so user can set credentials first
+    _baPending = true; // prevent SSE from resetting the toggle while credentials are being entered
     _applyBasicAuthState(false);
     const controls  = document.getElementById('basicauth-controls');
     const credView  = document.getElementById('basicauth-cred-view');
@@ -508,6 +519,7 @@ function basicAuthToggleChanged() {
 
     const msgEl = document.getElementById('basicauth-msg');
     if (msgEl) { msgEl.textContent = 'Enter credentials and click Apply to enable.'; msgEl.style.display = 'block'; msgEl.style.color = 'var(--text-3)'; }
+    showToast('Enter credentials and click Apply to enable Basic Auth', 'info');
     return;
   }
 
@@ -537,6 +549,7 @@ function baOpenEdit() {
 }
 
 function baCancelEdit() {
+  _baPending = false; // credential entry cancelled
   const credView = document.getElementById('basicauth-cred-view');
   const controls = document.getElementById('basicauth-controls');
   if (!_baEnabled) {
@@ -581,6 +594,7 @@ function basicAuthSave() {
   })
     .then(r => { if (!r.ok) return r.text().then(t => { throw new Error(t); }); return r.json(); })
     .then(() => {
+      _baPending = false; // credentials saved — SSE may now update basic auth state normally
       _baEnabled = true;
       _applyBasicAuthState(true);
       userInput.value = '';

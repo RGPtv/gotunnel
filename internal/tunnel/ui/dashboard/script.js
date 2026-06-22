@@ -38,6 +38,7 @@ const $sidebarTunName = document.getElementById('sidebar-tun-name');
 
 function openMobileMenu() {
   if (!$sidebar) return;
+  if ($sidebarTunName) $sidebarTunName.textContent = activeTunnel || '';
   $sidebar.classList.add('open');
   $mobileOverlay?.classList.add('show');
   document.body.style.overflow = 'hidden';
@@ -75,6 +76,7 @@ function switchTab(tab) {
   const viewIns = document.getElementById('view-inspector');
   if (viewOvr) viewOvr.style.display = tab === 'overview'  ? 'flex' : 'none';
   if (viewIns) viewIns.style.display = tab === 'inspector' ? 'flex' : 'none';
+  if (tab === 'inspector') _renderList();
 }
 
 function selectTunnel(ep) {
@@ -123,6 +125,7 @@ function selectTunnel(ep) {
     const t = lastTunnels.find(x => x.endpoint === ep);
     if (t) _applyTunnelInfo(t);
     switchTab(currentTab);
+    _renderList();   // refresh inspector with this tunnel's request history
   }
 }
 
@@ -261,7 +264,7 @@ function _maskToken() {
   const val = document.getElementById('home-token-val');
   const btn = document.getElementById('home-token-reveal');
   if (!val) return;
-  val.textContent = '••••••••••••••••••••••••••••••••';
+  val.textContent = '••••••••';
   val.classList.add('masked');
   if (btn) btn.title = 'Reveal';
   clearTimeout(_tokenHideTimer);

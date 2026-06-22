@@ -17,6 +17,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/RGPtv/gotunnel/internal/ipc"
 )
 
 //go:embed ui/dashboard ui/login
@@ -431,6 +433,14 @@ func (ins *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if ins.ActiveConns != nil {
 			active = ins.ActiveConns.Load()
 		}
+		var logs []ipc.LogEntry
+		if ins.srv != nil {
+			ins.srv.logsMu.Lock()
+			logs = make([]ipc.LogEntry, len(ins.srv.logs))
+			copy(logs, ins.srv.logs)
+			ins.srv.logsMu.Unlock()
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
 			"server":       ins.ServerAddr,
@@ -442,6 +452,7 @@ func (ins *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"uptime_sec":   int(time.Since(ins.StartTime).Seconds()),
 			"total":        total,
 			"active_conns": active,
+			"logs":         logs,
 		})
 	case "/api/token":
 		ins.handleToken(w, r)
@@ -1022,6 +1033,14 @@ func (ins *Inspector) handleStatusSSE(w http.ResponseWriter, r *http.Request) {
 
 			tunnels := ins.buildTunnelList()
 
+			var logs []ipc.LogEntry
+			if ins.srv != nil {
+				ins.srv.logsMu.Lock()
+				logs = make([]ipc.LogEntry, len(ins.srv.logs))
+				copy(logs, ins.srv.logs)
+				ins.srv.logsMu.Unlock()
+			}
+
 			payload := map[string]any{
 				"server":       ins.ServerAddr,
 				"https_addr":   ins.srv.httpsAddr,
@@ -1033,6 +1052,7 @@ func (ins *Inspector) handleStatusSSE(w http.ResponseWriter, r *http.Request) {
 				"total":        total,
 				"active_conns": active,
 				"tunnels":      tunnels,
+				"logs":         logs,
 			}
 			data, _ := json.Marshal(payload)
 			fmt.Fprintf(w, "data: %s\n\n", data)

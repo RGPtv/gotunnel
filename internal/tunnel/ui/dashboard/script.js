@@ -1181,6 +1181,56 @@ $tunList?.addEventListener('keydown', e => {
         setTxt('srv-dash-addr', inspectUrl);
         setTxt('srv-dash-user', d.dash_user);
         window._dashPass = d.dash_pass || '';
+
+        if (Array.isArray(d.logs)) {
+          const logEl = document.getElementById('srv-event-log');
+          if (logEl) {
+            if (d.logs.length === 0) {
+              logEl.innerHTML = '<div class="empty">No events yet...</div>';
+            } else {
+              // Only re-render if count changed or last message changed to avoid constant DOM thrashing
+              const lastLog = d.logs[d.logs.length - 1];
+              const logSignature = d.logs.length + ':' + (lastLog ? lastLog.time : '');
+              if (logEl._sig !== logSignature) {
+                logEl._sig = logSignature;
+                logEl.innerHTML = '';
+                d.logs.forEach(l => {
+                  const row = document.createElement('div');
+                  row.style.display = 'flex';
+                  row.style.gap = '8px';
+                  
+                  const ts = document.createElement('span');
+                  ts.style.color = 'var(--text-3)';
+                  ts.style.flexShrink = '0';
+                  ts.textContent = fmtTime(l.time);
+                  
+                  let color = 'var(--text-2)';
+                  let sym = 'ℹ';
+                  switch (l.level) {
+                    case 1: color = 'var(--yellow)'; sym = '⚠'; break;
+                    case 2: color = 'var(--red)'; sym = '✗'; break;
+                    case 3: color = 'var(--green)'; sym = '✓'; break;
+                    default: color = 'var(--accent)'; sym = 'ℹ'; break;
+                  }
+                  
+                  const ic = document.createElement('span');
+                  ic.style.color = color;
+                  ic.style.flexShrink = '0';
+                  ic.textContent = sym;
+                  
+                  const msg = document.createElement('span');
+                  msg.textContent = l.message;
+                  
+                  row.appendChild(ts);
+                  row.appendChild(ic);
+                  row.appendChild(msg);
+                  logEl.appendChild(row);
+                });
+                logEl.scrollTop = logEl.scrollHeight;
+              }
+            }
+          }
+        }
       } catch {}
     };
     evs.onerror = () => { evs.close(); setTimeout(connectStatus, 3000); };

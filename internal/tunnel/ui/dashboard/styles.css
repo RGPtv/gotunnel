@@ -480,11 +480,12 @@ nav {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--r);
-  padding: 12px;
+  padding: 16px 20px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  min-width: 260px;
+  gap: 12px;
+  width: 100%;
+  max-width: 680px;
 }
 
 .home-card-body {

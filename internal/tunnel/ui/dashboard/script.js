@@ -811,10 +811,10 @@ function clearReqs() {
 
 function replayReq(id) {
   if (!activeTunnel) return;
-  fetch('/api/tunnels/replay', {
+  fetch('/api/replay', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
-    body: JSON.stringify({ endpoint: activeTunnel, requestId: id })
+    body: JSON.stringify({ endpoint: activeTunnel, id: id })
   })
     .then(r => { if (!r.ok) throw new Error(); return r.json(); })
     .then(() => showToast('Request replayed', 'success'))

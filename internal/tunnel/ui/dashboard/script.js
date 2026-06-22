@@ -231,13 +231,12 @@ function tokenReveal() {
     _maskToken(); return;
   }
 
-  fetch('/api/token', { headers: { 'X-CSRF-Token': getCsrfToken() } })
+  fetch('/api/token', { method: 'POST', headers: { 'X-CSRF-Token': getCsrfToken() } })
     .then(r => { if (!r.ok) throw new Error(); return r.json(); })
     .then(d => {
       if (!d.token) return;
       val.textContent = d.token;
       val.classList.remove('masked');
-      // On mobile, make the chip visible
       val.style.display = '';
       if (btn) btn.title = 'Hide';
       clearTimeout(_tokenHideTimer);
@@ -257,7 +256,7 @@ function _maskToken() {
 }
 
 function tokenCopy() {
-  fetch('/api/token', { headers: { 'X-CSRF-Token': getCsrfToken() } })
+  fetch('/api/token', { method: 'POST', headers: { 'X-CSRF-Token': getCsrfToken() } })
     .then(r => { if (!r.ok) throw new Error(); return r.json(); })
     .then(d => {
       if (!d.token) throw new Error();
@@ -290,15 +289,19 @@ function apikeyToggleChanged() {
   if (!toggle || !activeTunnel) return;
   const enabled = toggle.checked;
 
-  fetch('/api/tunnels/apikey-toggle', {
+  fetch('/api/tunnels/auth', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
-    body: JSON.stringify({ endpoint: activeTunnel, enabled })
+    body: JSON.stringify({ endpoint: activeTunnel, enabled, regenerate: false })
   })
-    .then(r => { if (!r.ok) throw new Error(); return r.json(); })
-    .then(() => { _apikeyEnabled = enabled; _applyApikeyState(enabled, false); })
-    .catch(() => {
-      showToast('Failed to update API key setting', 'error');
+    .then(r => { if (!r.ok) return r.text().then(t => { throw new Error(t); }); return r.json(); })
+    .then(() => {
+      _apikeyEnabled = enabled;
+      _applyApikeyState(enabled, false);
+      showToast('API key auth ' + (enabled ? 'enabled' : 'disabled'), 'success');
+    })
+    .catch(err => {
+      showToast('Failed to update API key: ' + (err.message || 'unknown error'), 'error');
       toggle.checked = _apikeyEnabled; // revert
     });
 }
@@ -358,21 +361,22 @@ function apiRegenerate() {
   if (!activeTunnel) return;
   if (!confirm('Generate a new API key? The old key will immediately stop working.')) return;
 
-  fetch('/api/tunnels/apikey-regen', {
+  fetch('/api/tunnels/auth', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
-    body: JSON.stringify({ endpoint: activeTunnel })
+    body: JSON.stringify({ endpoint: activeTunnel, enabled: true, regenerate: true })
   })
-    .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+    .then(r => { if (!r.ok) return r.text().then(t => { throw new Error(t); }); return r.json(); })
     .then(d => {
-      if (!d.apikey) return;
-      const val = document.getElementById('api-val');
-      if (val) { val.textContent = d.apikey; val.classList.remove('masked'); }
-      clearTimeout(_apikeyHideTimer);
-      _apikeyHideTimer = setTimeout(_maskApiKey, 30000);
+      if (d.apikey) {
+        const val = document.getElementById('api-val');
+        if (val) { val.textContent = d.apikey; val.classList.remove('masked'); }
+        clearTimeout(_apikeyHideTimer);
+        _apikeyHideTimer = setTimeout(_maskApiKey, 30000);
+      }
       showToast('New API key generated', 'success');
     })
-    .catch(() => showToast('Failed to regenerate API key', 'error'));
+    .catch(err => showToast('Failed to regenerate API key: ' + (err.message || ''), 'error'));
 }
 
 function apikeyCustomInputChanged() {
@@ -407,12 +411,12 @@ function apikeyCustomSave() {
   const key = input.value.trim();
   if (!key) return;
 
-  fetch('/api/tunnels/apikey-set', {
+  fetch('/api/tunnels/auth', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
-    body: JSON.stringify({ endpoint: activeTunnel, key })
+    body: JSON.stringify({ endpoint: activeTunnel, enabled: true, regenerate: false, apikey: key })
   })
-    .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+    .then(r => { if (!r.ok) return r.text().then(t => { throw new Error(t); }); return r.json(); })
     .then(() => {
       input.value = '';
       apikeyCustomInputChanged();
@@ -421,7 +425,7 @@ function apikeyCustomSave() {
       _maskApiKey();
       showToast('Custom API key saved', 'success');
     })
-    .catch(() => showToast('Failed to save custom API key', 'error'));
+    .catch(err => showToast('Failed to save custom API key: ' + (err.message || ''), 'error'));
 }
 
 // ── AI Mode ───────────────────────────────────────────────────
@@ -456,10 +460,14 @@ function aiModeToggleChanged() {
     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
     body: JSON.stringify({ endpoint: activeTunnel, enabled })
   })
-    .then(r => { if (!r.ok) throw new Error(); return r.json(); })
-    .then(() => { _aiEnabled = enabled; _applyAiModeState(enabled); })
-    .catch(() => {
-      showToast('Failed to update AI mode', 'error');
+    .then(r => { if (!r.ok) return r.text().then(t => { throw new Error(t); }); return r.json(); })
+    .then(() => {
+      _aiEnabled = enabled;
+      _applyAiModeState(enabled);
+      showToast('AI optimization ' + (enabled ? 'enabled' : 'disabled'), 'success');
+    })
+    .catch(err => {
+      showToast('Failed to update AI mode: ' + (err.message || ''), 'error');
       toggle.checked = _aiEnabled;
     });
 }
@@ -509,10 +517,14 @@ function basicAuthToggleChanged() {
     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
     body: JSON.stringify({ endpoint: activeTunnel, enabled: false })
   })
-    .then(r => { if (!r.ok) throw new Error(); return r.json(); })
-    .then(() => { _baEnabled = false; _applyBasicAuthState(false); })
-    .catch(() => {
-      showToast('Failed to disable basic auth', 'error');
+    .then(r => { if (!r.ok) return r.text().then(t => { throw new Error(t); }); return r.json(); })
+    .then(() => {
+      _baEnabled = false;
+      _applyBasicAuthState(false);
+      showToast('Basic auth disabled', 'success');
+    })
+    .catch(err => {
+      showToast('Failed to disable basic auth: ' + (err.message || ''), 'error');
       toggle.checked = _baEnabled;
     });
 }

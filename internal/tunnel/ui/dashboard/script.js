@@ -117,8 +117,9 @@ function selectTunnel(ep) {
 
 // ── Helpers ──────────────────────────────────────────────────
 function fmtTime(ts) {
-  const d = new Date(ts * 1000);
-  return d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  // ts is an ISO 8601 string from Go's time.Time JSON marshaling, e.g. "2024-01-15T14:23:01.123Z"
+  const d = new Date(ts);
+  return isNaN(d) ? '—' : d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
 function fmtDur(ms) {

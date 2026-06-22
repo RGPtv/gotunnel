@@ -483,7 +483,7 @@ nav {
   padding: 16px 20px;
   display: flex;
   flex-direction: column;
-  width: fit-content;
+  width: inherit;
   max-width: 100%;
 }
 
@@ -508,7 +508,7 @@ nav {
   border-radius: 8px;
   padding: 8px 12px;
   margin-top: 4px;
-  width: max-content;
+  width: inherit;
   max-width: 100%;
   transition: all 0.2s ease-out;
 }
@@ -531,9 +531,9 @@ nav {
   font-size: 12px;
   color: var(--text);
   flex: 1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  word-break: break-all;
+  white-space: normal;
+  min-width: 0;
   padding: 0 4px;
 }
 

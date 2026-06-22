@@ -11,6 +11,7 @@ function getCsrfToken() {
 let activeTunnel      = null;
 let currentTab        = 'overview';
 let reqs              = [];
+let lastTunnels       = [];   // cached from /api/status/stream or /api/tunnels
 let _tokenHideTimer   = null;
 let _apikeyHideTimer  = null;
 let _baUserHideTimer  = null;
@@ -111,14 +112,20 @@ function selectTunnel(ep) {
     el.classList.toggle('active', el.dataset.ep === ep);
   });
 
-  switchTab(currentTab);
-  _loadTunnelInfo(ep);
+  if (ep) {
+    // Look up info from the cached tunnel list (populated by status stream).
+    // If not yet available it will be applied on the next status tick.
+    const t = lastTunnels.find(x => x.endpoint === ep);
+    if (t) _applyTunnelInfo(t);
+    switchTab(currentTab);
+  }
 }
 
 // ── Helpers ──────────────────────────────────────────────────
 function fmtTime(ts) {
-  const d = new Date(ts * 1000);
-  return d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  // ts is an ISO 8601 string from Go's time.Time JSON marshaling, e.g. "2024-01-15T14:23:01.123Z"
+  const d = new Date(ts);
+  return isNaN(d) ? '—' : d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
 function fmtDur(ms) {
@@ -174,30 +181,28 @@ function _clearTunnelInfo() {
   _renderList();
 }
 
-function _loadTunnelInfo(ep) {
-  fetch('/api/tunnels/' + encodeURIComponent(ep), {
-    headers: { 'X-CSRF-Token': getCsrfToken() }
-  })
-    .then(r => { if (!r.ok) throw new Error(); return r.json(); })
-    .then(d => {
-      const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v || '—'; };
-      set('tun-proxyurl', d.proxyURL);
-      set('tun-clientip', d.clientIP);
-      set('tun-type',     d.type);
-      set('tun-conns',    d.connections ?? 0);
+/**
+ * Apply a TunnelEntry (snake_case fields from Go) to the overview panel.
+ * Called whenever the tunnel list updates while a tunnel is selected,
+ * and when selectTunnel() picks an item from the cached list.
+ */
+function _applyTunnelInfo(t) {
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = (v != null ? String(v) : '—') || '—'; };
+  set('tun-proxyurl', t.proxy_url);
+  set('tun-clientip', t.client_ip);
+  set('tun-type',     t.type);
+  set('tun-conns',    t.connections ?? 0);
 
-      const authSection = document.getElementById('tunnel-auth-section');
-      if (authSection) authSection.style.display = 'block';
+  const authSection = document.getElementById('tunnel-auth-section');
+  if (authSection) authSection.style.display = 'block';
 
-      _apikeyEnabled = !!d.apikeyEnabled;
-      _baEnabled     = !!d.basicAuthEnabled;
-      _aiEnabled     = !!d.aiModeEnabled;
+  _apikeyEnabled = !!t.apikey_enabled;
+  _baEnabled     = !!t.basicauth_enabled;
+  _aiEnabled     = !!t.aimode_enabled;
 
-      _applyApikeyState(_apikeyEnabled, false);
-      _applyBasicAuthState(_baEnabled);
-      _applyAiModeState(_aiEnabled);
-    })
-    .catch(() => { /* silent – panel stays at defaults */ });
+  _applyApikeyState(_apikeyEnabled, false);
+  _applyBasicAuthState(_baEnabled);
+  _applyAiModeState(_aiEnabled);
 }
 
 // ── Toast notifications ───────────────────────────────────────
@@ -696,11 +701,11 @@ function buildReqRow(r, isNew) {
 
   row.innerHTML =
     `<span class="r-time">${esc(fmtTime(r.ts))}</span>` +
-    `<span class="r-clientip">${esc(r.clientIP || '—')}</span>` +
+    `<span class="r-clientip">${esc(r.client_ip || '—')}</span>` +
     `<span class="r-method ${mth}">${mth}</span>` +
-    `<span class="r-path" title="${esc(r.path + (r.query ? '?' + r.query : ''))}">${esc(r.path)}${r.query ? '<span style="color:var(--text-3)">?' + esc(r.query) + '</span>' : ''}</span>` +
+    `<span class="r-path" title="${esc(r.path)}">${esc(r.path)}</span>` +
     `<span class="r-status ${sc}">${r.status || '—'}</span>` +
-    `<span class="r-dur">${r.durationMs != null ? esc(fmtDur(r.durationMs)) : '—'}</span>` +
+    `<span class="r-dur">${r.duration_ms != null ? esc(fmtDur(r.duration_ms)) : '—'}</span>` +
     `<div class="r-actions">` +
       `<button class="replay-btn" data-replay-id="${r.id}" aria-label="Replay request">↺ Replay</button>` +
       `<span class="expand-icon" id="exp-${r.id}">` +
@@ -722,16 +727,21 @@ function buildReqRow(r, isNew) {
 }
 
 function _buildDetail(r) {
-  const reqHeaders = Object.entries(r.requestHeaders || {})
+  const reqHeaders = Object.entries(r.req_headers || {})
     .map(([k, v]) => `<div class="header-row"><span class="header-key">${esc(k)}</span><span class="header-val">${esc(v)}</span></div>`)
     .join('') || '<span style="color:var(--text-3);font-size:11px">No headers</span>';
 
-  const resHeaders = Object.entries(r.responseHeaders || {})
+  const resHeaders = Object.entries(r.resp_headers || {})
     .map(([k, v]) => `<div class="header-row"><span class="header-key">${esc(k)}</span><span class="header-val">${esc(v)}</span></div>`)
     .join('') || '<span style="color:var(--text-3);font-size:11px">No headers</span>';
 
-  const bodyHtml = r.body
-    ? `<div class="body-preview">${esc(r.body)}</div>`
+  // req_body is base64-encoded (Go []byte JSON marshaling)
+  let bodyText = null;
+  if (r.req_body) {
+    try { bodyText = atob(r.req_body); } catch { bodyText = r.req_body; }
+  }
+  const bodyHtml = bodyText
+    ? `<div class="body-preview">${esc(bodyText)}</div>`
     : `<span style="color:var(--text-3);font-size:11px">No body captured</span>`;
 
   return `<div class="detail-grid">
@@ -800,10 +810,15 @@ function replayReq(id) {
 }
 
 // ── Tunnel list rendering ─────────────────────────────────────
+/**
+ * Render the sidebar tunnel list.
+ * @param {Array} tunnels - flat array of TunnelEntry objects (snake_case fields).
+ */
 function renderTunnels(tunnels) {
   if (!$tunList) return;
+  lastTunnels = tunnels || [];
 
-  if (!tunnels || tunnels.length === 0) {
+  if (!lastTunnels.length) {
     $tunList.innerHTML = '<div class="tunnel-empty-msg">No active tunnels</div>';
     if (activeTunnel) { activeTunnel = null; selectTunnel(null); }
     return;
@@ -812,7 +827,7 @@ function renderTunnels(tunnels) {
   const current = activeTunnel;
   $tunList.innerHTML = '';
 
-  tunnels.forEach(t => {
+  lastTunnels.forEach(t => {
     const item = document.createElement('div');
     item.className = 'tunnel-item' + (t.endpoint === current ? ' active' : '');
     item.dataset.ep = t.endpoint;
@@ -826,12 +841,17 @@ function renderTunnels(tunnels) {
     $tunList.appendChild(item);
   });
 
-  // Auto-select if only one tunnel, or re-select current
+  // Re-apply info for the currently selected tunnel (fields may have updated)
   if (current) {
-    const stillExists = tunnels.some(t => t.endpoint === current);
-    if (!stillExists) selectTunnel(tunnels[0].endpoint);
-  } else if (tunnels.length === 1) {
-    selectTunnel(tunnels[0].endpoint);
+    const stillExists = lastTunnels.some(t => t.endpoint === current);
+    if (!stillExists) {
+      selectTunnel(lastTunnels[0].endpoint);
+    } else {
+      const t = lastTunnels.find(x => x.endpoint === current);
+      if (t) _applyTunnelInfo(t);
+    }
+  } else if (lastTunnels.length === 1) {
+    selectTunnel(lastTunnels[0].endpoint);
   }
 }
 
@@ -963,38 +983,42 @@ $tunList?.addEventListener('keydown', e => {
 
 // ── Boot ─────────────────────────────────────────────────────
 (function boot() {
-  // Initial tunnel + request list poll
+  // ── Initial tunnel list ───────────────────────────────────
+  // /api/tunnels returns a flat JSON array of TunnelEntry objects.
   fetch('/api/tunnels', { headers: { 'X-CSRF-Token': getCsrfToken() } })
-    .then(r => r.ok ? r.json() : null)
-    .then(d => { if (d) renderTunnels(d.tunnels || []); })
+    .then(r => r.ok ? r.json() : [])
+    .then(arr => { if (Array.isArray(arr)) renderTunnels(arr); })
     .catch(() => {});
 
-  // Live event stream
-  function connect() {
-    const evs = new EventSource('/api/events');
+  // ── Status stream (/api/status/stream) ─────────────────────
+  // Emits a JSON object every second with uptime_sec + tunnels array.
+  // Plain data: events (no named event type).
+  function connectStatus() {
+    const evs = new EventSource('/api/status/stream');
+    evs.onmessage = e => {
+      try {
+        const d = JSON.parse(e.data);
+        if ($uptime && d.uptime_sec != null) $uptime.textContent = fmtUptime(d.uptime_sec);
+        if (Array.isArray(d.tunnels)) renderTunnels(d.tunnels);
+      } catch {}
+    };
+    evs.onerror = () => { evs.close(); setTimeout(connectStatus, 3000); };
+  }
 
-    evs.addEventListener('tunnels', e => {
-      try { renderTunnels(JSON.parse(e.data).tunnels || []); } catch {}
-    });
-
-    evs.addEventListener('request', e => {
+  // ── Request stream (/api/requests/stream) ──────────────────
+  // Emits one CapturedRequest JSON object per proxied request.
+  // Plain data: events (no named event type).
+  function connectRequests() {
+    const evs = new EventSource('/api/requests/stream');
+    evs.onmessage = e => {
       try {
         const r = JSON.parse(e.data);
         if (r.endpoint === activeTunnel) prependReq(r);
       } catch {}
-    });
-
-    evs.addEventListener('uptime', e => {
-      try {
-        const d = JSON.parse(e.data);
-        if ($uptime) $uptime.textContent = fmtUptime(d.seconds || 0);
-      } catch {}
-    });
-
-    evs.onerror = () => {
-      evs.close();
-      setTimeout(connect, 3000);
     };
+    evs.onerror = () => { evs.close(); setTimeout(connectRequests, 3000); };
   }
-  connect();
+
+  connectStatus();
+  connectRequests();
 })();

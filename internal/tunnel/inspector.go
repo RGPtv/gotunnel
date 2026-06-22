@@ -451,8 +451,6 @@ func (ins *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ins.handleTunnelAIMode(w, r)
 	case "/api/tunnels":
 		ins.handleTunnels(w, r)
-	case "/api/events":
-		ins.handleEventsSSE(w, r)
 	case "/api/requests/stream":
 		ins.handleSSE(w, r)
 	case "/api/status/stream":
@@ -460,6 +458,14 @@ func (ins *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/api/replay":
 		ins.handleReplay(w, r)
 	default:
+		// Per-tunnel detail: GET /api/tunnels/:endpoint
+		// The JS calls fetch('/api/tunnels/' + encodeURIComponent(ep)) to populate
+		// the overview panel. Go's net/http already URL-decodes r.URL.Path, so
+		// the endpoint name is ready to use after stripping the prefix.
+		if strings.HasPrefix(r.URL.Path, "/api/tunnels/") {
+			ins.handleTunnelDetail(w, r)
+			return
+		}
 		http.NotFound(w, r)
 	}
 }
@@ -906,69 +912,52 @@ func (ins *Inspector) handleToken(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"token": ins.Token})
 }
 
+func (ins *Inspector) handleTunnelDetail(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	// Strip prefix; net/http already URL-decodes r.URL.Path so "(default)" arrives as-is.
+	ep := strings.TrimPrefix(r.URL.Path, "/api/tunnels/")
+	if ep == "" {
+		http.NotFound(w, r)
+		return
+	}
+	if ins.srv == nil {
+		http.Error(w, "server unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	ins.srv.tunnelMetaMu.RLock()
+	meta, ok := ins.srv.tunnelMeta[ep]
+	ins.srv.tunnelMetaMu.RUnlock()
+	if !ok {
+		http.Error(w, "tunnel not found", http.StatusNotFound)
+		return
+	}
+	conns := 0
+	if meta.Session != nil {
+		conns = int(meta.Session.NumStreams())
+	}
+	// Return camelCase keys to match the JS _loadTunnelInfo field reads:
+	//   d.proxyURL, d.clientIP, d.apikeyEnabled, d.basicAuthEnabled, d.aiModeEnabled
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	json.NewEncoder(w).Encode(map[string]any{
+		"type":             meta.Type,
+		"endpoint":         ep,
+		"connections":      conns,
+		"proxyURL":         meta.ProxyURL,
+		"clientIP":         meta.ClientIP,
+		"apikeyEnabled":    meta.APIKeyEnabled,
+		"basicAuthEnabled": meta.BasicAuthEnabled,
+		"aiModeEnabled":    meta.AIMode,
+	})
+}
+
 func (ins *Inspector) handleTunnels(w http.ResponseWriter, r *http.Request) {
 	tunnels := ins.buildTunnelList()
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{"tunnels": tunnels})
-}
-
-// handleEventsSSE is the unified SSE endpoint consumed by the dashboard JS.
-// It sends three named event types that match the JS addEventListener calls:
-//   - "tunnels" → {tunnels: [...]}          (every second, via ticker)
-//   - "uptime"  → {seconds: N}              (every second, via ticker)
-//   - "request" → CapturedRequest           (on every proxied request)
-//
-// The previous /api/requests/stream and /api/status/stream endpoints sent
-// unnamed data frames (no "event:" line), so JS named listeners never fired.
-func (ins *Inspector) handleEventsSSE(w http.ResponseWriter, r *http.Request) {
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "SSE not supported", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no")
-	flusher.Flush()
-
-	ch, unsub := ins.subscribe()
-	defer unsub()
-
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-
-	heartbeat := time.NewTicker(15 * time.Second)
-	defer heartbeat.Stop()
-
-	for {
-		select {
-		case cr := <-ch:
-			// Named "request" event — JS: evs.addEventListener('request', ...)
-			data, _ := json.Marshal(cr)
-			fmt.Fprintf(w, "event: request\ndata: %s\n\n", data)
-			flusher.Flush()
-
-		case <-ticker.C:
-			// Named "tunnels" event — JS: evs.addEventListener('tunnels', ...)
-			tunnels := ins.buildTunnelList()
-			tData, _ := json.Marshal(map[string]any{"tunnels": tunnels})
-			fmt.Fprintf(w, "event: tunnels\ndata: %s\n\n", tData)
-
-			// Named "uptime" event — JS: evs.addEventListener('uptime', ...)
-			uData, _ := json.Marshal(map[string]any{"seconds": int(time.Since(ins.StartTime).Seconds())})
-			fmt.Fprintf(w, "event: uptime\ndata: %s\n\n", uData)
-			flusher.Flush()
-
-		case <-heartbeat.C:
-			// SSE comment line — ignored by EventSource, keeps proxies alive.
-			fmt.Fprintf(w, ": heartbeat\n\n")
-			flusher.Flush()
-
-		case <-r.Context().Done():
-			return
-		}
-	}
+	json.NewEncoder(w).Encode(tunnels)
 }
 
 func (ins *Inspector) handleSSE(w http.ResponseWriter, r *http.Request) {

@@ -3,47 +3,103 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>GoTunnel · Sign in</title>
+<meta name="referrer" content="no-referrer">
+<title>GoTunnel · Sign In</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/login/styles.css">
 </head>
 <body>
-<div class="wrap">
-  <div class="logo-row">
-    <div class="logo-icon">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" color="#ededed">
-        <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-        <path d="M2 17l10 5 10-5"/>
-        <path d="M2 12l10 5 10-5"/>
-      </svg>
-    </div>
-    <div class="logo-name">GoTunnel</div>
-    <div class="logo-sub">Sign in to your dashboard</div>
-  </div>
-
+<div class="page">
   <div class="card">
-    <div id="err" class="error">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-      Invalid username or password
+
+    <div class="brand">
+      <div class="brand-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+          <path d="M2 17l10 5 10-5"/>
+          <path d="M2 12l10 5 10-5"/>
+        </svg>
+      </div>
+      <span class="brand-name">GoTunnel</span>
     </div>
 
-    <form method="POST" action="/login">
+    <h1 class="heading">Sign in</h1>
+    <p class="sub">Access your tunnel dashboard</p>
+
+    <div
+      id="error-msg"
+      class="error-msg"
+      role="alert"
+      aria-live="assertive"
+      style="display:none"
+    ></div>
+
+    <form method="POST" action="/login" id="login-form" novalidate>
       <div class="field">
         <label for="username">Username</label>
-        <input type="text" name="username" id="username" autocomplete="username" placeholder="admin" autofocus spellcheck="false">
+        <input
+          type="text"
+          id="username"
+          name="username"
+          autocomplete="username"
+          autocorrect="off"
+          autocapitalize="off"
+          spellcheck="false"
+          required
+          aria-required="true"
+          placeholder="Enter username"
+        >
       </div>
+
       <div class="field">
         <label for="password">Password</label>
-        <input type="password" name="password" id="password" autocomplete="current-password" placeholder="Enter your password">
+        <div class="password-wrap">
+          <input
+            type="password"
+            id="password"
+            name="password"
+            autocomplete="current-password"
+            required
+            aria-required="true"
+            placeholder="Enter password"
+          >
+          <button
+            type="button"
+            id="toggle-pass"
+            class="pass-toggle"
+            aria-label="Show or hide password"
+            title="Show/hide password"
+          >
+            <svg id="pass-icon-show" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+            <svg id="pass-icon-hide" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none" aria-hidden="true">
+              <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+              <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+              <line x1="1" y1="1" x2="23" y2="23"/>
+            </svg>
+          </button>
+        </div>
       </div>
-      <button type="submit" class="submit">Continue</button>
+
+      <button
+        type="submit"
+        id="submit-btn"
+        class="submit-btn"
+        aria-label="Sign in to GoTunnel"
+      >
+        <span id="submit-label">Sign in</span>
+        <span id="submit-spinner" class="spinner" aria-hidden="true" style="display:none"></span>
+      </button>
     </form>
+
   </div>
 
-  <hr class="divider">
-  <div class="footer">GoTunnel · secured session</div>
+  <p class="footer-note">GoTunnel &mdash; secure local tunnel access</p>
 </div>
+
 <script src="/login/script.js" defer></script>
 </body>
 </html>

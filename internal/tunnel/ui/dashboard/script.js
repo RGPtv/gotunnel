@@ -1,176 +1,244 @@
 'use strict';
 
-// ── CSRF helper ────────────────────────────────
-// Reads the gotunnel_csrf cookie set by the server on every authenticated
-// response and includes it in all state-changing POST requests.
+// ── CSRF ─────────────────────────────────────────────────────
+/** Read the CSRF token set by the server in the gotunnel_csrf cookie. */
 function getCsrfToken() {
-  const m = document.cookie.match(/(?:^|;\s*)gotunnel_csrf=([^;]*)/);
+  const m = document.cookie.match(/(?:^|;\s*)gotunnel_csrf=([^;]+)/);
   return m ? decodeURIComponent(m[1]) : '';
 }
 
-// ── State ──────────────────────────────────────
-let activeTunnel = null;
-let currentTab = 'overview';
-let allReqs    = [];
-let tunnelsMap = {};
-let totalEver  = 0;
+// ── State ────────────────────────────────────────────────────
+let activeTunnel      = null;
+let currentTab        = 'overview';
+let reqs              = [];
+let _tokenHideTimer   = null;
+let _apikeyHideTimer  = null;
+let _baUserHideTimer  = null;
+let _baPassHideTimer  = null;
+let _apikeyEnabled    = false;
+let _baEnabled        = false;
+let _aiEnabled        = false;
 
-// ── DOM refs ───────────────────────────────────
+// ── DOM refs ─────────────────────────────────────────────────
 const $list     = document.getElementById('req-list');
+const $count    = document.getElementById('t-count');
 const $empty    = document.getElementById('empty-state');
-const $tCount   = document.getElementById('t-count');
-const $tunConns = document.getElementById('tun-conns');
-const $tunType  = document.getElementById('tun-type');
-const $tunProxy = document.getElementById('tun-proxyurl');
-const $uptime   = document.getElementById('uptime');
 const $tunList  = document.getElementById('tunnel-list');
-const $apiVal   = document.getElementById('api-val');
-const $chipLbl  = document.getElementById('filter-label');
+const $uptime   = document.getElementById('uptime');
 
-// ── Navigation ─────────────────────────────────
+// ── Mobile drawer ─────────────────────────────────────────────
+const $sidebar        = document.getElementById('sidebar');
+const $mobileOverlay  = document.getElementById('mobile-overlay');
+const $hamburger      = document.getElementById('nav-hamburger');
+const $mobileTabs     = document.getElementById('mobile-tabs');
+const $navActiveTun   = document.getElementById('nav-active-tunnel');
+
+function openMobileMenu() {
+  if (!$sidebar) return;
+  $sidebar.classList.add('open');
+  $mobileOverlay?.classList.add('show');
+  document.body.style.overflow = 'hidden';
+  $hamburger?.setAttribute('aria-expanded', 'true');
+}
+
+function closeMobileMenu() {
+  if (!$sidebar) return;
+  $sidebar.classList.remove('open');
+  $mobileOverlay?.classList.remove('show');
+  document.body.style.overflow = '';
+  $hamburger?.setAttribute('aria-expanded', 'false');
+}
+
+// ── Navigation ────────────────────────────────────────────────
 function switchTab(tab) {
   if (!activeTunnel) return;
   currentTab = tab;
-  document.getElementById('tab-overview').classList.toggle('active', tab === 'overview');
-  document.getElementById('tab-inspector').classList.toggle('active', tab === 'inspector');
-  
-  document.getElementById('view-overview').style.display = tab === 'overview' ? 'flex' : 'none';
-  document.getElementById('view-inspector').style.display = tab === 'inspector' ? 'flex' : 'none';
+
+  const tabOverview  = document.getElementById('tab-overview');
+  const tabInspector = document.getElementById('tab-inspector');
+  tabOverview?.classList.toggle('active', tab === 'overview');
+  tabInspector?.classList.toggle('active', tab === 'inspector');
+  tabOverview?.setAttribute('aria-selected',  String(tab === 'overview'));
+  tabInspector?.setAttribute('aria-selected', String(tab === 'inspector'));
+
+  const mobTabOvr = document.getElementById('mob-tab-overview');
+  const mobTabIns = document.getElementById('mob-tab-inspector');
+  mobTabOvr?.classList.toggle('active', tab === 'overview');
+  mobTabIns?.classList.toggle('active', tab === 'inspector');
+  mobTabOvr?.setAttribute('aria-selected',  String(tab === 'overview'));
+  mobTabIns?.setAttribute('aria-selected', String(tab === 'inspector'));
+
+  const viewOvr = document.getElementById('view-overview');
+  const viewIns = document.getElementById('view-inspector');
+  if (viewOvr) viewOvr.style.display = tab === 'overview'  ? 'flex' : 'none';
+  if (viewIns) viewIns.style.display = tab === 'inspector' ? 'flex' : 'none';
 }
 
 function selectTunnel(ep) {
-  _maskApiKey();
-  _baCreds         = { user: '', pass: '' };
-  _baEditOpen      = false;
-  _baPendingEnable = false;
-  _baMaskCreds();
+  closeMobileMenu();
   activeTunnel = ep;
-  document.querySelectorAll('.tunnel-entry').forEach(el => {
+
+  // Update active tunnel name shown in mobile nav
+  if ($navActiveTun) $navActiveTun.textContent = ep ? ep : '';
+
+  const viewEmpty = document.getElementById('view-empty');
+  const navTabs   = document.getElementById('nav-tabs');
+
+  if (!ep) {
+    if (viewEmpty) viewEmpty.style.display = 'flex';
+    if (navTabs)   navTabs.style.display   = 'none';
+    if ($mobileTabs) $mobileTabs.style.display = 'none';
+
+    const viewOvr = document.getElementById('view-overview');
+    const viewIns = document.getElementById('view-inspector');
+    if (viewOvr) viewOvr.style.display = 'none';
+    if (viewIns) viewIns.style.display = 'none';
+
+    _clearTunnelInfo();
+    return;
+  }
+
+  if (viewEmpty) viewEmpty.style.display = 'none';
+  if (navTabs)   navTabs.style.display   = 'flex';
+
+  // Only show mobile tabs on mobile-sized screens
+  if ($mobileTabs) {
+    $mobileTabs.style.display = window.innerWidth <= 768 ? 'flex' : 'none';
+  }
+
+  // Highlight active item in tunnel list
+  document.querySelectorAll('.tunnel-item').forEach(el => {
     el.classList.toggle('active', el.dataset.ep === ep);
   });
 
-  if (!ep) {
-    document.getElementById('nav-tabs').style.display = 'none';
-    document.getElementById('view-empty').style.display = 'flex';
-    document.getElementById('view-overview').style.display = 'none';
-    document.getElementById('view-inspector').style.display = 'none';
-    document.getElementById('tunnel-auth-section').style.display = 'none';
-    return;
-  }
-
-  document.getElementById('nav-tabs').style.display = 'flex';
-  document.getElementById('view-empty').style.display = 'none';
   switchTab(currentTab);
-  renderTunnelOverview();
-
-  $chipLbl.textContent = ep;
-  renderAll();
+  _loadTunnelInfo(ep);
 }
 
-function renderTunnelOverview() {
-  const t = tunnelsMap[activeTunnel];
-  if (!t) return;
-  $tunProxy.textContent = t.proxy_url || '—';
-  $tunType.textContent = t.type || '—';
-  $tunConns.textContent = t.connections;
-  document.getElementById('tun-clientip').textContent = (t.client_ip || '—').replace(/(:\d+)$/, '').replace(/^\[|\]$/g, '');
-
-  document.getElementById('tunnel-auth-section').style.display = 'contents';
-
-  _syncAIModeUI(t);
-
-  // Sync API key state
-  const apikeyEnabled = !!t.apikey_enabled;
-  document.getElementById('apikey-toggle').checked = apikeyEnabled;
-  _setApikeyStatus(apikeyEnabled);
-  if (!apikeyEnabled) _maskApiKey();
-
-  // Basic Auth — skip all DOM writes while the user is in the edit flow.
-  if (!_baEditOpen && !_baPendingEnable) {
-    const baEnabled = !!t.basicauth_enabled;
-    document.getElementById('basicauth-toggle').checked = baEnabled;
-    _setBasicAuthStatus(baEnabled);
-    if (baEnabled) {
-      _baShowEditForm(false);
-      _baShowCredView(true);
-      // Refresh curl snippet if creds are cached
-      if (_baCreds.user) _updateBaCurlSnippet(_baCreds.user, _baCreds.pass);
-    } else {
-      _baShowCredView(false);
-      _baShowEditForm(false);
-    }
-  }
-}
-
-// ── Helpers ────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────
 function fmtTime(ts) {
-  const d = new Date(ts);
+  const d = new Date(ts * 1000);
   return d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
+
 function fmtDur(ms) {
-  if (ms < 1000) return ms + 'ms';
-  return (ms / 1000).toFixed(2) + 's';
+  if (ms >= 1000) return (ms / 1000).toFixed(2) + 's';
+  return ms + 'ms';
 }
-function fmtUptime(s) {
-  if (s < 60)   return s + 's';
-  if (s < 3600) return Math.floor(s/60) + 'm ' + (s%60) + 's';
-  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60);
-  return h + 'h ' + m + 'm';
-}
-function statusCls(code) {
-  if (code < 300) return 's2';
-  if (code < 400) return 's3';
-  if (code < 500) return 's4';
-  return 's5';
-}
+
 function esc(s) {
-  const d = document.createElement('div');
-  d.textContent = String(s ?? '');
-  return d.innerHTML;
-}
-function hdrsHtml(h) {
-  if (!h || !Object.keys(h).length) return '<span style="opacity:.4">none</span>';
-  return Object.entries(h).map(([k, vs]) =>
-    vs.map(v => `<span class="hdr-k">${esc(k)}</span>: ${esc(v)}`).join('<br>')
-  ).join('<br>');
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
-// ── Token ──────────────────────────────────────
-// The token is NEVER stored in a JS variable at module scope.
-// • tokenReveal() fetches /api/token, shows it for 30 s then re-masks.
-// • tokenCopy()   fetches /api/token, writes to clipboard, token then goes
-//   out of scope — nothing persists in memory between clicks.
-// CSP connect-src 'self' means even if injected JS calls /api/token, it
-// cannot send the result anywhere external.
+function statusClass(code) {
+  if (code >= 500) return 's5';
+  if (code >= 400) return 's4';
+  if (code >= 300) return 's3';
+  if (code >= 200) return 's2';
+  return '';
+}
 
-let _tokenHideTimer = null;
+function methodStr(m) {
+  const known = ['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS','TRACE'];
+  const u = String(m).toUpperCase();
+  return known.includes(u) ? u : u.slice(0, 10);
+}
 
-function tokenReveal() {
-  const val = document.getElementById('nav-token-val');
-  const btn = document.getElementById('token-reveal-btn');
+function copyToClipboard(text) {
+  return navigator.clipboard
+    ? navigator.clipboard.writeText(text)
+    : new Promise((res, rej) => {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0';
+        document.body.appendChild(ta);
+        ta.focus(); ta.select();
+        document.execCommand('copy') ? res() : rej();
+        ta.remove();
+      });
+}
 
-  // If already revealed, re-mask immediately
-  if (!val.classList.contains('masked')) {
-    _maskToken();
-    return;
-  }
+function _clearTunnelInfo() {
+  ['tun-proxyurl','tun-clientip','tun-type','tun-conns'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = '—';
+  });
+  const authSection = document.getElementById('tunnel-auth-section');
+  if (authSection) authSection.style.display = 'none';
+  reqs = [];
+  _renderList();
+}
 
-  fetch('/api/token', {
-    method: 'POST',
+function _loadTunnelInfo(ep) {
+  fetch('/api/tunnels/' + encodeURIComponent(ep), {
     headers: { 'X-CSRF-Token': getCsrfToken() }
   })
     .then(r => { if (!r.ok) throw new Error(); return r.json(); })
-    .then(data => {
-      if (!data.token) return;
-      val.textContent = data.token;
-      val.classList.remove('masked');
-      btn.title = 'Hide';
+    .then(d => {
+      const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v || '—'; };
+      set('tun-proxyurl', d.proxyURL);
+      set('tun-clientip', d.clientIP);
+      set('tun-type',     d.type);
+      set('tun-conns',    d.connections ?? 0);
 
-      // Auto-hide after 30 s
+      const authSection = document.getElementById('tunnel-auth-section');
+      if (authSection) authSection.style.display = 'block';
+
+      _apikeyEnabled = !!d.apikeyEnabled;
+      _baEnabled     = !!d.basicAuthEnabled;
+      _aiEnabled     = !!d.aiModeEnabled;
+
+      _applyApikeyState(_apikeyEnabled, false);
+      _applyBasicAuthState(_baEnabled);
+      _applyAiModeState(_aiEnabled);
+    })
+    .catch(() => { /* silent – panel stays at defaults */ });
+}
+
+// ── Toast notifications ───────────────────────────────────────
+function showToast(msg, type = 'info', duration = 3000) {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+  const toast = document.createElement('div');
+  toast.className = 'toast' + (type !== 'info' ? ' ' + type : '');
+  toast.textContent = msg;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.style.transition = 'opacity .3s, transform .3s';
+    toast.style.opacity    = '0';
+    toast.style.transform  = 'translateY(6px)';
+    setTimeout(() => toast.remove(), 320);
+  }, duration);
+}
+
+// ── Token (session) ───────────────────────────────────────────
+function tokenReveal() {
+  const val = document.getElementById('nav-token-val');
+  const btn = document.getElementById('token-reveal-btn');
+  if (!val) return;
+
+  if (!val.classList.contains('masked')) {
+    _maskToken(); return;
+  }
+
+  fetch('/api/token', { headers: { 'X-CSRF-Token': getCsrfToken() } })
+    .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+    .then(d => {
+      if (!d.token) return;
+      val.textContent = d.token;
+      val.classList.remove('masked');
+      // On mobile, make the chip visible
+      val.style.display = '';
+      if (btn) btn.title = 'Hide';
       clearTimeout(_tokenHideTimer);
       _tokenHideTimer = setTimeout(_maskToken, 30000);
     })
-    .catch(() => {});
+    .catch(() => showToast('Could not fetch token', 'error'));
 }
 
 function _maskToken() {
@@ -184,240 +252,71 @@ function _maskToken() {
 }
 
 function tokenCopy() {
-  const chip = document.getElementById('nav-token-chip');
+  fetch('/api/token', { headers: { 'X-CSRF-Token': getCsrfToken() } })
+    .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+    .then(d => {
+      if (!d.token) throw new Error();
+      return copyToClipboard(d.token);
+    })
+    .then(() => showToast('Token copied to clipboard', 'success'))
+    .catch(() => showToast('Could not copy token', 'error'));
+}
 
-  fetch('/api/token', {
+// ── API Key ───────────────────────────────────────────────────
+function _applyApikeyState(enabled, skipServer) {
+  const toggle  = document.getElementById('apikey-toggle');
+  const badge   = document.getElementById('apikey-badge');
+  const controls = document.getElementById('apikey-controls');
+  const disabledMsg = document.getElementById('apikey-disabled-msg');
+
+  if (toggle) toggle.checked = enabled;
+  if (badge) {
+    badge.textContent = enabled ? 'On' : 'Off';
+    badge.className   = 'card-section-badge ' + (enabled ? 'enabled' : 'disabled');
+  }
+  if (controls)    controls.style.display    = enabled ? 'block' : 'none';
+  if (disabledMsg) disabledMsg.style.display = enabled ? 'none'  : 'block';
+
+  if (enabled && !skipServer) _maskApiKey();
+}
+
+function apikeyToggleChanged() {
+  const toggle = document.getElementById('apikey-toggle');
+  if (!toggle || !activeTunnel) return;
+  const enabled = toggle.checked;
+
+  fetch('/api/tunnels/apikey-toggle', {
     method: 'POST',
-    headers: { 'X-CSRF-Token': getCsrfToken() }
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+    body: JSON.stringify({ endpoint: activeTunnel, enabled })
   })
     .then(r => { if (!r.ok) throw new Error(); return r.json(); })
-    .then(data => {
-      const tok = data.token;
-      if (!tok) return;
-      const done = () => {
-        chip.classList.add('ok');
-        setTimeout(() => chip.classList.remove('ok'), 1800);
-      };
-      if (navigator.clipboard && window.isSecureContext) {
-        navigator.clipboard.writeText(tok).then(done).catch(() => _fallbackCopy(tok, done));
-      } else {
-        _fallbackCopy(tok, done);
-      }
-      // tok goes out of scope here — never stored globally
-    })
-    .catch(() => {});
-}
-
-function _fallbackCopy(tok, cb) {
-  const ta = document.createElement('textarea');
-  ta.value = tok;
-  ta.setAttribute('readonly', '');
-  ta.style.cssText = 'position:absolute;left:-9999px';
-  document.body.appendChild(ta);
-  ta.select();
-  try { document.execCommand('copy'); cb(); } catch(e) {}
-  document.body.removeChild(ta);
-  // tok goes out of scope
-}
-
-// ── API Key ─────────────────────────────────────
-// Same security model as the server token:
-// - Never stored in a JS global variable
-// - Fetched from /api/tunnels/apikey?endpoint=X only on explicit user action
-// - Auto-hides after 30 s when revealed
-// - CSP connect-src 'self' blocks exfiltration even if injected JS calls the endpoint
-
-let _apikeyHideTimer = null;
-
-function _apikeyEndpoint() {
-  return encodeURIComponent(activeTunnel || '(default)');
-}
-
-// ── Toast notifications ─────────────────────────────────
-function showToast(msg, type = 'info', duration = 3000) {
-  const icons = { success: '✓', error: '✗', info: 'ℹ' };
-  const c = document.getElementById('toast-container');
-  if (!c) return;
-  const t = document.createElement('div');
-  t.className = 'toast ' + type;
-  t.innerHTML = `<span class="toast-icon">${icons[type] || icons.info}</span><span class="toast-msg">${esc(msg)}</span>`;
-  c.appendChild(t);
-  setTimeout(() => {
-    t.style.animation = 'toastOut .2s ease forwards';
-    setTimeout(() => t.remove(), 220);
-  }, duration);
-}
-
-// ── AI Optimization ─────────────────────────────────────
-function aiModeToggleChanged() {
-  const enabled = document.getElementById('aimode-toggle').checked;
-  const ep = activeTunnel || '(default)';
-  _setAIModeStatus(enabled);
-  if (tunnelsMap[ep]) tunnelsMap[ep].aimode_enabled = enabled;
-
-  fetch('/api/tunnels/aimode', {
-    method: 'POST',
-    headers: {'Content-Type':'application/json', 'X-CSRF-Token': getCsrfToken()},
-    body: JSON.stringify({ endpoint: ep, enabled })
-  })
-  .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
-  .then(data => {
-    if (tunnelsMap[ep]) tunnelsMap[ep].aimode_enabled = data.enabled;
-    _setAIModeStatus(data.enabled);
-    showToast(data.enabled ? 'AI Optimization enabled' : 'AI Optimization disabled', data.enabled ? 'success' : 'info');
-  })
-  .catch(() => {
-    const reverted = !enabled;
-    document.getElementById('aimode-toggle').checked = reverted;
-    if (tunnelsMap[ep]) tunnelsMap[ep].aimode_enabled = reverted;
-    _setAIModeStatus(reverted);
-    showToast('Failed to update AI Optimization', 'error');
-  });
-}
-
-function _setAIModeStatus(enabled) {
-  const badge = document.getElementById('aimode-badge');
-  if (badge) {
-    badge.textContent = enabled ? 'Active' : 'Off';
-    badge.className = 'card-section-badge ' + (enabled ? 'active' : 'disabled');
-  }
-  // Update feature pills
-  function setFeat(id, onText, offText, isOn) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.textContent = isOn ? onText : offText;
-    el.className = 'feat-pill ' + (isOn ? 'on' : 'off');
-  }
-  setFeat('ai-feat-body',  '100 MB',   '10 MB',   enabled);
-  setFeat('ai-feat-flush', '512 B',    '32 KB',   enabled);
-  setFeat('ai-feat-cors',  'Enabled',  'Disabled', enabled);
-  setFeat('ai-feat-buf',   'Disabled', 'Enabled',  enabled);
-}
-
-function _syncAIModeUI(t) {
-  const enabled = !!t.aimode_enabled;
-  document.getElementById('aimode-toggle').checked = enabled;
-  _setAIModeStatus(enabled);
-}
-
-function _setApikeyStatus(enabled) {
-  const badge = document.getElementById('apikey-badge');
-  if (badge) {
-    badge.textContent = enabled ? 'Active' : 'Off';
-    badge.className = 'card-section-badge ' + (enabled ? 'enabled' : 'disabled');
-  }
-  const ctrl = document.getElementById('apikey-controls');
-  const dis  = document.getElementById('apikey-disabled-msg');
-  if (ctrl) ctrl.style.display = enabled ? 'block' : 'none';
-  if (dis)  dis.style.display  = enabled ? 'none'  : 'block';
-}
-
-// Custom key input strength checker
-function apikeyCustomInputChanged() {
-  const val = document.getElementById('apikey-custom-input').value.trim();
-  const bar = document.getElementById('apikey-strength-bar');
-  const lbl = document.getElementById('apikey-strength-label');
-  const btn = document.getElementById('apikey-custom-save');
-  if (!val) {
-    if (bar) bar.style.display = 'none';
-    if (lbl) lbl.textContent = '';
-    if (btn) btn.disabled = true;
-    return;
-  }
-  if (bar) bar.style.display = 'flex';
-  const score = _keyStrength(val);
-  const levels = ['','weak','fair','good','strong'];
-  const labels = ['','Weak — too short or simple','Fair — consider adding symbols','Good — solid key','Strong — excellent'];
-  for (let i = 1; i <= 4; i++) {
-    const seg = document.getElementById('aks-' + i);
-    if (seg) seg.className = 'strength-seg ' + (i <= score ? levels[score] : '');
-  }
-  if (lbl) { lbl.textContent = labels[score]; lbl.className = 'strength-label ' + levels[score]; }
-  if (btn) btn.disabled = score < 2;
-}
-
-function _keyStrength(k) {
-  if (k.length < 8) return 1;
-  let score = 1;
-  if (k.length >= 16) score++;
-  if (/[A-Z]/.test(k) && /[a-z]/.test(k)) score++;
-  if (/[0-9]/.test(k) && /[^A-Za-z0-9]/.test(k)) score++;
-  return Math.min(score, 4);
-}
-
-function apikeyCustomSave() {
-  const inp = document.getElementById('apikey-custom-input');
-  const key = (inp ? inp.value.trim() : '');
-  if (!key) return;
-  const ep = activeTunnel || '(default)';
-  fetch('/api/tunnels/auth', {
-    method: 'POST',
-    headers: {'Content-Type':'application/json', 'X-CSRF-Token': getCsrfToken()},
-    body: JSON.stringify({ endpoint: ep, enabled: true, apikey: key })
-  })
-  .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
-  .then(data => {
-    if (tunnelsMap[ep]) { tunnelsMap[ep].apikey_enabled = true; tunnelsMap[ep].has_apikey = true; }
-    _setApikeyStatus(true);
-    // Show the newly set key
-    const val = document.getElementById('api-val');
-    if (val) { val.textContent = data.apikey; val.classList.remove('masked'); }
-    const revBtn = document.getElementById('api-reveal');
-    if (revBtn) revBtn.title = 'Hide';
-    clearTimeout(_apikeyHideTimer);
-    _apikeyHideTimer = setTimeout(_maskApiKey, 30000);
-    if (inp) inp.value = '';
-    apikeyCustomInputChanged();
-    showToast('Custom API key applied', 'success');
-  })
-  .catch(() => showToast('Failed to set custom key', 'error'));
-}
-
-// ── API Key ─────────────────────────────────────────────
-function apikeyToggleChanged() {
-  const enabled = document.getElementById('apikey-toggle').checked;
-  const ep = activeTunnel || '(default)';
-  if (tunnelsMap[ep]) {
-    tunnelsMap[ep].apikey_enabled = enabled;
-  }
-  _setApikeyStatus(enabled);
-  if (!enabled) _maskApiKey();
-
-  fetch('/api/tunnels/auth', {
-    method: 'POST',
-    headers: {'Content-Type':'application/json', 'X-CSRF-Token': getCsrfToken()},
-    body: JSON.stringify({ endpoint: ep, enabled })
-  })
-  .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
-  .then(data => {
-    if (tunnelsMap[ep]) {
-      tunnelsMap[ep].apikey_enabled = data.enabled;
-      tunnelsMap[ep].has_apikey = !!data.apikey;
-    }
-    _setApikeyStatus(data.enabled);
-    if (!data.enabled) _maskApiKey();
-    showToast(data.enabled ? 'API key authentication enabled' : 'API key authentication disabled', data.enabled ? 'success' : 'info');
-  })
-  .catch(() => {
-    const reverted = !enabled;
-    document.getElementById('apikey-toggle').checked = reverted;
-    if (tunnelsMap[ep]) tunnelsMap[ep].apikey_enabled = reverted;
-    _setApikeyStatus(reverted);
-    showToast('Failed to update API key', 'error');
-  });
+    .then(() => { _apikeyEnabled = enabled; _applyApikeyState(enabled, false); })
+    .catch(() => {
+      showToast('Failed to update API key setting', 'error');
+      toggle.checked = _apikeyEnabled; // revert
+    });
 }
 
 function apiReveal() {
   const val = document.getElementById('api-val');
   const btn = document.getElementById('api-reveal');
+  if (!val || !activeTunnel) return;
+
   if (!val.classList.contains('masked')) { _maskApiKey(); return; }
-  fetch('/api/tunnels/apikey?endpoint=' + _apikeyEndpoint())
+
+  // POST + CSRF: prevents CSRF-based forced reads of the API key
+  fetch('/api/tunnels/apikey', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+    body: JSON.stringify({ endpoint: activeTunnel })
+  })
     .then(r => { if (!r.ok) throw new Error(); return r.json(); })
-    .then(data => {
-      if (!data.apikey) return;
-      val.textContent = data.apikey;
+    .then(d => {
+      if (!d.apikey) return;
+      val.textContent = d.apikey;
       val.classList.remove('masked');
-      if (btn) btn.title = 'Hide';
+      if (btn) btn.title = 'Hide key';
       clearTimeout(_apikeyHideTimer);
       _apikeyHideTimer = setTimeout(_maskApiKey, 30000);
     })
@@ -435,600 +334,667 @@ function _maskApiKey() {
 }
 
 function apiCopy() {
-  fetch('/api/tunnels/apikey?endpoint=' + _apikeyEndpoint())
+  if (!activeTunnel) return;
+  fetch('/api/tunnels/apikey', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+    body: JSON.stringify({ endpoint: activeTunnel })
+  })
     .then(r => { if (!r.ok) throw new Error(); return r.json(); })
-    .then(data => {
-      const key = data.apikey;
-      if (!key) return;
-      const done = () => {
-        const btn = document.getElementById('api-copy');
-        if (btn) { btn.classList.add('ok'); setTimeout(() => btn.classList.remove('ok'), 1800); }
-        showToast('API key copied to clipboard', 'success');
-      };
-      if (navigator.clipboard && window.isSecureContext) {
-        navigator.clipboard.writeText(key).then(done).catch(() => _apikeyFallbackCopy(key, done));
-      } else {
-        _apikeyFallbackCopy(key, done);
-      }
+    .then(d => {
+      if (!d.apikey) throw new Error('No key');
+      return copyToClipboard(d.apikey);
     })
+    .then(() => showToast('API key copied to clipboard', 'success'))
     .catch(() => showToast('Could not copy API key', 'error'));
 }
 
 function apiRegenerate() {
-  const btn = document.getElementById('api-regen');
-  if (!confirm('Regenerate API key for this tunnel? Existing clients will need the new key.')) return;
-  btn.disabled = true;
-  fetch('/api/tunnels/auth', {
+  if (!activeTunnel) return;
+  if (!confirm('Generate a new API key? The old key will immediately stop working.')) return;
+
+  fetch('/api/tunnels/apikey-regen', {
     method: 'POST',
-    headers: {'Content-Type':'application/json', 'X-CSRF-Token': getCsrfToken()},
-    body: JSON.stringify({ endpoint: activeTunnel || '(default)', enabled: true, regenerate: true })
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+    body: JSON.stringify({ endpoint: activeTunnel })
   })
-  .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
-  .then(data => {
-    const val = document.getElementById('api-val');
-    val.textContent = data.apikey;
-    val.classList.remove('masked');
-    document.getElementById('api-reveal').title = 'Hide';
-    clearTimeout(_apikeyHideTimer);
-    _apikeyHideTimer = setTimeout(_maskApiKey, 30000);
-    const ep = activeTunnel || '(default)';
-    if (tunnelsMap[ep]) { tunnelsMap[ep].has_apikey = true; tunnelsMap[ep].apikey_enabled = true; }
-    _setApikeyStatus(true);
-    showToast('API key regenerated', 'success');
-  })
-  .catch(() => showToast('Failed to regenerate key', 'error'))
-  .finally(() => { btn.disabled = false; });
+    .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+    .then(d => {
+      if (!d.apikey) return;
+      const val = document.getElementById('api-val');
+      if (val) { val.textContent = d.apikey; val.classList.remove('masked'); }
+      clearTimeout(_apikeyHideTimer);
+      _apikeyHideTimer = setTimeout(_maskApiKey, 30000);
+      showToast('New API key generated', 'success');
+    })
+    .catch(() => showToast('Failed to regenerate API key', 'error'));
 }
 
-function _apikeyFallbackCopy(key, cb) {
-  const ta = document.createElement('textarea');
-  ta.value = key;
-  ta.setAttribute('readonly', '');
-  ta.style.cssText = 'position:absolute;left:-9999px';
-  document.body.appendChild(ta);
-  ta.select();
-  try { document.execCommand('copy'); cb(); } catch(e) {}
-  document.body.removeChild(ta);
+function apikeyCustomInputChanged() {
+  const input = document.getElementById('apikey-custom-input');
+  const saveBtn = document.getElementById('apikey-custom-save');
+  const bar   = document.getElementById('apikey-strength-bar');
+  const label = document.getElementById('apikey-strength-label');
+  if (!input) return;
+
+  const val = input.value.trim();
+  if (saveBtn) saveBtn.disabled = val.length === 0;
+  if (!bar || !label) return;
+
+  bar.style.display = val.length > 0 ? 'flex' : 'none';
+  const segs = [1,2,3,4].map(i => document.getElementById('aks-' + i));
+
+  let score = 0, tip = '';
+  if (val.length >= 8)  score++;
+  if (val.length >= 20) score++;
+  if (/[^a-zA-Z0-9]/.test(val)) score++;
+  if (val.length >= 32) score++;
+
+  const colors = ['#ef4444','#f59e0b','#3b82f6','#22c55e'];
+  const labels = ['Weak — too short','Fair — try longer','Good','Strong'];
+  segs.forEach((s, i) => { if (s) s.style.background = i < score ? colors[score - 1] : 'var(--border)'; });
+  label.textContent = val.length > 0 ? labels[Math.max(0, score - 1)] : '';
 }
 
-function _setBasicAuthStatus(enabled) {
-  const badge = document.getElementById('basicauth-badge');
+function apikeyCustomSave() {
+  const input = document.getElementById('apikey-custom-input');
+  if (!input || !activeTunnel) return;
+  const key = input.value.trim();
+  if (!key) return;
+
+  fetch('/api/tunnels/apikey-set', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+    body: JSON.stringify({ endpoint: activeTunnel, key })
+  })
+    .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+    .then(() => {
+      input.value = '';
+      apikeyCustomInputChanged();
+      const bar = document.getElementById('apikey-strength-bar');
+      if (bar) bar.style.display = 'none';
+      _maskApiKey();
+      showToast('Custom API key saved', 'success');
+    })
+    .catch(() => showToast('Failed to save custom API key', 'error'));
+}
+
+// ── AI Mode ───────────────────────────────────────────────────
+function _applyAiModeState(enabled) {
+  const toggle = document.getElementById('aimode-toggle');
+  const badge  = document.getElementById('aimode-badge');
+  if (toggle) toggle.checked = enabled;
   if (badge) {
-    badge.textContent = enabled ? 'Active' : 'Off';
-    badge.className = 'card-section-badge ' + (enabled ? 'enabled' : 'disabled');
-  }
-  const dis = document.getElementById('basicauth-disabled-msg');
-  if (dis) dis.style.display = enabled ? 'none' : 'block';
-}
-
-// ── Basic Auth state ────────────────────────────────────
-// _baCreds: plaintext creds cached after first fetch/save — cleared on switch
-// _baEditOpen: true while the edit form is open — blocks SSE ticks from
-//              closing it while the user is typing
-let _baCreds        = { user: '', pass: '' };
-let _baEditOpen     = false;   // edit form is visible — blocks SSE from resetting panels
-let _baPendingEnable = false;  // toggle just flipped ON — blocks SSE from resetting checkbox
-let _baUserRevealed = false;
-let _baPassRevealed = false;
-
-function _baMaskCreds() {
-  _baUserRevealed = false; _baPassRevealed = false;
-  const u = document.getElementById('ba-user-val');
-  const p = document.getElementById('ba-pass-val');
-  if (u) u.textContent = '••••••';
-  if (p) p.textContent = '••••••••';
-  const br1 = document.getElementById('ba-user-reveal');
-  const br2 = document.getElementById('ba-pass-reveal');
-  if (br1) br1.title = 'Reveal';
-  if (br2) br2.title = 'Reveal';
-}
-
-function _baShowCredView(show) {
-  document.getElementById('basicauth-cred-view').style.display = show ? 'block' : 'none';
-  document.getElementById('basicauth-controls').style.display  = 'none';
-  if (show) _baEditOpen = false;
-}
-
-function _baShowEditForm(show) {
-  document.getElementById('basicauth-controls').style.display  = show ? 'block' : 'none';
-  document.getElementById('basicauth-cred-view').style.display = 'none';
-  _baEditOpen = show;
-}
-
-// ── Credential reveal ───────────────────────────────────
-function baReveal(field) {
-  const ep     = activeTunnel || '(default)';
-  const isUser = field === 'user';
-  const valEl  = document.getElementById(isUser ? 'ba-user-val' : 'ba-pass-val');
-  const btnEl  = document.getElementById(isUser ? 'ba-user-reveal' : 'ba-pass-reveal');
-  const revealed = isUser ? _baUserRevealed : _baPassRevealed;
-
-  if (revealed) {
-    valEl.textContent = isUser ? '••••••' : '••••••••';
-    btnEl.title = 'Reveal';
-    if (isUser) _baUserRevealed = false; else _baPassRevealed = false;
-    return;
+    badge.textContent = enabled ? 'On' : 'Off';
+    badge.className   = 'card-section-badge ' + (enabled ? 'enabled' : 'disabled');
   }
 
-  const showVal = (u, p) => {
-    if (isUser) { valEl.textContent = u; _baUserRevealed = true; btnEl.title = 'Hide'; }
-    else        { valEl.textContent = p; _baPassRevealed = true; btnEl.title = 'Hide'; }
+  const feats = {
+    'ai-feat-body':  [enabled ? 'Unlimited' : '10 MB',   enabled],
+    'ai-feat-flush': [enabled ? 'Immediate'  : '32 KB',  enabled],
+    'ai-feat-cors':  [enabled ? 'Enabled'    : 'Disabled', enabled],
+    'ai-feat-buf':   [enabled ? 'Disabled'   : 'Enabled',  enabled],
   };
-
-  if (_baCreds.user || _baCreds.pass) { showVal(_baCreds.user, _baCreds.pass); return; }
-
-  fetch('/api/tunnels/basicauth/creds?endpoint=' + encodeURIComponent(ep))
-    .then(r => { if (!r.ok) throw new Error(); return r.json(); })
-    .then(d => {
-      _baCreds = { user: d.username || '', pass: d.password || '' };
-      showVal(_baCreds.user, _baCreds.pass);
-    })
-    .catch(() => { valEl.textContent = '(error)'; });
-}
-
-// ── Edit form ───────────────────────────────────────────
-function baOpenEdit() {
-  // Always fetch fresh creds so form is pre-filled even without a prior reveal
-  if (_baCreds.user) {
-    document.getElementById('basicauth-user').value = _baCreds.user;
-    document.getElementById('basicauth-pass').value = '';
-    _baShowEditForm(true);
-    return;
-  }
-  const ep = activeTunnel || '(default)';
-  fetch('/api/tunnels/basicauth/creds?endpoint=' + encodeURIComponent(ep))
-    .then(r => { if (!r.ok) throw new Error(); return r.json(); })
-    .then(d => {
-      _baCreds = { user: d.username || '', pass: d.password || '' };
-      document.getElementById('basicauth-user').value = _baCreds.user;
-      document.getElementById('basicauth-pass').value = '';
-      _baShowEditForm(true);
-    })
-    .catch(() => {
-      document.getElementById('basicauth-user').value = '';
-      document.getElementById('basicauth-pass').value = '';
-      _baShowEditForm(true);
-    });
-}
-
-function baCancelEdit() {
-  const ep       = activeTunnel || '(default)';
-  const hasCreds = !!(tunnelsMap[ep] && tunnelsMap[ep].basicauth_enabled);
-  _baPendingEnable = false;   // allow SSE to resume control of checkbox
-  _baShowEditForm(false);
-  if (hasCreds) {
-    _baShowCredView(true);
-  } else {
-    // User cancelled without saving — revert toggle to disabled
-    document.getElementById('basicauth-toggle').checked = false;
-    _setBasicAuthStatus(false);
-  }
-}
-
-function baTogglePassVis() {
-  const inp = document.getElementById('basicauth-pass');
-  inp.type  = inp.type === 'password' ? 'text' : 'password';
-}
-
-// ── Password strength ────────────────────────────────────
-function baPassStrength() {
-  const pass = document.getElementById('basicauth-pass').value;
-  const lbl  = document.getElementById('ba-strength-label');
-  const segs = [1,2,3,4].map(i => document.getElementById('bas-' + i));
-  const levels = ['','weak','fair','good','strong'];
-  const labels = ['','Weak','Fair','Good','Strong'];
-  const score = _passStrengthScore(pass);
-  segs.forEach((s, i) => { if (s) s.className = 'strength-seg ' + (i < score ? levels[score] : ''); });
-  if (lbl) { lbl.textContent = pass ? labels[score] : ''; lbl.className = 'strength-label ' + (pass ? levels[score] : ''); }
-}
-
-function _passStrengthScore(p) {
-  if (!p || p.length < 6) return 1;
-  let s = 1;
-  if (p.length >= 10) s++;
-  if (/[A-Z]/.test(p) && /[a-z]/.test(p)) s++;
-  if (/[0-9]/.test(p) && /[^A-Za-z0-9]/.test(p)) s++;
-  return Math.min(s, 4);
-}
-
-// ── curl snippet ─────────────────────────────────────────
-function _updateBaCurlSnippet(user, pass) {
-  const proxyUrl = (tunnelsMap[activeTunnel || '(default)'] || {}).proxy_url || 'http://your-tunnel';
-  const snippet = `curl -u "${user}:${pass}" ${proxyUrl}/`;
-  const code = document.getElementById('ba-curl-code');
-  const block = document.getElementById('ba-curl-block');
-  if (code) code.textContent = snippet;
-  if (block) block.style.display = user ? 'block' : 'none';
-}
-
-function baCopyCurl() {
-  const code = document.getElementById('ba-curl-code');
-  if (!code) return;
-  const btn = document.getElementById('ba-curl-copy');
-  const text = code.textContent;
-  const done = () => { if (btn) { btn.textContent = 'copied!'; btn.classList.add('ok'); setTimeout(() => { btn.textContent = 'copy'; btn.classList.remove('ok'); }, 1600); } };
-  if (navigator.clipboard && window.isSecureContext) {
-    navigator.clipboard.writeText(text).then(done).catch(() => _fallbackCopy(text, done));
-  } else {
-    _fallbackCopy(text, done);
-  }
-}
-
-function _baAutoUser() {
-  const adj   = ['swift','bright','calm','bold','cool','keen','wise','sharp','quick','clear'];
-  const nouns = ['tunnel','proxy','gate','relay','bridge','node','link','path','route','mesh'];
-  const pick  = arr => arr[Math.floor(Math.random() * arr.length)];
-  return pick(adj) + '_' + pick(nouns) + Math.floor(100 + Math.random() * 900);
-}
-
-function _baAutoPass() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%^&*';
-  const bytes = new Uint8Array(18);
-  crypto.getRandomValues(bytes);
-  let p = '';
-  bytes.forEach(b => { p += chars[b % chars.length]; });
-  return p;
-}
-
-function baGenUser() {
-  document.getElementById('basicauth-user').value = _baAutoUser();
-}
-
-function baGenPass() {
-  const inp = document.getElementById('basicauth-pass');
-  inp.value = _baAutoPass();
-  inp.type  = 'text';
-  baPassStrength();
-}
-
-// ── Toggle ──────────────────────────────────────────────
-function basicAuthToggleChanged() {
-  const enabled = document.getElementById('basicauth-toggle').checked;
-  const ep      = activeTunnel || '(default)';
-
-  if (!enabled) {
-    // ── Disable ─────────────────────────────────────────
-    _baPendingEnable = false;
-    _setBasicAuthStatus(false);
-    if (tunnelsMap[ep]) tunnelsMap[ep].basicauth_enabled = false;
-    _baShowCredView(false);
-    _baShowEditForm(false);  // also clears _baEditOpen
-    // NOTE: _baCreds is intentionally NOT cleared here so that re-enabling
-    // the toggle reuses the same credentials without the user having to
-    // re-enter them.
-    _baMaskCreds();
-
-    fetch('/api/tunnels/basicauth', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json', 'X-CSRF-Token': getCsrfToken()},
-      body: JSON.stringify({ endpoint: ep, enabled: false })
-    })
-    .then(r => { if (!r.ok) throw new Error(r.status); })
-    .catch(() => {
-      // Revert
-      document.getElementById('basicauth-toggle').checked = true;
-      _setBasicAuthStatus(true);
-      if (tunnelsMap[ep]) tunnelsMap[ep].basicauth_enabled = true;
-      _baShowCredView(true);
-    });
-    return;
-  }
-
-  // ── Enable ───────────────────────────────────────────
-  _baPendingEnable = true;
-  _setBasicAuthStatus(true);
-
-  if (_baCreds.user && _baCreds.pass) {
-    // In-memory cache hit — re-enable with the same credentials immediately
-    _doSaveBasicAuth(ep, _baCreds.user, _baCreds.pass, true);
-    return;
-  }
-
-  // Cache miss (e.g. page was refreshed) — ask the server whether credentials
-  // already exist before deciding to generate new ones.
-  fetch('/api/tunnels/basicauth/creds?endpoint=' + encodeURIComponent(ep))
-    .then(r => { if (!r.ok) throw new Error(); return r.json(); })
-    .then(d => {
-      const user = d.username || '';
-      const pass = d.password || '';
-      if (user && pass) {
-        // Server already has credentials — reuse them
-        _baCreds = { user, pass };
-        _doSaveBasicAuth(ep, user, pass, true);
-      } else {
-        // Genuinely first time — auto-generate and save
-        const autoUser = _baAutoUser();
-        const autoPass = _baAutoPass();
-        _doSaveBasicAuth(ep, autoUser, autoPass, true);
-      }
-    })
-    .catch(() => {
-      // Fetch failed — fall back to auto-generate so the toggle still works
-      const autoUser = _baAutoUser();
-      const autoPass = _baAutoPass();
-      _doSaveBasicAuth(ep, autoUser, autoPass, true);
-    });
-}
-
-// ── Save / apply ────────────────────────────────────────
-function _doSaveBasicAuth(ep, user, pass, showCredView) {
-  const msg = document.getElementById('basicauth-msg');
-  fetch('/api/tunnels/basicauth', {
-    method: 'POST',
-    headers: {'Content-Type':'application/json', 'X-CSRF-Token': getCsrfToken()},
-    body: JSON.stringify({ endpoint: ep, enabled: true, username: user, password: pass })
-  })
-  .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
-  .then(() => {
-    _baPendingEnable = false;
-    _baCreds = { user, pass };
-    if (tunnelsMap[ep]) tunnelsMap[ep].basicauth_enabled = true;
-    document.getElementById('basicauth-toggle').checked = true;
-    _setBasicAuthStatus(true);
-    _baMaskCreds();
-    _updateBaCurlSnippet(user, pass);
-    if (showCredView) {
-      _baShowEditForm(false);
-      _baShowCredView(true);
-    }
-    showToast('Basic Auth credentials saved', 'success');
-    if (msg) msg.style.display = 'none';
-  })
-  .catch(() => {
-    _baPendingEnable = false;
-    if (msg) {
-      msg.style.color   = 'var(--red,#ef4444)';
-      msg.textContent   = 'Failed to save — check server logs';
-      msg.style.display = 'block';
-    }
-    showToast('Failed to save Basic Auth', 'error');
-    if (!tunnelsMap[ep] || !tunnelsMap[ep].basicauth_enabled) {
-      document.getElementById('basicauth-toggle').checked = false;
-      _setBasicAuthStatus(false);
-    }
+  Object.entries(feats).forEach(([id, [text, on]]) => {
+    const el = document.getElementById(id);
+    if (el) { el.textContent = text; el.className = 'feat-pill ' + (on ? 'on' : 'off'); }
   });
 }
 
+function aiModeToggleChanged() {
+  const toggle = document.getElementById('aimode-toggle');
+  if (!toggle || !activeTunnel) return;
+  const enabled = toggle.checked;
+
+  fetch('/api/tunnels/aimode', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+    body: JSON.stringify({ endpoint: activeTunnel, enabled })
+  })
+    .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+    .then(() => { _aiEnabled = enabled; _applyAiModeState(enabled); })
+    .catch(() => {
+      showToast('Failed to update AI mode', 'error');
+      toggle.checked = _aiEnabled;
+    });
+}
+
+// ── Basic Auth ────────────────────────────────────────────────
+function _applyBasicAuthState(enabled) {
+  const toggle   = document.getElementById('basicauth-toggle');
+  const badge    = document.getElementById('basicauth-badge');
+  const credView = document.getElementById('basicauth-cred-view');
+  const controls = document.getElementById('basicauth-controls');
+  const disabledMsg = document.getElementById('basicauth-disabled-msg');
+
+  if (toggle) toggle.checked = enabled;
+  if (badge) {
+    badge.textContent = enabled ? 'On' : 'Off';
+    badge.className   = 'card-section-badge ' + (enabled ? 'enabled' : 'disabled');
+  }
+  if (credView)    credView.style.display    = enabled ? 'block' : 'none';
+  if (controls)    controls.style.display    = 'none';
+  if (disabledMsg) disabledMsg.style.display = enabled ? 'none'  : 'block';
+}
+
+function basicAuthToggleChanged() {
+  const toggle = document.getElementById('basicauth-toggle');
+  if (!toggle || !activeTunnel) return;
+  const enabled = toggle.checked;
+
+  if (enabled) {
+    // Show the edit form so user can set credentials first
+    _applyBasicAuthState(false);
+    const controls  = document.getElementById('basicauth-controls');
+    const credView  = document.getElementById('basicauth-cred-view');
+    const disabledMsg = document.getElementById('basicauth-disabled-msg');
+    if (controls)    controls.style.display    = 'block';
+    if (credView)    credView.style.display    = 'none';
+    if (disabledMsg) disabledMsg.style.display = 'none';
+    toggle.checked = true;
+
+    const msgEl = document.getElementById('basicauth-msg');
+    if (msgEl) { msgEl.textContent = 'Enter credentials and click Apply to enable.'; msgEl.style.display = 'block'; msgEl.style.color = 'var(--text-3)'; }
+    return;
+  }
+
+  // Disable
+  fetch('/api/tunnels/basicauth', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+    body: JSON.stringify({ endpoint: activeTunnel, enabled: false })
+  })
+    .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+    .then(() => { _baEnabled = false; _applyBasicAuthState(false); })
+    .catch(() => {
+      showToast('Failed to disable basic auth', 'error');
+      toggle.checked = _baEnabled;
+    });
+}
+
+function baOpenEdit() {
+  const credView = document.getElementById('basicauth-cred-view');
+  const controls = document.getElementById('basicauth-controls');
+  if (credView) credView.style.display = 'none';
+  if (controls) controls.style.display = 'block';
+}
+
+function baCancelEdit() {
+  const credView = document.getElementById('basicauth-cred-view');
+  const controls = document.getElementById('basicauth-controls');
+  if (!_baEnabled) {
+    const toggle = document.getElementById('basicauth-toggle');
+    if (toggle) toggle.checked = false;
+    _applyBasicAuthState(false);
+    return;
+  }
+  if (credView) credView.style.display = 'block';
+  if (controls) controls.style.display = 'none';
+}
+
 function basicAuthSave() {
-  const user = document.getElementById('basicauth-user').value.trim();
-  const pass = document.getElementById('basicauth-pass').value;
-  const ep   = activeTunnel || '(default)';
-  const msg  = document.getElementById('basicauth-msg');
-  if (!user || !pass) {
-    if (msg) { msg.style.color = 'var(--red,#ef4444)'; msg.textContent = 'Username and password required'; msg.style.display = 'block'; }
-    showToast('Username and password required', 'error');
+  if (!activeTunnel) return;
+  const userInput = document.getElementById('basicauth-user');
+  const passInput = document.getElementById('basicauth-pass');
+  const msgEl     = document.getElementById('basicauth-msg');
+  if (!userInput || !passInput) return;
+
+  const username = userInput.value.trim();
+  const password = passInput.value;
+
+  if (!username || !password) {
+    if (msgEl) { msgEl.textContent = 'Username and password are required.'; msgEl.style.display = 'block'; msgEl.style.color = 'var(--red)'; }
     return;
   }
-  const score = _passStrengthScore(pass);
-  if (score < 2) {
-    if (msg) { msg.style.color = 'var(--amber)'; msg.textContent = 'Password is too weak — use at least 10 characters'; msg.style.display = 'block'; }
+  if (username.includes(':')) {
+    if (msgEl) { msgEl.textContent = 'Username must not contain a colon.'; msgEl.style.display = 'block'; msgEl.style.color = 'var(--red)'; }
     return;
   }
-  _doSaveBasicAuth(ep, user, pass, true);
+  if (username.length > 128 || password.length > 128) {
+    if (msgEl) { msgEl.textContent = 'Credentials exceed maximum length.'; msgEl.style.display = 'block'; msgEl.style.color = 'var(--red)'; }
+    return;
+  }
+
+  if (msgEl) msgEl.style.display = 'none';
+
+  fetch('/api/tunnels/basicauth', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+    body: JSON.stringify({ endpoint: activeTunnel, enabled: true, username, password })
+  })
+    .then(r => { if (!r.ok) return r.text().then(t => { throw new Error(t); }); return r.json(); })
+    .then(() => {
+      _baEnabled = true;
+      _applyBasicAuthState(true);
+      userInput.value = '';
+      passInput.value = '';
+      baPassStrength();
+      showToast('Basic auth credentials saved', 'success');
+    })
+    .catch(err => {
+      const txt = err.message || 'Failed to save credentials';
+      if (msgEl) { msgEl.textContent = txt; msgEl.style.display = 'block'; msgEl.style.color = 'var(--red)'; }
+    });
 }
 
-// ── Request rendering ────────────────────────── ──────────────────────────
-function renderAll() {
-  const list = activeTunnel ? allReqs.filter(r => r.endpoint === activeTunnel) : [];
-  $tCount.textContent = list.length;
-  $list.innerHTML = '';
+function baReveal(field) {
+  const valEl  = document.getElementById(field === 'user' ? 'ba-user-val'  : 'ba-pass-val');
+  const btnEl  = document.getElementById(field === 'user' ? 'ba-user-reveal' : 'ba-pass-reveal');
+  const timer  = field === 'user' ? _baUserHideTimer : _baPassHideTimer;
 
-  if (list.length === 0) {
-    $empty.style.display = 'flex';
+  if (!valEl || !activeTunnel) return;
+
+  if (!valEl.classList.contains('masked-cred')) {
+    valEl.textContent = field === 'user' ? '••••••' : '••••••••';
+    valEl.classList.add('masked-cred');
+    clearTimeout(timer);
     return;
   }
-  $empty.style.display = 'none';
 
-  // newest first
-  for (let i = list.length - 1; i >= 0; i--) {
-    appendRow(list[i], false);
-  }
+  fetch('/api/tunnels/basicauth-creds', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+    body: JSON.stringify({ endpoint: activeTunnel })
+  })
+    .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+    .then(d => {
+      const val = field === 'user' ? d.username : d.password;
+      if (!val) return;
+      valEl.textContent = val;
+      valEl.classList.remove('masked-cred');
+      if (btnEl) btnEl.title = 'Hide';
+      const hide = () => {
+        valEl.textContent = field === 'user' ? '••••••' : '••••••••';
+        valEl.classList.add('masked-cred');
+        if (btnEl) btnEl.title = 'Reveal';
+      };
+      if (field === 'user') _baUserHideTimer = setTimeout(hide, 15000);
+      else                  _baPassHideTimer = setTimeout(hide, 15000);
+
+      _updateCurlBlock(d);
+    })
+    .catch(() => showToast('Could not fetch credentials', 'error'));
 }
 
-// FIX: appendRow() and addReq() used to duplicate ~50 lines of identical
-// row/detail-building markup. Both now call this single builder.
+function _updateCurlBlock(d) {
+  const block    = document.getElementById('ba-curl-block');
+  const codeEl   = document.getElementById('ba-curl-code');
+  const proxyUrl = document.getElementById('tun-proxyurl')?.textContent || '<tunnel-url>';
+  if (!block || !codeEl) return;
+  const userPart  = d.username || '…';
+  const passPart  = (d.password || '…').replace(/'/g, "'\\''");
+  codeEl.textContent = `curl -u '${userPart}:${passPart}' ${proxyUrl}`;
+  block.style.display = 'block';
+}
+
+function baCopyCurl() {
+  const code = document.getElementById('ba-curl-code')?.textContent;
+  if (!code) return;
+  copyToClipboard(code)
+    .then(() => showToast('curl command copied', 'success'))
+    .catch(() => showToast('Failed to copy', 'error'));
+}
+
+const _adjectives = ['swift','bright','dark','golden','silver','scarlet','azure','jade','cosmic','stellar'];
+const _nouns      = ['hawk','tide','forge','spark','pulse','orbit','veil','apex','drift','echo'];
+function baGenUser() {
+  const el = document.getElementById('basicauth-user');
+  if (!el) return;
+  const adj  = _adjectives[Math.floor(Math.random() * _adjectives.length)];
+  const noun = _nouns[Math.floor(Math.random() * _nouns.length)];
+  const num  = Math.floor(Math.random() * 900) + 100;
+  el.value   = `${adj}-${noun}-${num}`;
+}
+
+const _charset = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%^&*-_=+';
+function baGenPass() {
+  const el = document.getElementById('basicauth-pass');
+  if (!el) return;
+  const arr    = new Uint8Array(20);
+  crypto.getRandomValues(arr);
+  el.value = Array.from(arr, b => _charset[b % _charset.length]).join('');
+  baPassStrength();
+}
+
+function baTogglePassVis() {
+  const input = document.getElementById('basicauth-pass');
+  const btn   = document.getElementById('ba-toggle-pass-vis');
+  if (!input) return;
+  const isPass = input.type === 'password';
+  input.type = isPass ? 'text' : 'password';
+  if (btn) btn.title = isPass ? 'Hide password' : 'Show password';
+}
+
+function baPassStrength() {
+  const input = document.getElementById('basicauth-pass');
+  const label = document.getElementById('ba-strength-label');
+  if (!input) return;
+
+  const pass = input.value;
+  const segs = [1,2,3,4].map(i => document.getElementById('bas-' + i));
+
+  let score = 0;
+  if (pass.length >= 8)  score++;
+  if (pass.length >= 14) score++;
+  if (/[^a-zA-Z0-9]/.test(pass)) score++;
+  if (pass.length >= 20 && /[^a-zA-Z0-9]/.test(pass)) score++;
+
+  const colors = ['#ef4444','#f59e0b','#3b82f6','#22c55e'];
+  const labels = ['Weak','Fair','Good','Strong'];
+  segs.forEach((s, i) => { if (s) s.style.background = pass.length > 0 && i < score ? colors[score - 1] : 'var(--border)'; });
+  if (label) label.textContent = pass.length > 0 ? labels[Math.max(0, score - 1)] : '\u00a0';
+}
+
+// ── Request rendering ─────────────────────────────────────────
 function buildReqRow(r, isNew) {
   const row = document.createElement('div');
-  row.className = 'req-row' + (isNew ? ' is-new' : '');
-  row.innerHTML = `
-    <span class="r-time">${fmtTime(r.ts)}</span>
-    <span class="r-clientip" style="font-family:'Geist Mono', monospace; font-size:12px; color:var(--text-3);">${esc(r.client_ip || '—')}</span>
-    <span class="r-method ${r.method}">${r.method}</span>
-    <span class="r-path" title="${esc(r.path)}">${esc(r.path)}</span>
-    <span class="r-status ${statusCls(r.status)}">${r.status}</span>
-    <span class="r-dur">${fmtDur(r.duration_ms)}</span>
-    <div class="r-actions">
-      <button class="replay-btn" onclick="replayReq(${r.id});event.stopPropagation()">Replay</button>
-      <svg class="expand-icon" id="exp-${r.id}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-    </div>
-  `;
+  row.className = 'req-row' + (isNew ? ' new-row' : '');
+  row.setAttribute('role', 'listitem');
 
-  // body decode attempt
-  let bodyHtml = '';
-  if (r.req_body && r.req_body.length) {
-    try {
-      const txt = atob(r.req_body);
-      bodyHtml = `<div class="detail-section-title" style="margin-top:12px">Request Body</div><div class="detail-body">${esc(txt)}</div>`;
-    } catch(e) {}
-  }
+  const sc  = statusClass(r.status);
+  const mth = methodStr(r.method);
+
+  row.innerHTML =
+    `<span class="r-time">${esc(fmtTime(r.ts))}</span>` +
+    `<span class="r-clientip">${esc(r.clientIP || '—')}</span>` +
+    `<span class="r-method ${mth}">${mth}</span>` +
+    `<span class="r-path" title="${esc(r.path + (r.query ? '?' + r.query : ''))}">${esc(r.path)}${r.query ? '<span style="color:var(--text-3)">?' + esc(r.query) + '</span>' : ''}</span>` +
+    `<span class="r-status ${sc}">${r.status || '—'}</span>` +
+    `<span class="r-dur">${r.durationMs != null ? esc(fmtDur(r.durationMs)) : '—'}</span>` +
+    `<div class="r-actions">` +
+      `<button class="replay-btn" data-replay-id="${r.id}" aria-label="Replay request">↺ Replay</button>` +
+      `<span class="expand-icon" id="exp-${r.id}">` +
+        `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>` +
+      `</span>` +
+    `</div>`;
 
   const detail = document.createElement('div');
   detail.className = 'req-detail';
-  detail.innerHTML = `
-    <div class="detail-grid">
-      <div>
-        <div class="detail-section-title">Request Headers</div>
-        <div class="detail-headers">${hdrsHtml(r.req_headers)}</div>
-        ${bodyHtml}
-      </div>
-      <div>
-        <div class="detail-section-title">Response Headers</div>
-        <div class="detail-headers">${hdrsHtml(r.resp_headers)}</div>
-      </div>
-    </div>
-  `;
+  detail.id = 'detail-' + r.id;
+  detail.innerHTML = _buildDetail(r);
 
   row.addEventListener('click', () => {
     detail.classList.toggle('open');
     document.getElementById('exp-' + r.id)?.classList.toggle('open');
   });
 
-  return { row, detail };
+  return [row, detail];
 }
 
-function appendRow(r, isNew) {
-  const { row, detail } = buildReqRow(r, isNew);
-  $list.appendChild(row);
-  $list.appendChild(detail);
+function _buildDetail(r) {
+  const reqHeaders = Object.entries(r.requestHeaders || {})
+    .map(([k, v]) => `<div class="header-row"><span class="header-key">${esc(k)}</span><span class="header-val">${esc(v)}</span></div>`)
+    .join('') || '<span style="color:var(--text-3);font-size:11px">No headers</span>';
+
+  const resHeaders = Object.entries(r.responseHeaders || {})
+    .map(([k, v]) => `<div class="header-row"><span class="header-key">${esc(k)}</span><span class="header-val">${esc(v)}</span></div>`)
+    .join('') || '<span style="color:var(--text-3);font-size:11px">No headers</span>';
+
+  const bodyHtml = r.body
+    ? `<div class="body-preview">${esc(r.body)}</div>`
+    : `<span style="color:var(--text-3);font-size:11px">No body captured</span>`;
+
+  return `<div class="detail-grid">
+    <div class="detail-pane">
+      <div class="detail-pane-title">Request Headers</div>
+      <div class="header-table">${reqHeaders}</div>
+    </div>
+    <div class="detail-pane">
+      <div class="detail-pane-title">Response Headers</div>
+      <div class="header-table">${resHeaders}</div>
+      <div class="detail-pane-title" style="margin-top:12px">Request Body</div>
+      ${bodyHtml}
+    </div>
+  </div>`;
 }
 
-// FIX: allReqs.find(x => x.id === r.id) was an O(n) linear scan on every
-// incoming SSE event. With reqIdSet this is now an O(1) lookup.
-const reqIdSet = new Set();
+function _renderList() {
+  if (!$list) return;
+  $list.innerHTML = '';
+  const empty = document.getElementById('empty-state');
 
-function addReq(r, isNew) {
-  if (reqIdSet.has(r.id)) return;
-  reqIdSet.add(r.id);
-  allReqs.push(r);
-  if (allReqs.length > 500) reqIdSet.delete(allReqs.shift().id);
-
-  totalEver = Math.max(totalEver, r.id);
-
-  if (activeTunnel && r.endpoint !== activeTunnel) {
-    $tCount.textContent = allReqs.filter(x => x.endpoint === activeTunnel).length;
+  if (reqs.length === 0) {
+    if (empty) empty.style.display = 'flex';
+    if ($count) $count.textContent = '0';
     return;
   }
+  if (empty) empty.style.display = 'none';
+  if ($count) $count.textContent = reqs.length;
 
-  $empty.style.display = 'none';
+  const frag = document.createDocumentFragment();
+  reqs.forEach(r => {
+    const [row, detail] = buildReqRow(r, false);
+    frag.appendChild(row);
+    frag.appendChild(detail);
+  });
+  $list.appendChild(frag);
+}
 
-  if (isNew) {
-    const { row, detail } = buildReqRow(r, true);
-    // Insert at top (newest first).
-    $list.prepend(detail);
-    $list.prepend(row);
-  }
+function prependReq(r) {
+  reqs.unshift(r);
+  if ($count) $count.textContent = reqs.length;
+  const empty = document.getElementById('empty-state');
+  if (empty) empty.style.display = 'none';
 
-  $tCount.textContent = (activeTunnel ? allReqs.filter(x => x.endpoint === activeTunnel) : []).length;
+  if (!$list) return;
+  const [row, detail] = buildReqRow(r, true);
+  $list.insertBefore(detail, $list.firstChild);
+  $list.insertBefore(row, $list.firstChild);
 }
 
 function clearReqs() {
-  allReqs = allReqs.filter(r => {
-    const keep = r.endpoint !== activeTunnel;
-    if (!keep) reqIdSet.delete(r.id);
-    return keep;
-  });
-  renderAll();
+  reqs = [];
+  _renderList();
 }
 
-// ── Replay ─────────────────────────────────────
 function replayReq(id) {
-  fetch('/api/replay', {
+  if (!activeTunnel) return;
+  fetch('/api/tunnels/replay', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
-    body: JSON.stringify({ id })
-  });
+    body: JSON.stringify({ endpoint: activeTunnel, requestId: id })
+  })
+    .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+    .then(() => showToast('Request replayed', 'success'))
+    .catch(() => showToast('Replay failed', 'error'));
 }
 
-// ── Tunnels ────────────────────────────────────
+// ── Tunnel list rendering ─────────────────────────────────────
 function renderTunnels(tunnels) {
-  // Merge server data into tunnelsMap instead of replacing it wholesale.
-  // This preserves optimistic auth-toggle state set by the user while
-  // still updating connection counts, proxy_url, client_ip, etc.
-  const incoming = {};
-  tunnels.forEach(t => { incoming[t.endpoint] = t; });
+  if (!$tunList) return;
 
-  // Remove endpoints that are no longer present.
-  Object.keys(tunnelsMap).forEach(ep => {
-    if (!incoming[ep]) delete tunnelsMap[ep];
-  });
-
-  // Merge each incoming entry: keep client-side auth fields if already patched.
-  tunnels.forEach(t => {
-    const existing = tunnelsMap[t.endpoint];
-    if (existing) {
-      // Preserve fields the user may have toggled (optimistic patches).
-      // Only accept server values when they differ from the default (false),
-      // meaning the server actually has the feature enabled — in that case
-      // the server is the source of truth.
-      tunnelsMap[t.endpoint] = Object.assign({}, t, {
-        apikey_enabled:    t.apikey_enabled    || existing.apikey_enabled,
-        basicauth_enabled: t.basicauth_enabled || existing.basicauth_enabled,
-        aimode_enabled:    t.aimode_enabled    || existing.aimode_enabled,
-        has_apikey:        t.has_apikey        || existing.has_apikey,
-      });
-    } else {
-      tunnelsMap[t.endpoint] = t;
-    }
-  });
-
-  if (!tunnels || !tunnels.length) {
+  if (!tunnels || tunnels.length === 0) {
     $tunList.innerHTML = '<div class="tunnel-empty-msg">No active tunnels</div>';
-    if (activeTunnel) selectTunnel(null);
+    if (activeTunnel) { activeTunnel = null; selectTunnel(null); }
     return;
   }
 
-  let found = false;
-  // FIX: dropped the inline onclick="selectTunnel('...')" handler. It only
-  // escaped single quotes, so an endpoint name containing a double quote or
-  // "><script> could break out of the attribute and execute arbitrary JS.
-  // Endpoint selection is now handled by a single delegated click listener
-  // (see bindTunnelListClick below) that reads the safely-escaped data-ep
-  // attribute instead of interpolating into an HTML event handler string.
-  $tunList.innerHTML = tunnels.map(t => {
-    if (t.endpoint === activeTunnel) found = true;
-    return `
-    <div class="tunnel-entry${activeTunnel === t.endpoint ? ' active' : ''}"
-         data-ep="${esc(t.endpoint)}">
-      <div class="t-dot ${t.type}"></div>
-      <span class="t-name" title="${esc(t.endpoint)}">${esc(t.endpoint)}</span>
-      <span class="t-workers">${t.connections}</span>
-    </div>
-  `}).join('');
+  const current = activeTunnel;
+  $tunList.innerHTML = '';
 
-  if (activeTunnel && !found) {
-    selectTunnel(null);
-  } else if (activeTunnel) {
-    renderTunnelOverview();
+  tunnels.forEach(t => {
+    const item = document.createElement('div');
+    item.className = 'tunnel-item' + (t.endpoint === current ? ' active' : '');
+    item.dataset.ep = t.endpoint;
+    item.setAttribute('role', 'listitem');
+    item.setAttribute('tabindex', '0');
+    item.setAttribute('aria-label', `Tunnel: ${t.endpoint}`);
+    item.innerHTML =
+      `<span class="tunnel-dot" aria-hidden="true"></span>` +
+      `<span class="tunnel-ep">${esc(t.endpoint)}</span>` +
+      `<span class="tunnel-type-badge">${esc(t.type || 'http')}</span>`;
+    $tunList.appendChild(item);
+  });
+
+  // Auto-select if only one tunnel, or re-select current
+  if (current) {
+    const stillExists = tunnels.some(t => t.endpoint === current);
+    if (!stillExists) selectTunnel(tunnels[0].endpoint);
+  } else if (tunnels.length === 1) {
+    selectTunnel(tunnels[0].endpoint);
   }
 }
 
-// ── Boot ───────────────────────────────────────
-document.addEventListener('click', (e) => {
-  const menu = document.getElementById('brand-menu');
-  if (menu && menu.classList.contains('open')) {
+// ── Uptime ────────────────────────────────────────────────────
+function fmtUptime(s) {
+  if (s < 60)   return s + 's';
+  if (s < 3600) return Math.floor(s / 60) + 'm ' + (s % 60) + 's';
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return `${h}h ${m}m`;
+}
+
+// ── Event listeners ───────────────────────────────────────────
+// Mobile drawer
+$hamburger?.addEventListener('click', () => {
+  $sidebar?.classList.contains('open') ? closeMobileMenu() : openMobileMenu();
+});
+$mobileOverlay?.addEventListener('click', closeMobileMenu);
+document.getElementById('sidebar-close')?.addEventListener('click', closeMobileMenu);
+
+// Close drawer on resize if no longer mobile
+window.addEventListener('resize', () => {
+  if (window.innerWidth > 768) {
+    closeMobileMenu();
+    if ($mobileTabs && activeTunnel) $mobileTabs.style.display = 'none';
+  } else {
+    if ($mobileTabs && activeTunnel) $mobileTabs.style.display = 'flex';
+  }
+});
+
+// Brand menu
+document.getElementById('nav-brand')?.addEventListener('click', e => {
+  e.stopPropagation();
+  const menu  = document.getElementById('brand-menu');
+  const brand = document.getElementById('nav-brand');
+  const open  = menu?.classList.toggle('open');
+  brand?.setAttribute('aria-expanded', String(!!open));
+});
+document.addEventListener('click', () => {
+  const menu  = document.getElementById('brand-menu');
+  const brand = document.getElementById('nav-brand');
+  if (menu?.classList.contains('open')) {
     menu.classList.remove('open');
+    brand?.setAttribute('aria-expanded', 'false');
+  }
+});
+document.getElementById('menu-home')?.addEventListener('click', () => {
+  selectTunnel(null);
+  document.getElementById('brand-menu')?.classList.remove('open');
+  document.getElementById('nav-brand')?.setAttribute('aria-expanded', 'false');
+});
+document.getElementById('menu-home')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    selectTunnel(null);
+    document.getElementById('brand-menu')?.classList.remove('open');
   }
 });
 
-// Delegated handler for tunnel selection (replaces the removed inline
-// onclick on each .tunnel-entry — see renderTunnels()).
-$tunList.addEventListener('click', (e) => {
-  const entry = e.target.closest('.tunnel-entry');
-  if (entry) selectTunnel(entry.dataset.ep);
+// Logout — POST with CSRF to prevent CSRF-based forced logout
+document.getElementById('logout-btn')?.addEventListener('click', () => {
+  fetch('/logout', {
+    method: 'POST',
+    headers: { 'X-CSRF-Token': getCsrfToken() }
+  })
+    .then(() => { window.location.href = '/login'; })
+    .catch(() => { window.location.href = '/login'; });
 });
-// 1. Load existing requests
-fetch('/api/requests').then(r => r.json()).then(data => {
-  if (data && data.length) {
-    allReqs = data;
-    data.forEach(r => reqIdSet.add(r.id));
-    totalEver = Math.max(...data.map(r => r.id), 0);
+
+// Token
+document.getElementById('token-reveal-btn')?.addEventListener('click', tokenReveal);
+document.getElementById('token-copy-btn')?.addEventListener('click',   tokenCopy);
+
+// Desktop nav tabs
+document.getElementById('tab-overview')?.addEventListener('click',  () => switchTab('overview'));
+document.getElementById('tab-inspector')?.addEventListener('click', () => switchTab('inspector'));
+
+// Mobile bottom tabs
+document.getElementById('mob-tab-overview')?.addEventListener('click',  () => switchTab('overview'));
+document.getElementById('mob-tab-inspector')?.addEventListener('click', () => switchTab('inspector'));
+
+// API Key section
+document.getElementById('apikey-toggle')?.addEventListener('change',      apikeyToggleChanged);
+document.getElementById('api-reveal')?.addEventListener('click',           apiReveal);
+document.getElementById('api-copy')?.addEventListener('click',             apiCopy);
+document.getElementById('api-regen')?.addEventListener('click',            apiRegenerate);
+document.getElementById('apikey-custom-input')?.addEventListener('input',  apikeyCustomInputChanged);
+document.getElementById('apikey-custom-save')?.addEventListener('click',   apikeyCustomSave);
+
+// Basic Auth section
+document.getElementById('basicauth-toggle')?.addEventListener('change',    basicAuthToggleChanged);
+document.getElementById('ba-user-reveal')?.addEventListener('click',       () => baReveal('user'));
+document.getElementById('ba-pass-reveal')?.addEventListener('click',       () => baReveal('pass'));
+document.getElementById('ba-edit-btn')?.addEventListener('click',          baOpenEdit);
+document.getElementById('ba-save-btn')?.addEventListener('click',          basicAuthSave);
+document.getElementById('ba-cancel-btn')?.addEventListener('click',        baCancelEdit);
+document.getElementById('ba-gen-user')?.addEventListener('click',          baGenUser);
+document.getElementById('ba-gen-pass')?.addEventListener('click',          baGenPass);
+document.getElementById('ba-toggle-pass-vis')?.addEventListener('click',   baTogglePassVis);
+document.getElementById('basicauth-pass')?.addEventListener('input',       baPassStrength);
+document.getElementById('ba-curl-copy')?.addEventListener('click',         baCopyCurl);
+
+// AI Mode
+document.getElementById('aimode-toggle')?.addEventListener('change', aiModeToggleChanged);
+
+// Inspector clear
+document.getElementById('btn-clear')?.addEventListener('click', clearReqs);
+
+// Request replay — event delegation on the list
+$list?.addEventListener('click', e => {
+  const btn = e.target.closest('.replay-btn');
+  if (btn) {
+    e.stopPropagation();
+    const id = parseInt(btn.dataset.replayId, 10);
+    if (!isNaN(id)) replayReq(id);
   }
-}).catch(() => {});
+});
 
-// 2. Real-time SSE for new requests
-const sse = new EventSource('/api/requests/stream');
-sse.onmessage = e => {
-  try { addReq(JSON.parse(e.data), true); } catch(_) {}
-};
-sse.onerror = () => {};
+// Tunnel list — event delegation
+$tunList?.addEventListener('click', e => {
+  const item = e.target.closest('.tunnel-item');
+  if (item?.dataset?.ep) selectTunnel(item.dataset.ep);
+});
+$tunList?.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const item = e.target.closest('.tunnel-item');
+  if (item?.dataset?.ep) { e.preventDefault(); selectTunnel(item.dataset.ep); }
+});
 
-// 3. Real-time SSE for status + tunnels (server pushes every ~1s)
-const statusSse = new EventSource('/api/status/stream');
-statusSse.onmessage = e => {
-  try {
-    const s = JSON.parse(e.data);
-    $uptime.textContent = fmtUptime(s.uptime_sec);
-    renderTunnels(s.tunnels || []);
-  } catch(_) {}
-};
-statusSse.onerror = () => {};
+// ── Boot ─────────────────────────────────────────────────────
+(function boot() {
+  // Initial tunnel + request list poll
+  fetch('/api/tunnels', { headers: { 'X-CSRF-Token': getCsrfToken() } })
+    .then(r => r.ok ? r.json() : null)
+    .then(d => { if (d) renderTunnels(d.tunnels || []); })
+    .catch(() => {});
+
+  // Live event stream
+  function connect() {
+    const evs = new EventSource('/api/events');
+
+    evs.addEventListener('tunnels', e => {
+      try { renderTunnels(JSON.parse(e.data).tunnels || []); } catch {}
+    });
+
+    evs.addEventListener('request', e => {
+      try {
+        const r = JSON.parse(e.data);
+        if (r.endpoint === activeTunnel) prependReq(r);
+      } catch {}
+    });
+
+    evs.addEventListener('uptime', e => {
+      try {
+        const d = JSON.parse(e.data);
+        if ($uptime) $uptime.textContent = fmtUptime(d.seconds || 0);
+      } catch {}
+    });
+
+    evs.onerror = () => {
+      evs.close();
+      setTimeout(connect, 3000);
+    };
+  }
+  connect();
+})();

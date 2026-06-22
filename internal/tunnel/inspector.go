@@ -372,15 +372,24 @@ func (ins *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// unsafe-inline keyword governs those too. Dropping it silently breaks
 	// all dashboard styling and interactivity in a real browser.
 	// style-src/font-src also allowlist Google Fonts: the dashboard's <head>
-	// loads the Geist font from fonts.googleapis.com (CSS) and fonts.gstatic.com
-	// (the actual font files) — without these, that stylesheet link is
-	// silently blocked by the browser and the page falls back to system fonts.
+	// Security headers.
+	// NOTE: script-src no longer needs 'unsafe-inline' because all event
+	// handlers have been moved to external JS files (addEventListener calls).
+	// style-src keeps 'unsafe-inline' for inline style="" attributes used
+	// for conditional visibility; the Google Fonts origins are needed for
+	// the Geist typeface loaded via the preconnect link in HTML.
 	w.Header().Set("Content-Security-Policy",
-		"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'")
+		"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'")
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	// X-XSS-Protection: belt-and-braces for older browsers that ignore CSP.
+	w.Header().Set("X-XSS-Protection", "1; mode=block")
 	w.Header().Set("Referrer-Policy", "no-referrer")
-	w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
+	w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=()")
+	// HSTS: only sent over TLS; tells browsers to always use HTTPS.
+	if r.TLS != nil {
+		w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+	}
 
 	// Set CSRF cookie so JS can read it and include in POST headers.
 	csrf := ins.getCSRFToken(r)
@@ -436,7 +445,7 @@ func (ins *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ins.handleTunnelAuth(w, r)
 	case "/api/tunnels/basicauth":
 		ins.handleTunnelBasicAuth(w, r)
-	case "/api/tunnels/basicauth/creds":
+	case "/api/tunnels/basicauth-creds":
 		ins.handleTunnelBasicAuthCreds(w, r)
 	case "/api/tunnels/aimode":
 		ins.handleTunnelAIMode(w, r)
@@ -529,29 +538,56 @@ func (ins *Inspector) handleLogin(w http.ResponseWriter, r *http.Request) {
 	w.Write(data)
 }
 
-// handleLogout clears the session and redirects to the login page.
+// handleLogout clears the session cookie and redirects to the login page.
+// POST requests are validated with CSRF to prevent cross-site forced-logout
+// attacks. The JS dashboard always uses POST; GET is kept only as a graceful
+// fallback for direct browser navigation (e.g. bookmarked /logout link).
 func (ins *Inspector) handleLogout(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPost:
+		if !ins.validateCSRF(w, r) {
+			return
+		}
+	case http.MethodGet:
+		// Accepted without CSRF — an attacker can only force a logout (not
+		// gain access), and the UX cost of blocking direct navigation would
+		// be higher than the residual risk.
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Invalidate the server-side session.
 	if cookie, err := r.Cookie("gotunnel_session"); err == nil {
 		ins.sessionsMu.Lock()
 		delete(ins.sessions, cookie.Value)
 		ins.sessionsMu.Unlock()
 	}
+	// MaxAge=-1 ensures the cookie is deleted on both old and new browsers
+	// (Expires alone is ignored by some older HTTP/1.0 proxies).
 	http.SetCookie(w, &http.Cookie{
 		Name:     "gotunnel_session",
 		Value:    "",
 		Path:     "/",
 		Expires:  time.Unix(0, 0),
+		MaxAge:   -1,
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
 	})
-	// Also clear the CSRF cookie.
 	http.SetCookie(w, &http.Cookie{
 		Name:     "gotunnel_csrf",
 		Value:    "",
 		Path:     "/",
 		Expires:  time.Unix(0, 0),
+		MaxAge:   -1,
 		SameSite: http.SameSiteStrictMode,
 	})
+
+	// POST comes from a JS fetch — return 200 and let JS redirect.
+	if r.Method == http.MethodPost {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
 	http.Redirect(w, r, "/login", http.StatusFound)
 }
 
@@ -622,42 +658,67 @@ func (ins *Inspector) handleTunnelAIMode(w http.ResponseWriter, r *http.Request)
 }
 
 // handleTunnelAPIKey reveals the current API key for a tunnel.
-// GET /api/tunnels/apikey?endpoint=X → returns {"apikey":"..."}
+// POST /api/tunnels/apikey  body: {"endpoint":"X"}
+// Changed from GET so CSRF validation applies — prevents a cross-site page
+// from silently reading the API key even when a session cookie is present.
 func (ins *Inspector) handleTunnelAPIKey(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	endpoint := r.URL.Query().Get("endpoint")
-	if endpoint == "" {
-		http.Error(w, "missing endpoint parameter", http.StatusBadRequest)
+	if !ins.validateCSRF(w, r) {
 		return
 	}
 	if ins.srv == nil {
 		http.Error(w, "server unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxAPIBodySize)
+	var req struct {
+		Endpoint string `json:"endpoint"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Endpoint == "" {
+		http.Error(w, "missing endpoint", http.StatusBadRequest)
+		return
+	}
 	ins.srv.tunnelMetaMu.RLock()
-	meta, ok := ins.srv.tunnelMeta[endpoint]
+	meta, ok := ins.srv.tunnelMeta[req.Endpoint]
 	ins.srv.tunnelMetaMu.RUnlock()
 	if !ok {
 		http.Error(w, "tunnel not found", http.StatusNotFound)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 	json.NewEncoder(w).Encode(map[string]string{"apikey": meta.APIKey})
 }
 
 // handleTunnelBasicAuthCreds returns the plaintext credentials for a tunnel's
 // Basic Auth config. Only accessible to authenticated dashboard users.
-// GET /api/tunnels/basicauth/creds?endpoint=X
+// POST /api/tunnels/basicauth-creds  body: {"endpoint":"X"}
+// Uses POST + CSRF — credentials must never travel in a GET query string
+// (logged by proxies, stored in browser history, leaked via Referer).
 func (ins *Inspector) handleTunnelBasicAuthCreds(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	endpoint := r.URL.Query().Get("endpoint")
+	if !ins.validateCSRF(w, r) {
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxAPIBodySize)
+	var body struct {
+		Endpoint string `json:"endpoint"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	endpoint := body.Endpoint
 	if endpoint == "" {
 		http.Error(w, "missing endpoint", http.StatusBadRequest)
 		return
@@ -796,6 +857,22 @@ func (ins *Inspector) handleTunnelBasicAuth(w http.ResponseWriter, r *http.Reque
 	if req.Enabled {
 		if req.Username == "" || req.Password == "" {
 			http.Error(w, "username and password required when enabling basic auth", http.StatusBadRequest)
+			return
+		}
+		// RFC 7617 §2: the username must not contain a colon because the
+		// Basic credentials are encoded as "username:password".
+		if strings.Contains(req.Username, ":") {
+			http.Error(w, "username must not contain a colon character", http.StatusBadRequest)
+			return
+		}
+		// Enforce reasonable length limits to prevent abuse.
+		const maxCredLen = 128
+		if len(req.Username) > maxCredLen {
+			http.Error(w, "username exceeds maximum length", http.StatusBadRequest)
+			return
+		}
+		if len(req.Password) > maxCredLen {
+			http.Error(w, "password exceeds maximum length", http.StatusBadRequest)
 			return
 		}
 		credsB64 = base64Encode(req.Username + ":" + req.Password)

@@ -191,6 +191,20 @@
                   </button>
                 </div>
               </div>
+              <div class="stat-item" style="grid-column: 1 / -1; margin-top: -4px; padding-top: 12px; border-top: 1px solid var(--border);">
+                <span class="stat-label">Server Status</span>
+                <div style="display:flex;align-items:center;gap:12px">
+                  <div class="live-badge" style="background:transparent; border:none; padding:0; height:auto; color:var(--text-2);">
+                    <div class="live-dot" aria-hidden="true" style="width:6px; height:6px; border-radius:50%; background:var(--green); box-shadow:0 0 6px var(--green);"></div>
+                    <span style="font-size:12px; font-weight:500;">Live</span>
+                  </div>
+                  <span style="color:var(--border);">|</span>
+                  <div style="display:flex;align-items:center;gap:6px">
+                    <span class="stat-label" style="font-size:11px;">Uptime:</span>
+                    <span class="nav-uptime" id="uptime" style="font-size:12px; font-family:'Geist Mono', monospace; color:var(--text-2);">—</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -533,14 +547,6 @@
   <!-- Toast container -->
   <div id="toast-container" role="region" aria-live="polite" aria-label="Notifications"></div>
 
-  <!-- Status footer -->
-  <div class="status-footer" role="status" aria-label="Connection status">
-    <div class="live-badge">
-      <div class="live-dot" aria-hidden="true"></div>
-      Live
-    </div>
-    <span class="nav-uptime" id="uptime">—</span>
-  </div>
 
   <!-- Mobile bottom tabs (only shown when a tunnel is selected, only visible on mobile) -->
   <div class="mobile-tabs" id="mobile-tabs" style="display:none" role="tablist" aria-label="View selector">

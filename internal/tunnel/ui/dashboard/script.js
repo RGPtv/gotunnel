@@ -10,7 +10,7 @@ function getCsrfToken() {
 // ── State ────────────────────────────────────────────────────
 let activeTunnel      = null;
 let currentTab        = 'overview';
-let reqs              = [];
+let reqsByTunnel      = {};   // { endpoint: [CapturedRequest, …] }
 let lastTunnels       = [];   // cached from /api/status/stream or /api/tunnels
 let _tokenHideTimer   = null;
 let _apikeyHideTimer  = null;
@@ -34,6 +34,7 @@ const $mobileOverlay  = document.getElementById('mobile-overlay');
 const $hamburger      = document.getElementById('nav-hamburger');
 const $mobileTabs     = document.getElementById('mobile-tabs');
 const $navActiveTun   = document.getElementById('nav-active-tunnel');
+const $sidebarTunName = document.getElementById('sidebar-tun-name');
 
 function openMobileMenu() {
   if (!$sidebar) return;
@@ -81,8 +82,10 @@ function selectTunnel(ep) {
   _baPending  = false; // cancel any pending basic auth credential entry
   activeTunnel = ep;
 
-  // Update active tunnel name shown in mobile nav
-  if ($navActiveTun) $navActiveTun.textContent = ep ? ep : '';
+  // Update active tunnel name shown in mobile nav and sidebar header
+  const label = ep || '';
+  if ($navActiveTun) $navActiveTun.textContent = label;
+  if ($sidebarTunName) $sidebarTunName.textContent = label;
 
   const viewEmpty = document.getElementById('view-empty');
   const navTabs   = document.getElementById('nav-tabs');
@@ -179,7 +182,6 @@ function _clearTunnelInfo() {
   });
   const authSection = document.getElementById('tunnel-auth-section');
   if (authSection) authSection.style.display = 'none';
-  reqs = [];
   _renderList();
 }
 
@@ -233,8 +235,8 @@ function showToast(msg, type = 'info', duration = 3000) {
 
 // ── Token (session) ───────────────────────────────────────────
 function tokenReveal() {
-  const val = document.getElementById('nav-token-val');
-  const btn = document.getElementById('token-reveal-btn');
+  const val = document.getElementById('home-token-val');
+  const btn = document.getElementById('home-token-reveal');
   if (!val) return;
 
   if (!val.classList.contains('masked')) {
@@ -256,10 +258,10 @@ function tokenReveal() {
 }
 
 function _maskToken() {
-  const val = document.getElementById('nav-token-val');
-  const btn = document.getElementById('token-reveal-btn');
+  const val = document.getElementById('home-token-val');
+  const btn = document.getElementById('home-token-reveal');
   if (!val) return;
-  val.textContent = '••••••••';
+  val.textContent = '••••••••••••••••••••••••••••••••';
   val.classList.add('masked');
   if (btn) btn.title = 'Reveal';
   clearTimeout(_tokenHideTimer);
@@ -788,6 +790,7 @@ function _renderList() {
   if (!$list) return;
   $list.innerHTML = '';
   const empty = document.getElementById('empty-state');
+  const reqs  = reqsByTunnel[activeTunnel] || [];
 
   if (reqs.length === 0) {
     if (empty) empty.style.display = 'flex';
@@ -807,7 +810,13 @@ function _renderList() {
 }
 
 function prependReq(r) {
-  reqs.unshift(r);
+  if (!reqsByTunnel[r.endpoint]) reqsByTunnel[r.endpoint] = [];
+  reqsByTunnel[r.endpoint].unshift(r);
+
+  // Only update the DOM if this request belongs to the currently viewed tunnel
+  if (r.endpoint !== activeTunnel) return;
+
+  const reqs = reqsByTunnel[activeTunnel];
   if ($count) $count.textContent = reqs.length;
   const empty = document.getElementById('empty-state');
   if (empty) empty.style.display = 'none';
@@ -819,7 +828,7 @@ function prependReq(r) {
 }
 
 function clearReqs() {
-  reqs = [];
+  if (activeTunnel) reqsByTunnel[activeTunnel] = [];
   _renderList();
 }
 
@@ -948,8 +957,8 @@ document.getElementById('logout-btn')?.addEventListener('click', () => {
 });
 
 // Token
-document.getElementById('token-reveal-btn')?.addEventListener('click', tokenReveal);
-document.getElementById('token-copy-btn')?.addEventListener('click',   tokenCopy);
+document.getElementById('home-token-reveal')?.addEventListener('click', tokenReveal);
+document.getElementById('home-token-copy')?.addEventListener('click',   tokenCopy);
 
 // Desktop nav tabs
 document.getElementById('tab-overview')?.addEventListener('click',  () => switchTab('overview'));
@@ -1039,7 +1048,7 @@ $tunList?.addEventListener('keydown', e => {
     evs.onmessage = e => {
       try {
         const r = JSON.parse(e.data);
-        if (r.endpoint === activeTunnel) prependReq(r);
+        prependReq(r);
       } catch {}
     };
     evs.onerror = () => { evs.close(); setTimeout(connectRequests, 3000); };

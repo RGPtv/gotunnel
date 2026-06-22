@@ -117,8 +117,7 @@ function selectTunnel(ep) {
 
 // ── Helpers ──────────────────────────────────────────────────
 function fmtTime(ts) {
-  // Go marshals time.Time as an RFC3339 string; guard against legacy Unix-int values.
-  const d = typeof ts === 'string' ? new Date(ts) : new Date(ts * 1000);
+  const d = new Date(ts * 1000);
   return d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
@@ -176,28 +175,23 @@ function _clearTunnelInfo() {
 }
 
 function _loadTunnelInfo(ep) {
-  // Go has no per-tunnel GET endpoint — fetch the full list and find the entry.
-  fetch('/api/tunnels', {
+  fetch('/api/tunnels/' + encodeURIComponent(ep), {
     headers: { 'X-CSRF-Token': getCsrfToken() }
   })
     .then(r => { if (!r.ok) throw new Error(); return r.json(); })
-    .then(arr => {
-      // Go returns a bare array (not {tunnels:[...]}).
-      const d = Array.isArray(arr) ? arr.find(t => t.endpoint === ep) : null;
-      if (!d) return;
+    .then(d => {
       const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v || '—'; };
-      // Go JSON tags are snake_case: proxy_url, client_ip, etc.
-      set('tun-proxyurl', d.proxy_url);
-      set('tun-clientip', d.client_ip);
+      set('tun-proxyurl', d.proxyURL);
+      set('tun-clientip', d.clientIP);
       set('tun-type',     d.type);
       set('tun-conns',    d.connections ?? 0);
 
       const authSection = document.getElementById('tunnel-auth-section');
       if (authSection) authSection.style.display = 'block';
 
-      _apikeyEnabled = !!d.apikey_enabled;
-      _baEnabled     = !!d.basicauth_enabled;
-      _aiEnabled     = !!d.aimode_enabled;
+      _apikeyEnabled = !!d.apikeyEnabled;
+      _baEnabled     = !!d.basicAuthEnabled;
+      _aiEnabled     = !!d.aiModeEnabled;
 
       _applyApikeyState(_apikeyEnabled, false);
       _applyBasicAuthState(_baEnabled);
@@ -232,7 +226,7 @@ function tokenReveal() {
     _maskToken(); return;
   }
 
-  fetch('/api/token', { method: 'POST', headers: { 'X-CSRF-Token': getCsrfToken() } })
+  fetch('/api/token', { headers: { 'X-CSRF-Token': getCsrfToken() } })
     .then(r => { if (!r.ok) throw new Error(); return r.json(); })
     .then(d => {
       if (!d.token) return;
@@ -258,7 +252,7 @@ function _maskToken() {
 }
 
 function tokenCopy() {
-  fetch('/api/token', { method: 'POST', headers: { 'X-CSRF-Token': getCsrfToken() } })
+  fetch('/api/token', { headers: { 'X-CSRF-Token': getCsrfToken() } })
     .then(r => { if (!r.ok) throw new Error(); return r.json(); })
     .then(d => {
       if (!d.token) throw new Error();
@@ -291,10 +285,10 @@ function apikeyToggleChanged() {
   if (!toggle || !activeTunnel) return;
   const enabled = toggle.checked;
 
-  fetch('/api/tunnels/auth', {
+  fetch('/api/tunnels/apikey-toggle', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
-    body: JSON.stringify({ endpoint: activeTunnel, enabled, regenerate: false })
+    body: JSON.stringify({ endpoint: activeTunnel, enabled })
   })
     .then(r => { if (!r.ok) throw new Error(); return r.json(); })
     .then(() => { _apikeyEnabled = enabled; _applyApikeyState(enabled, false); })
@@ -359,10 +353,10 @@ function apiRegenerate() {
   if (!activeTunnel) return;
   if (!confirm('Generate a new API key? The old key will immediately stop working.')) return;
 
-  fetch('/api/tunnels/auth', {
+  fetch('/api/tunnels/apikey-regen', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
-    body: JSON.stringify({ endpoint: activeTunnel, enabled: true, regenerate: true })
+    body: JSON.stringify({ endpoint: activeTunnel })
   })
     .then(r => { if (!r.ok) throw new Error(); return r.json(); })
     .then(d => {
@@ -408,10 +402,10 @@ function apikeyCustomSave() {
   const key = input.value.trim();
   if (!key) return;
 
-  fetch('/api/tunnels/auth', {
+  fetch('/api/tunnels/apikey-set', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
-    body: JSON.stringify({ endpoint: activeTunnel, enabled: true, apikey: key })
+    body: JSON.stringify({ endpoint: activeTunnel, key })
   })
     .then(r => { if (!r.ok) throw new Error(); return r.json(); })
     .then(() => {
@@ -702,11 +696,11 @@ function buildReqRow(r, isNew) {
 
   row.innerHTML =
     `<span class="r-time">${esc(fmtTime(r.ts))}</span>` +
-    `<span class="r-clientip">${esc(r.client_ip || '—')}</span>` +
+    `<span class="r-clientip">${esc(r.clientIP || '—')}</span>` +
     `<span class="r-method ${mth}">${mth}</span>` +
     `<span class="r-path" title="${esc(r.path + (r.query ? '?' + r.query : ''))}">${esc(r.path)}${r.query ? '<span style="color:var(--text-3)">?' + esc(r.query) + '</span>' : ''}</span>` +
     `<span class="r-status ${sc}">${r.status || '—'}</span>` +
-    `<span class="r-dur">${r.duration_ms != null ? esc(fmtDur(r.duration_ms)) : '—'}</span>` +
+    `<span class="r-dur">${r.durationMs != null ? esc(fmtDur(r.durationMs)) : '—'}</span>` +
     `<div class="r-actions">` +
       `<button class="replay-btn" data-replay-id="${r.id}" aria-label="Replay request">↺ Replay</button>` +
       `<span class="expand-icon" id="exp-${r.id}">` +
@@ -728,21 +722,16 @@ function buildReqRow(r, isNew) {
 }
 
 function _buildDetail(r) {
-  const reqHeaders = Object.entries(r.req_headers || {})
+  const reqHeaders = Object.entries(r.requestHeaders || {})
     .map(([k, v]) => `<div class="header-row"><span class="header-key">${esc(k)}</span><span class="header-val">${esc(v)}</span></div>`)
     .join('') || '<span style="color:var(--text-3);font-size:11px">No headers</span>';
 
-  const resHeaders = Object.entries(r.resp_headers || {})
+  const resHeaders = Object.entries(r.responseHeaders || {})
     .map(([k, v]) => `<div class="header-row"><span class="header-key">${esc(k)}</span><span class="header-val">${esc(v)}</span></div>`)
     .join('') || '<span style="color:var(--text-3);font-size:11px">No headers</span>';
 
-  // Go marshals []byte as base64; decode before display.
-  let bodyText = null;
-  if (r.req_body) {
-    try { bodyText = atob(r.req_body); } catch { bodyText = r.req_body; }
-  }
-  const bodyHtml = bodyText
-    ? `<div class="body-preview">${esc(bodyText)}</div>`
+  const bodyHtml = r.body
+    ? `<div class="body-preview">${esc(r.body)}</div>`
     : `<span style="color:var(--text-3);font-size:11px">No body captured</span>`;
 
   return `<div class="detail-grid">
@@ -800,11 +789,10 @@ function clearReqs() {
 
 function replayReq(id) {
   if (!activeTunnel) return;
-  // Go route is /api/replay and expects {id}, not {endpoint, requestId}.
-  fetch('/api/replay', {
+  fetch('/api/tunnels/replay', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
-    body: JSON.stringify({ id })
+    body: JSON.stringify({ endpoint: activeTunnel, requestId: id })
   })
     .then(r => { if (!r.ok) throw new Error(); return r.json(); })
     .then(() => showToast('Request replayed', 'success'))
@@ -975,48 +963,38 @@ $tunList?.addEventListener('keydown', e => {
 
 // ── Boot ─────────────────────────────────────────────────────
 (function boot() {
-  // Initial tunnel list — Go returns a bare array, not {tunnels:[...]}.
+  // Initial tunnel + request list poll
   fetch('/api/tunnels', { headers: { 'X-CSRF-Token': getCsrfToken() } })
     .then(r => r.ok ? r.json() : null)
-    .then(d => { if (Array.isArray(d)) renderTunnels(d); })
+    .then(d => { if (d) renderTunnels(d.tunnels || []); })
     .catch(() => {});
 
-  // Go exposes two separate SSE endpoints (not a single /api/events):
-  //   /api/status/stream   → unnamed data frames: {uptime_sec, tunnels, ...}
-  //   /api/requests/stream → unnamed data frames: CapturedRequest (snake_case fields)
+  // Live event stream
   function connect() {
-    const statusEvs  = new EventSource('/api/status/stream');
-    const requestEvs = new EventSource('/api/requests/stream');
-    let reconnecting = false;
+    const evs = new EventSource('/api/events');
 
-    function scheduleReconnect() {
-      if (reconnecting) return;
-      reconnecting = true;
-      statusEvs.close();
-      requestEvs.close();
-      setTimeout(connect, 3000);
-    }
+    evs.addEventListener('tunnels', e => {
+      try { renderTunnels(JSON.parse(e.data).tunnels || []); } catch {}
+    });
 
-    // Unnamed frames → onmessage (Go sends no "event:" line).
-    statusEvs.onmessage = e => {
-      try {
-        const d = JSON.parse(e.data);
-        // Payload: {uptime_sec, tunnels, server, tun_addr, total, active_conns}
-        if (Array.isArray(d.tunnels)) renderTunnels(d.tunnels);
-        if ($uptime && d.uptime_sec != null) $uptime.textContent = fmtUptime(d.uptime_sec);
-      } catch {}
-    };
-
-    requestEvs.onmessage = e => {
+    evs.addEventListener('request', e => {
       try {
         const r = JSON.parse(e.data);
-        // CapturedRequest fields: endpoint, path, status, client_ip, duration_ms, ts (RFC3339)
         if (r.endpoint === activeTunnel) prependReq(r);
       } catch {}
-    };
+    });
 
-    statusEvs.onerror  = scheduleReconnect;
-    requestEvs.onerror = scheduleReconnect;
+    evs.addEventListener('uptime', e => {
+      try {
+        const d = JSON.parse(e.data);
+        if ($uptime) $uptime.textContent = fmtUptime(d.seconds || 0);
+      } catch {}
+    });
+
+    evs.onerror = () => {
+      evs.close();
+      setTimeout(connect, 3000);
+    };
   }
   connect();
 })();

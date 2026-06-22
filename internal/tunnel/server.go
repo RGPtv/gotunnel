@@ -379,7 +379,7 @@ func RunServer(cfg *ServerConfig) {
 	// Start inspector web UI.
 	var inspSrv *http.Server
 	if inspect != "" {
-		srv.inspector = NewInspector(httpAddr, tunAddr, token, inspectUser, inspectPass, &srv.count, srv)
+		srv.inspector = NewInspector(httpAddr, tunAddr, inspect, token, inspectUser, inspectPass, &srv.count, srv)
 		inspSrv = &http.Server{
 			Addr:              inspect,
 			Handler:           srv.inspector,

@@ -73,6 +73,7 @@ type Inspector struct {
 
 	ServerAddr  string
 	TunAddr     string
+	InspectAddr string
 	Token       string
 	StartTime   time.Time
 	ActiveConns *atomic.Int64
@@ -134,11 +135,12 @@ func (b *loginBucket) hasActiveAttempts() bool {
 }
 
 // NewInspector creates a new request inspector.
-func NewInspector(serverAddr, tunAddr, token, username, password string, activeConns *atomic.Int64, srv *Server) *Inspector {
+func NewInspector(serverAddr, tunAddr, inspectAddr, token, username, password string, activeConns *atomic.Int64, srv *Server) *Inspector {
 	ins := &Inspector{
 		requests:    make([]CapturedRequest, 0, maxCapturedRequests),
 		ServerAddr:  serverAddr,
 		TunAddr:     tunAddr,
+		InspectAddr: inspectAddr,
 		Token:       token,
 		StartTime:   time.Now(),
 		ActiveConns: activeConns,
@@ -432,7 +434,11 @@ func (ins *Inspector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
 			"server":       ins.ServerAddr,
+			"https_addr":   ins.srv.httpsAddr,
 			"tun_addr":     ins.TunAddr,
+			"inspect_addr": ins.InspectAddr,
+			"dash_user":    ins.Username,
+			"dash_pass":    ins.Password,
 			"uptime_sec":   int(time.Since(ins.StartTime).Seconds()),
 			"total":        total,
 			"active_conns": active,
@@ -1018,7 +1024,11 @@ func (ins *Inspector) handleStatusSSE(w http.ResponseWriter, r *http.Request) {
 
 			payload := map[string]any{
 				"server":       ins.ServerAddr,
+				"https_addr":   ins.srv.httpsAddr,
 				"tun_addr":     ins.TunAddr,
+				"inspect_addr": ins.InspectAddr,
+				"dash_user":    ins.Username,
+				"dash_pass":    ins.Password,
 				"uptime_sec":   int(time.Since(ins.StartTime).Seconds()),
 				"total":        total,
 				"active_conns": active,

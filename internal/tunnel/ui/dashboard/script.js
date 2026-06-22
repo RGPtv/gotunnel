@@ -1068,6 +1068,27 @@ document.getElementById('aimode-toggle')?.addEventListener('change', aiModeToggl
 // Inspector clear
 document.getElementById('btn-clear')?.addEventListener('click', clearReqs);
 
+// Server config reveal
+document.getElementById('srv-dash-pass-reveal')?.addEventListener('click', () => {
+  const val = document.getElementById('srv-dash-pass');
+  const btn = document.getElementById('srv-dash-pass-reveal');
+  if (!val) return;
+  if (val.classList.contains('masked-cred')) {
+    val.textContent = window._dashPass || '';
+    val.classList.remove('masked-cred');
+    if (btn) btn.title = 'Hide password';
+    setTimeout(() => {
+      val.textContent = '••••••••';
+      val.classList.add('masked-cred');
+      if (btn) btn.title = 'Reveal password';
+    }, 15000);
+  } else {
+    val.textContent = '••••••••';
+    val.classList.add('masked-cred');
+    if (btn) btn.title = 'Reveal password';
+  }
+});
+
 // Request replay — event delegation on the list
 $list?.addEventListener('click', e => {
   const btn = e.target.closest('.replay-btn');
@@ -1147,6 +1168,19 @@ $tunList?.addEventListener('keydown', e => {
         const d = JSON.parse(e.data);
         if ($uptime && d.uptime_sec != null) $uptime.textContent = fmtUptime(d.uptime_sec);
         if (Array.isArray(d.tunnels)) renderTunnels(d.tunnels);
+
+        const setTxt = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val || '—'; };
+        setTxt('srv-http', d.server);
+        setTxt('srv-tun', d.tun_addr);
+        setTxt('srv-https', d.https_addr);
+        
+        let inspectUrl = '—';
+        if (d.inspect_addr) {
+          inspectUrl = d.inspect_addr.startsWith(':') ? 'http://localhost' + d.inspect_addr : 'http://' + d.inspect_addr;
+        }
+        setTxt('srv-dash-addr', inspectUrl);
+        setTxt('srv-dash-user', d.dash_user);
+        window._dashPass = d.dash_pass || '';
       } catch {}
     };
     evs.onerror = () => { evs.close(); setTimeout(connectStatus, 3000); };

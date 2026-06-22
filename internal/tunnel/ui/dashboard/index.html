@@ -105,7 +105,7 @@
       </div>
 
       <!-- Home View -->
-      <div id="view-empty" class="home-view" role="main">
+      <div id="view-empty" class="home-view" role="main" style="display:flex; flex-direction:column; gap:24px;">
         <div class="home-token-card">
           <div class="card-section-head">
             <div style="display:flex;align-items:center;gap:6px">
@@ -144,6 +144,54 @@
               </button>
             </div>
             <p class="home-hint">Copy this token and paste it into the client config.</p>
+          </div>
+        </div>
+
+        <div class="home-token-card">
+          <div class="card-section-head">
+            <div style="display:flex;align-items:center;gap:6px">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/>
+                <rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>
+                <line x1="6" y1="6" x2="6.01" y2="6"/>
+                <line x1="6" y1="18" x2="6.01" y2="18"/>
+              </svg>
+              <span class="card-section-title">Server Configuration</span>
+            </div>
+          </div>
+          <div class="home-card-body" style="padding-top: 12px;">
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+              <div class="stat-item">
+                <span class="stat-label">HTTP Proxy</span>
+                <span class="stat-value blue" id="srv-http">—</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Tunnel Port</span>
+                <span class="stat-value" id="srv-tun">—</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">HTTPS Proxy</span>
+                <span class="stat-value blue" id="srv-https">—</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Dashboard Address</span>
+                <span class="stat-value" id="srv-dash-addr">—</span>
+              </div>
+              <div class="stat-item" style="grid-column: 1 / -1; margin-top: 8px; padding-top: 12px; border-top: 1px solid var(--border);">
+                <span class="stat-label">Dashboard Login</span>
+                <div style="display:flex;align-items:center;gap:4px">
+                  <span class="stat-value" id="srv-dash-user" style="color:var(--text-2);">—</span>
+                  <span style="color:var(--text-3); font-size:12px;">/</span>
+                  <span class="stat-value masked-cred" id="srv-dash-pass" style="font-size:12px; color:var(--text-2);">••••••••</span>
+                  <button class="token-btn" id="srv-dash-pass-reveal" title="Reveal password" aria-label="Reveal password">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                      <circle cx="12" cy="12" r="3"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

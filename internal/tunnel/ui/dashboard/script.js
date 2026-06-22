@@ -308,7 +308,7 @@ function apikeyToggleChanged() {
     .then(() => {
       _apikeyEnabled = enabled;
       _applyApikeyState(enabled, false);
-      showToast('API key auth ' + (enabled ? 'enabled' : 'disabled'), 'success');
+      showToast('API key auth ' + (enabled ? 'enabled' : 'disabled'), enabled ? 'success' : 'info');
     })
     .catch(err => {
       showToast('Failed to update API key: ' + (err.message || 'unknown error'), 'error');
@@ -474,7 +474,7 @@ function aiModeToggleChanged() {
     .then(() => {
       _aiEnabled = enabled;
       _applyAiModeState(enabled);
-      showToast('AI optimization ' + (enabled ? 'enabled' : 'disabled'), 'success');
+      showToast('AI optimization ' + (enabled ? 'enabled' : 'disabled'), enabled ? 'success' : 'info');
     })
     .catch(err => {
       showToast('Failed to update AI mode: ' + (err.message || ''), 'error');
@@ -533,7 +533,7 @@ function basicAuthToggleChanged() {
     .then(() => {
       _baEnabled = false;
       _applyBasicAuthState(false);
-      showToast('Basic auth disabled', 'success');
+      showToast('Basic auth disabled', 'info');
     })
     .catch(err => {
       showToast('Failed to disable basic auth: ' + (err.message || ''), 'error');

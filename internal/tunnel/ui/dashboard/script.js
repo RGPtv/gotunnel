@@ -11,6 +11,38 @@ function getCsrfToken() {
 let activeTunnel      = null;
 let currentTab        = 'overview';
 let reqsByTunnel      = {};   // { endpoint: [CapturedRequest, …] }
+
+// ── Local persistence (so refresh / re-open never loses inspector history) ──
+// The server keeps an in-memory ring buffer too, but it is capped and reset
+// on process restart. Mirroring into localStorage means a page refresh always
+// repaints instantly from cache, then reconciles with the server's copy —
+// the inspector view is never wiped just because the tab was reloaded.
+const REQ_CACHE_PREFIX = 'gotunnel_reqs_';
+const REQ_CACHE_MAX    = 300; // per tunnel, keep cache bounded
+
+function _loadCachedReqs(endpoint) {
+  try {
+    const raw = localStorage.getItem(REQ_CACHE_PREFIX + endpoint);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch { return []; }
+}
+
+function _saveCachedReqs(endpoint) {
+  try {
+    const reqs = (reqsByTunnel[endpoint] || []).slice(0, REQ_CACHE_MAX);
+    localStorage.setItem(REQ_CACHE_PREFIX + endpoint, JSON.stringify(reqs));
+  } catch { /* storage full/unavailable — ignore, server fetch still works */ }
+}
+
+function _mergeReqs(existing, incoming) {
+  const seen = new Set(existing.map(r => r.id));
+  const merged = existing.slice();
+  incoming.forEach(r => { if (!seen.has(r.id)) { merged.push(r); seen.add(r.id); } });
+  merged.sort((a, b) => b.id - a.id); // newest first
+  return merged;
+}
 let lastTunnels       = [];   // cached from /api/status/stream or /api/tunnels
 let _tokenHideTimer   = null;
 let _apikeyHideTimer  = null;
@@ -817,6 +849,10 @@ function prependReq(r) {
   // Deduplicate: SSE stream may echo requests already seeded from /api/requests
   if (reqsByTunnel[r.endpoint].some(x => x.id === r.id)) return;
   reqsByTunnel[r.endpoint].unshift(r);
+  if (reqsByTunnel[r.endpoint].length > REQ_CACHE_MAX) {
+    reqsByTunnel[r.endpoint] = reqsByTunnel[r.endpoint].slice(0, REQ_CACHE_MAX);
+  }
+  _saveCachedReqs(r.endpoint);
 
   // Only update the DOM if this request belongs to the currently viewed tunnel
   if (r.endpoint !== activeTunnel) return;
@@ -833,7 +869,10 @@ function prependReq(r) {
 }
 
 function clearReqs() {
-  if (activeTunnel) reqsByTunnel[activeTunnel] = [];
+  if (activeTunnel) {
+    reqsByTunnel[activeTunnel] = [];
+    try { localStorage.removeItem(REQ_CACHE_PREFIX + activeTunnel); } catch {}
+  }
   _renderList();
 }
 
@@ -1023,20 +1062,40 @@ $tunList?.addEventListener('keydown', e => {
 
 // ── Boot ─────────────────────────────────────────────────────
 (function boot() {
-  // ── Seed per-tunnel request history from REST ─────────────
-  // Do this FIRST, before connecting the SSE stream, so that
-  // when requests start arriving they are deduped against
-  // what we already have. We key each request into reqsByTunnel
-  // by its endpoint field — same field the SSE stream uses.
+  // ── Seed per-tunnel request history ────────────────────────
+  // 1. Instantly restore from localStorage so a refresh never shows an
+  //    empty inspector, even before the network round-trip completes.
+  // 2. Then merge in the server's copy (source of truth) — this also
+  //    recovers history if localStorage was empty/cleared, and survives
+  //    the server's own restart-resets since the client cache outlives it.
+  // Do this BEFORE connecting the SSE stream, so that when requests start
+  // arriving they are deduped against what we already have. We key each
+  // request into reqsByTunnel by its endpoint field — same field the SSE
+  // stream uses.
+  try {
+    Object.keys(localStorage).forEach(key => {
+      if (!key.startsWith(REQ_CACHE_PREFIX)) return;
+      const ep = key.slice(REQ_CACHE_PREFIX.length);
+      reqsByTunnel[ep] = _loadCachedReqs(ep);
+    });
+  } catch {}
+  _renderList();
+
   fetch('/api/requests', { headers: { 'X-CSRF-Token': getCsrfToken() } })
     .then(r => r.ok ? r.json() : [])
     .then(arr => {
       if (!Array.isArray(arr)) return;
-      // Server returns oldest-first; store newest-first per tunnel
+      // Server returns oldest-first; group by endpoint, then merge with
+      // whatever is already cached/loaded instead of clobbering it.
+      const byEp = {};
       arr.forEach(r => {
         if (!r.endpoint) return;
-        if (!reqsByTunnel[r.endpoint]) reqsByTunnel[r.endpoint] = [];
-        reqsByTunnel[r.endpoint].push(r);
+        if (!byEp[r.endpoint]) byEp[r.endpoint] = [];
+        byEp[r.endpoint].push(r);
+      });
+      Object.keys(byEp).forEach(ep => {
+        reqsByTunnel[ep] = _mergeReqs(reqsByTunnel[ep] || [], byEp[ep]);
+        _saveCachedReqs(ep);
       });
       // Re-render if a tunnel is already selected (e.g. auto-selected)
       _renderList();

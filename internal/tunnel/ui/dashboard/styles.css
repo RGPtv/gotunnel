@@ -876,9 +876,10 @@ nav {
       RESPONSIVE — MOBILE
    ======================================================== */
 
-/* ── ≤ 900px: hide sidebar label text ─── */
+/* ── ≤ 900px: hide sidebar label text, tighten layout for tablets ─── */
 @media (max-width: 900px) {
   .overview-content { padding: 20px 20px; gap: 16px; }
+  .overview-grid { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
 }
 
 /* ── ≤ 768px: slide-in sidebar drawer ─── */
@@ -995,6 +996,24 @@ nav {
   nav { padding: 0 10px; gap: 6px; }
   .nav-name { display: none; }
   .r-clientip { display: none; }
+}
+
+/* ── Touch-friendly tap targets & overflow safety on mobile ─── */
+@media (max-width: 768px) {
+  .nav-hamburger, .sidebar-close, .chip-btn, .replay-btn,
+  .mobile-tab, .nav-tab { min-height: 36px; min-width: 36px; }
+  .stat-item {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .stat-value {
+    word-break: break-all;
+    max-width: 100%;
+    text-align: right;
+  }
+  /* Prevent any wide content (long URLs, tokens) from forcing horizontal scroll */
+  .home-token-card, .sidebar-section, .overview-content { max-width: 100vw; overflow-x: hidden; }
+  .token-chip { flex-wrap: wrap; }
 }
 
 /* ── Reduced motion ─── */

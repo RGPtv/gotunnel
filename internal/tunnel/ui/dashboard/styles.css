@@ -484,8 +484,9 @@ nav {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  width: 100%;
-  max-width: 680px;
+  width: fit-content;
+  min-width: 360px;
+  max-width: 100%;
 }
 
 .home-card-body {
@@ -530,8 +531,13 @@ nav {
   font-size: 12px;
   color: var(--text);
   flex: 1;
-  word-break: break-all;
+  white-space: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
   padding: 0 4px;
+}
+#home-token-val::-webkit-scrollbar {
+  display: none;
 }
 
 #home-token-val.masked {

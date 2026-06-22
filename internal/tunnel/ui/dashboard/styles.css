@@ -507,6 +507,7 @@ nav {
   border-radius: 8px;
   padding: 8px 12px;
   margin-top: 4px;
+  width: inherit;
   transition: border-color 0.2s, background 0.2s;
 }
 
@@ -529,7 +530,6 @@ nav {
   color: var(--text);
   flex: 1;
   width: inherit;
-  word-break: break-all;
   padding: 0 4px;
 }
 

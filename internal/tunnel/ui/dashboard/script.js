@@ -883,9 +883,15 @@ function replayReq(id) {
     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
     body: JSON.stringify({ id: id })
   })
-    .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+    .then(r => {
+      if (!r.ok) {
+        if (r.status === 404) throw new Error("Request not found on server (may have expired or server restarted)");
+        return r.text().then(t => { throw new Error(t || 'Server error'); });
+      }
+      return r.text();
+    })
     .then(() => showToast('Request replayed', 'success'))
-    .catch(() => showToast('Replay failed', 'error'));
+    .catch(err => showToast('Replay failed: ' + (err.message || 'unknown error'), 'error'));
 }
 
 // ── Tunnel list rendering ─────────────────────────────────────

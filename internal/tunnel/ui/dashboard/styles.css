@@ -483,7 +483,8 @@ nav {
   padding: 16px 20px;
   display: flex;
   flex-direction: column;
-  width: inherit;
+  width: fit-content;
+  max-width: 100%;
 }
 
 .home-card-body {
@@ -507,8 +508,9 @@ nav {
   border-radius: 8px;
   padding: 8px 12px;
   margin-top: 4px;
-  width: inherit;
-  transition: border-color 0.2s, background 0.2s;
+  width: max-content;
+  max-width: 100%;
+  transition: all 0.2s ease-out;
 }
 
 .token-chip:hover {
@@ -529,7 +531,9 @@ nav {
   font-size: 12px;
   color: var(--text);
   flex: 1;
-  width: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   padding: 0 4px;
 }
 

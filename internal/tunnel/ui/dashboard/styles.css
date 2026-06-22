@@ -1572,8 +1572,8 @@ nav {
     display: none !important;
   }
 
-  /* Mobile tabs become visible when sidebar shows them */
-  /* (JS controls display:flex on #mobile-tabs) */
+  /* Mobile tabs become visible on mobile screens via CSS when a tunnel is active */
+  /* (JS clears the inline display:none style on #mobile-tabs) */
   .mobile-tabs {
     display: flex;
   }

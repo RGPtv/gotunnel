@@ -141,9 +141,9 @@ function selectTunnel(ep) {
   if (viewEmpty) viewEmpty.style.display = 'none';
   if (navTabs)   navTabs.style.display   = 'flex';
 
-  // Only show mobile tabs on mobile-sized screens
+  // Let CSS media queries handle desktop vs mobile visibility
   if ($mobileTabs) {
-    $mobileTabs.style.display = window.innerWidth <= 768 ? 'flex' : 'none';
+    $mobileTabs.style.display = '';
   }
 
   // Highlight active item in tunnel list

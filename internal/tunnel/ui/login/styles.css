@@ -15,6 +15,10 @@
   --accent-dim:    rgba(43,42,42,.08);
   --red:      #b3433f;
   --r:        10px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
 }
 
 html, body {
@@ -25,6 +29,7 @@ html, body {
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
 }
 
 ::selection { background: var(--accent-dim); color: var(--text); }
@@ -32,11 +37,16 @@ html, body {
 /* ── Page layout ─────────────────────────────────────────── */
 .page {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 24px 16px;
+  padding-top: max(24px, var(--safe-top));
+  padding-bottom: max(24px, var(--safe-bottom));
+  padding-left: max(16px, var(--safe-left));
+  padding-right: max(16px, var(--safe-right));
   background: var(--bg);
 }
 
@@ -240,20 +250,44 @@ html, body {
 
 /* ── Mobile ──────────────────────────────────────────────── */
 @media (max-width: 440px) {
-  .card {
-    padding: 28px 20px 24px;
-    border-radius: 10px;
-    border-left: none;
-    border-right: none;
-    border-radius: 0;
-    max-width: 100%;
-    box-shadow: none;
-    background: transparent;
-  }
   .page {
     justify-content: flex-start;
-    padding-top: 48px;
-    background: var(--bg);
+    padding: 0;
+    padding-top: calc(48px + var(--safe-top, 0px));
+    padding-left: max(16px, var(--safe-left, 0px));
+    padding-right: max(16px, var(--safe-right, 0px));
+    padding-bottom: max(24px, var(--safe-bottom, 0px));
+  }
+
+  .card {
+    padding: 28px 22px 26px;
+    border-radius: 14px;
+    max-width: 100%;
+    box-shadow: 0 12px 32px -12px rgba(35, 34, 34, .15);
+  }
+
+  .heading {
+    font-size: 20px;
+  }
+
+  .theme-toggle {
+    top: calc(12px + var(--safe-top, 0px));
+    right: calc(12px + var(--safe-right, 0px));
+  }
+}
+
+/* ── Tablet & small desktop tweaks ─────────────────────── */
+@media (max-width: 380px) {
+  .card {
+    padding: 24px 18px 22px;
+  }
+
+  .heading {
+    font-size: 19px;
+  }
+
+  .brand {
+    margin-bottom: 24px;
   }
 }
 

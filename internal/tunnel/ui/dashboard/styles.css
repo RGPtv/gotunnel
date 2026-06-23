@@ -29,6 +29,10 @@
   --nav-h: 48px;
   --sidebar-w: 240px;
   --mobile-tab-h: 56px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
 }
 
 /* Custom scrollbars */
@@ -49,6 +53,8 @@ body {
   font-size: 13px;
   line-height: 1.4;
   -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
   overflow: hidden;
 }
 
@@ -58,6 +64,7 @@ nav {
   display: flex;
   align-items: center;
   padding: 0 16px;
+  padding-top: var(--safe-top);
   border-bottom: 1px solid var(--border);
   background: var(--bg);
   position: relative;
@@ -295,6 +302,7 @@ nav {
 .layout {
   display: flex;
   height: calc(100vh - var(--nav-h));
+  height: calc(100dvh - var(--nav-h));
   overflow: hidden;
 }
 
@@ -494,6 +502,13 @@ nav {
   width: 100%;
   height: 100%;
   box-sizing: border-box;
+}
+
+/* Responsive grid for server config stat items (overrides inline 1fr 1fr) */
+.srv-config-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
 }
 
 .home-token-card {
@@ -1494,6 +1509,7 @@ nav {
   background: var(--bg);
   flex-shrink: 0;
   z-index: 90;
+  padding-bottom: var(--safe-bottom);
 }
 
 .mobile-tab {
@@ -1567,6 +1583,14 @@ nav {
     overflow: hidden;
   }
 
+  /* Nav: add safe-area padding for notched phones */
+  nav {
+    padding-left: calc(16px + var(--safe-left));
+    padding-right: calc(16px + var(--safe-right));
+    padding-top: var(--safe-top);
+    height: calc(var(--nav-h) + var(--safe-top));
+  }
+
   .nav-hamburger {
     display: flex;
   }
@@ -1580,13 +1604,14 @@ nav {
   .sidebar {
     position: fixed;
     left: calc(var(--sidebar-w) * -1);
-    top: var(--nav-h);
+    top: calc(var(--nav-h) + var(--safe-top));
     bottom: 0;
     width: var(--sidebar-w);
     z-index: 199;
     transition: left .25s cubic-bezier(.4, 0, .2, 1), box-shadow .25s;
     border-right: 1px solid var(--border);
     background: var(--bg);
+    padding-bottom: var(--safe-bottom);
   }
 
   .sidebar.open {
@@ -1601,37 +1626,36 @@ nav {
   /* Main fills everything */
   .layout {
     width: 100%;
+    height: calc(100vh - var(--nav-h) - var(--safe-top));
+    height: calc(100dvh - var(--nav-h) - var(--safe-top));
   }
 
   .main {
     width: 100%;
   }
 
-  /* Sub-nav: visible on mobile devices per user request */
+  /* Hide desktop sub-nav tabs on mobile — mobile bottom tabs handle navigation */
+  .sub-nav {
+    display: none !important;
+  }
 
   /* Mobile tabs become visible on mobile screens via CSS when a tunnel is active */
   /* (JS clears the inline display:none style on #mobile-tabs) */
   .mobile-tabs {
     display: flex;
-  }
-
-  /* flex needed; JS toggles display:flex vs display:none */
-
-  /* Layout needs room for bottom tabs */
-  .layout {
-    height: calc(100vh - var(--nav-h));
+    padding-bottom: var(--safe-bottom);
   }
 
   /* Status footer: repositioned for mobile */
   .status-footer {
-    bottom: calc(var(--mobile-tab-h) + 8px);
+    bottom: calc(var(--mobile-tab-h) + var(--safe-bottom) + 8px);
     right: 8px;
     padding: 4px 10px;
   }
 
   /* Toast container: above bottom tabs */
   #toast-container {
-    bottom: calc(var(--mobile-tab-h) + 12px);
+    bottom: calc(var(--mobile-tab-h) + var(--safe-bottom) + 12px);
     right: 8px;
     left: 8px;
     max-width: 100%;
@@ -1651,6 +1675,23 @@ nav {
   .overview-grid {
     gap: 12px;
     grid-template-columns: 1fr;
+  }
+
+  /* Home view: tighter padding on mobile */
+  .home-view {
+    padding: 16px 14px;
+    gap: 12px;
+  }
+
+  .home-token-card {
+    padding: 14px 16px;
+    border-radius: 10px;
+  }
+
+  /* Server config grid: single column on small screens */
+  .srv-config-grid {
+    grid-template-columns: 1fr !important;
+    gap: 8px;
   }
 }
 
@@ -1757,12 +1798,22 @@ nav {
     gap: 12px;
     grid-template-columns: 1fr;
   }
+
+  /* Home view: even tighter on small phones */
+  .home-view {
+    padding: 12px 12px;
+  }
+
+  .home-token-card {
+    padding: 12px 14px;
+  }
 }
 
 /* ── ≤ 400px: very small screens ─── */
 @media (max-width: 400px) {
   nav {
     padding: 0 10px;
+    padding-top: var(--safe-top);
     gap: 6px;
   }
 
@@ -1772,6 +1823,16 @@ nav {
 
   .r-clientip {
     display: none;
+  }
+
+  /* Tighter home view on very small screens */
+  .home-view {
+    padding: 10px 10px;
+  }
+
+  .home-token-card {
+    padding: 12px 12px;
+    border-radius: 8px;
   }
 }
 

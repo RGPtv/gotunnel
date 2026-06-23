@@ -596,6 +596,10 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 	if len(parts) > 3 && parts[3] != "-" {
 		remoteAddr = parts[3]
 	}
+	subdomain := ""
+	if len(parts) > 4 && parts[4] != "-" {
+		subdomain = parts[4]
+	}
 	s.mu.RLock()
 	serverToken := s.token
 	s.mu.RUnlock()
@@ -658,17 +662,38 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 		
 		s.tunnelMetaMu.Lock()
 		prev := s.tunnelMeta[remoteAddr]
-		// Decrement for any pre-existing session the janitor hasn't cleaned
-		// yet.  Both increment and decrement happen under the same lock to
-		// prevent the janitor from double-decrementing.
 		if prev.Session != nil {
 			if !prev.Session.IsClosed() {
 				prev.Session.Close()
 			}
-			s.count.Add(-1)
+			removed := false
+			for k, v := range s.tunnelMeta {
+				if v.Session == prev.Session {
+					delete(s.tunnelMeta, k)
+					removed = true
+				}
+			}
+			if removed {
+				s.count.Add(-1)
+			}
 		}
 		n := s.count.Add(1)
-		s.tunnelMeta[remoteAddr] = TunnelMeta{
+
+		proxyURL := "tcp://" + remoteAddr
+		if subdomain != "" {
+			host := subdomain
+			if s.domain != "" {
+				host = subdomain + "." + s.domain
+			}
+			_, port, err := net.SplitHostPort(remoteAddr)
+			if err == nil {
+				proxyURL = "tcp://" + host + ":" + port
+			} else {
+				proxyURL = "tcp://" + host + remoteAddr
+			}
+		}
+
+		tm := TunnelMeta{
 			APIKey:           prev.APIKey,
 			APIKeyEnabled:    prev.APIKeyEnabled,
 			BasicAuth:        prev.BasicAuth,
@@ -676,10 +701,14 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 			AIMode:           prev.AIMode,
 			Type:             "tcp",
 			Endpoint:         remoteAddr,
-			ProxyURL:         "tcp://" + remoteAddr,
+			ProxyURL:         proxyURL,
 			ConnectedAt:      time.Now(),
 			ClientIP:         conn.RemoteAddr().String(),
 			Session:          session,
+		}
+		s.tunnelMeta[remoteAddr] = tm
+		if subdomain != "" {
+			s.tunnelMeta[subdomain] = tm
 		}
 		s.tunnelMetaMu.Unlock()
 		s.srvLog(LevelSuccess, "tunnel connected %s → tcp:%s (active: %d)", conn.RemoteAddr(), remoteAddr, n)
@@ -702,7 +731,16 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 			if !prev.Session.IsClosed() {
 				prev.Session.Close()
 			}
-			s.count.Add(-1)
+			removed := false
+			for k, v := range s.tunnelMeta {
+				if v.Session == prev.Session {
+					delete(s.tunnelMeta, k)
+					removed = true
+				}
+			}
+			if removed {
+				s.count.Add(-1)
+			}
 		}
 		n := s.count.Add(1)
 		s.tunnelMeta[remoteAddr] = TunnelMeta{
@@ -739,7 +777,16 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 		if !prev.Session.IsClosed() {
 			prev.Session.Close()
 		}
-		s.count.Add(-1)
+		removed := false
+		for k, v := range s.tunnelMeta {
+			if v.Session == prev.Session {
+				delete(s.tunnelMeta, k)
+				removed = true
+			}
+		}
+		if removed {
+			s.count.Add(-1)
+		}
 	}
 	n := s.count.Add(1)
 	s.tunnelMeta["(default)"] = TunnelMeta{
@@ -1320,12 +1367,16 @@ func (s *Server) startJanitor() {
 			sess *mux.Session
 		}
 		var closed []closedEntry
+		seenSessions := make(map[*mux.Session]bool)
 		s.tunnelMetaMu.Lock()
 		for ep, meta := range s.tunnelMeta {
 			if meta.Session != nil && meta.Session.IsClosed() {
 				closed = append(closed, closedEntry{ep, meta.Session})
 				delete(s.tunnelMeta, ep)
-				s.count.Add(-1)
+				if !seenSessions[meta.Session] {
+					s.count.Add(-1)
+					seenSessions[meta.Session] = true
+				}
 			}
 		}
 		s.tunnelMetaMu.Unlock()

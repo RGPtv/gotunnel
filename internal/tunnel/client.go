@@ -36,6 +36,7 @@ type Client struct {
 	token      string
 	tunnelType string
 	remoteAddr string
+	subdomain  string
 	targetAddr string
 	noTLS      bool
 	tlsConfig  *tls.Config
@@ -183,6 +184,7 @@ func RunClient(cfg *ClientConfig) {
 			token:      cfg.Token,
 			tunnelType: tunnelType,
 			remoteAddr: remoteVal,
+			subdomain:  t.Subdomain,
 			targetAddr: normalizeTargetAddr(t.Target),
 			noTLS:      cfg.NoTLS,
 			httpClient: &http.Client{
@@ -360,7 +362,11 @@ func (c *Client) connectAndServe() error {
 	if remote == "" {
 		remote = "-"
 	}
-	fmt.Fprintf(conn, "AUTH %s %s %s\n", clientHmac, c.tunnelType, remote)
+	sub := c.subdomain
+	if sub == "" {
+		sub = "-"
+	}
+	fmt.Fprintf(conn, "AUTH %s %s %s %s\n", clientHmac, c.tunnelType, remote, sub)
 
 	line, err := reader.ReadString('\n')
 	if err != nil {
@@ -398,15 +404,22 @@ func (c *Client) handleStream(stream net.Conn) {
 	defer c.uiStreams.Add(-1)
 	defer stream.Close()
 
+	reader := bufio.NewReader(stream)
+
 	if c.tunnelType == "tcp" {
-		c.handleTCPWorker(0, stream, bufio.NewReader(stream))
-		return
+		stream.SetReadDeadline(time.Now().Add(30 * time.Second))
+		peek, err := reader.Peek(6)
+		stream.SetReadDeadline(time.Time{})
+		if err == nil && string(peek) == "START\n" {
+			c.handleTCPWorker(0, stream, reader)
+			return
+		}
+		// If not START, fall through to HTTP handling.
 	}
 
 	// Brief deadline on the initial request read so a stuck stream doesn't
-	// hold a goroutine indefinitely.  Cleared before any I/O proxy begins.
+	// hold a goroutine indefinitely. Cleared before any I/O proxy begins.
 	stream.SetReadDeadline(time.Now().Add(30 * time.Second))
-	reader := bufio.NewReader(stream)
 	req, err := http.ReadRequest(reader)
 	if err != nil {
 		return

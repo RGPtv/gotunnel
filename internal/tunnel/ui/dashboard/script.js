@@ -75,6 +75,10 @@ function openMobileMenu() {
   $mobileOverlay?.classList.add('show');
   document.body.style.overflow = 'hidden';
   $hamburger?.setAttribute('aria-expanded', 'true');
+  // Focus the close button inside the drawer for keyboard navigation
+  setTimeout(() => {
+    document.getElementById('sidebar-close')?.focus();
+  }, 100);
 }
 
 function closeMobileMenu() {
@@ -83,6 +87,8 @@ function closeMobileMenu() {
   $mobileOverlay?.classList.remove('show');
   document.body.style.overflow = '';
   $hamburger?.setAttribute('aria-expanded', 'false');
+  // Return focus to hamburger
+  $hamburger?.focus();
 }
 
 // ── Navigation ────────────────────────────────────────────────

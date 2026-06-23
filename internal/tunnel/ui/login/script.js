@@ -10,6 +10,15 @@
   const toggleBtn = document.getElementById('toggle-pass');
   const iconShow  = document.getElementById('pass-icon-show');
   const iconHide  = document.getElementById('pass-icon-hide');
+  const themeBtn  = document.getElementById('theme-toggle');
+
+  // ── Dark mode toggle ─────────────────────────────────────
+  themeBtn?.addEventListener('click', () => {
+    const root = document.documentElement;
+    const next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    localStorage.setItem('gotunnel-theme', next);
+  });
 
   // ── Show error from URL param ────────────────────────────
   const params = new URLSearchParams(window.location.search);

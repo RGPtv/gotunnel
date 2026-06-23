@@ -10,7 +10,14 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap"
     rel="stylesheet">
-  <link rel="stylesheet" href="/dashboard/styles.css">
+  <script>
+  (function () {
+    var saved = localStorage.getItem('gotunnel-theme');
+    var theme = saved || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    document.documentElement.setAttribute('data-theme', theme);
+  })();
+</script>
+<link rel="stylesheet" href="/dashboard/styles.css">
 </head>
 
 <body>
@@ -68,6 +75,15 @@
 
     <span class="nav-active-tunnel" id="nav-active-tunnel" aria-live="polite"></span>
 
+    <button type="button" id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode" title="Toggle dark mode" style="margin-left:auto">
+      <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+      </svg>
+      <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="4" />
+        <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+      </svg>
+    </button>
 
   </nav>
 
@@ -105,8 +121,7 @@
       </div>
 
       <!-- Home View -->
-      <div id="view-empty" class="home-view" role="main">
-        <div class="home-view-grid">
+      <div id="view-empty" class="home-view" role="main" style="display:flex; flex-direction:column; gap:24px;">
         <div class="home-token-card">
           <div class="card-section-head">
             <div style="display:flex;align-items:center;gap:6px">
@@ -178,12 +193,12 @@
                 <span class="stat-label">Dashboard Address</span>
                 <span class="stat-value" id="srv-dash-addr">—</span>
               </div>
-              <div class="stat-item stat-item--span">
+              <div class="stat-item" style="grid-column: 1 / -1; margin-top: 8px; padding-top: 12px; border-top: 1px solid var(--border);">
                 <span class="stat-label">Dashboard Login</span>
                 <div style="display:flex;align-items:center;gap:4px">
-                  <span class="stat-value" id="srv-dash-user">—</span>
+                  <span class="stat-value" id="srv-dash-user" style="color:var(--text-2);">—</span>
                   <span style="color:var(--text-3); font-size:12px;">/</span>
-                  <span class="stat-value masked-cred" id="srv-dash-pass">••••••••</span>
+                  <span class="stat-value masked-cred" id="srv-dash-pass" style="font-size:12px; color:var(--text-2);">••••••••</span>
                   <button class="token-btn" id="srv-dash-pass-reveal" title="Reveal password" aria-label="Reveal password">
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
@@ -192,17 +207,17 @@
                   </button>
                 </div>
               </div>
-              <div class="stat-item stat-item--span">
+              <div class="stat-item" style="grid-column: 1 / -1; margin-top: -4px; padding-top: 12px; border-top: 1px solid var(--border);">
                 <span class="stat-label">Server Status</span>
                 <div style="display:flex;align-items:center;gap:12px">
-                  <div class="live-badge live-badge--inline">
-                    <div class="live-dot" aria-hidden="true"></div>
-                    <span>Live</span>
+                  <div class="live-badge" style="background:transparent; border:none; padding:0; height:auto; color:var(--text-2);">
+                    <div class="live-dot" aria-hidden="true" style="width:6px; height:6px; border-radius:50%; background:var(--green); box-shadow:0 0 6px var(--green);"></div>
+                    <span style="font-size:12px; font-weight:500;">Live</span>
                   </div>
                   <span style="color:var(--border);">|</span>
                   <div style="display:flex;align-items:center;gap:6px">
-                    <span class="stat-label">Uptime:</span>
-                    <span class="stat-value" id="uptime">—</span>
+                    <span class="stat-label" style="font-size:11px;">Uptime:</span>
+                    <span class="nav-uptime" id="uptime" style="font-size:12px; font-family:'Geist Mono', monospace; color:var(--text-2);">—</span>
                   </div>
                 </div>
               </div>
@@ -210,20 +225,19 @@
           </div>
         </div>
 
-        <div class="home-token-card">
+        <div class="home-token-card" style="display: flex; flex-direction: column;">
           <div class="card-section-head">
             <div style="display:flex;align-items:center;gap:6px">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
               <span class="card-section-title">Event Log</span>
             </div>
           </div>
-          <div class="home-card-body home-card-body--log">
-            <div id="srv-event-log">
+          <div class="home-card-body" style="padding: 0; border-top: 1px solid var(--border); display: flex; flex-direction: column;">
+            <div id="srv-event-log" style="height: 250px; overflow-y: auto; padding: 12px; font-family: 'Geist Mono', monospace; font-size: 11px; line-height: 1.6; color: var(--text-2); display: flex; flex-direction: column; gap: 4px;">
               <div class="empty">No events yet...</div>
             </div>
           </div>
         </div>
-        </div><!-- /home-view-grid -->
       </div>
 
       <!-- Overview View -->

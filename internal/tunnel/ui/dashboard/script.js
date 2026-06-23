@@ -1253,3 +1253,14 @@ $tunList?.addEventListener('keydown', e => {
   connectStatus();
   connectRequests();
 })();
+
+// ── Dark mode toggle ─────────────────────────────────────────
+(function () {
+  const themeBtn = document.getElementById('theme-toggle');
+  themeBtn?.addEventListener('click', () => {
+    const root = document.documentElement;
+    const next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    localStorage.setItem('gotunnel-theme', next);
+  });
+})();

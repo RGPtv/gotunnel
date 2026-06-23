@@ -336,7 +336,7 @@ nav {
 }
 
 .sidebar-section {
-  padding: 12px 10px;
+  padding: 14px 12px;
 }
 
 .sidebar-label {
@@ -346,7 +346,7 @@ nav {
   letter-spacing: .7px;
   color: var(--text-3);
   padding: 0 6px;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .tunnel-empty-msg {
@@ -359,23 +359,26 @@ nav {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 8px;
+  padding: 8px 8px 8px 10px;
   border-radius: var(--r);
   cursor: pointer;
-  transition: background .1s;
+  transition: background .1s, color .1s;
   font-size: 12px;
   color: var(--text-2);
   overflow: hidden;
   position: relative;
+  border-left: 2px solid transparent;
 }
 
 .tunnel-item:hover {
   background: var(--surface);
+  color: var(--text);
 }
 
 .tunnel-item.active {
   background: var(--accent-dim);
   color: var(--text);
+  border-left-color: var(--accent);
 }
 
 .tunnel-item:focus-visible {
@@ -453,7 +456,7 @@ nav {
 
 .nav-tab.active {
   color: var(--text);
-  border-bottom-color: var(--text);
+  border-bottom-color: var(--accent);
 }
 
 .nav-tab:focus-visible {
@@ -461,36 +464,72 @@ nav {
   outline-offset: 2px;
 }
 
-/* ── Empty screen ─────────────────────────────────────────── */
 /* ── Home view ────────────────────────────────────────────── */
 .home-view {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  justify-content: flex-start;
+  align-items: stretch;
   padding: 28px 32px;
-  gap: 12px;
   overflow-y: auto;
   width: 100%;
   height: 100%;
   box-sizing: border-box;
 }
 
+/* Inner responsive grid — cards live here, not directly in .home-view */
+.home-view-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  align-content: start;
+}
+
 .home-token-card {
-  background: var(--bg);
+  background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--r);
+  border-radius: 8px;
   padding: 16px 20px;
   display: flex;
   flex-direction: column;
-  width: inherit;
-  max-width: 100%;
+  width: 100%;
+  transition: border-color .15s;
+}
+
+.home-token-card:hover {
+  border-color: var(--border-2);
 }
 
 .home-card-body {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* Flush variant: no padding, border-top separator (used for event log body) */
+.home-card-body--log {
+  padding: 0;
+  border-top: 1px solid var(--border);
+  flex: 1;
+  min-height: 0;
+}
+
+/* Event log scroll area */
+#srv-event-log {
+  flex: 1;
+  min-height: 220px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 12px;
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-2);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .home-hint {
@@ -578,11 +617,16 @@ nav {
 
 /* ── Overview content ─────────────────────────────────────── */
 .overview-content {
-  padding: 28px 32px;
+  padding: 24px 28px;
   display: grid;
-  gap: 24px;
-  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
   align-content: start;
+}
+
+/* Auth/feature section always spans all columns */
+#tunnel-auth-section {
+  grid-column: 1 / -1;
 }
 
 .overview-grid {
@@ -596,18 +640,20 @@ nav {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 5px 0;
+  padding: 6px 0;
   border-bottom: 1px solid var(--border);
   gap: 12px;
 }
 
 .stat-item:last-child {
   border-bottom: none;
+  padding-bottom: 0;
 }
 
 .stat-label {
   font-size: 11px;
   color: var(--text-3);
+  flex-shrink: 0;
 }
 
 .stat-value {
@@ -634,13 +680,16 @@ nav {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  padding-bottom: 10px;
   margin-bottom: 10px;
+  border-bottom: 1px solid var(--border);
 }
 
 .card-section-title {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text);
+  letter-spacing: .1px;
 }
 
 .card-section-badge {
@@ -945,6 +994,34 @@ nav {
 
 .curl-copy:hover {
   color: var(--text);
+}
+
+/* Stat item spanning full grid width (used in server config 2-col stat grid) */
+.stat-item--span {
+  grid-column: 1 / -1;
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  border-bottom: none;
+}
+
+/* Inline live badge (no bg box, just dot + label) */
+.live-badge--inline {
+  background: transparent;
+  border: none;
+  padding: 0;
+  height: auto;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.live-badge--inline .live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 6px var(--green);
 }
 
 /* ── Traffic Inspector ────────────────────────────────────── */
@@ -1507,15 +1584,43 @@ nav {
       RESPONSIVE — MOBILE
    ======================================================== */
 
+/* ── ≥ 860px: 2-column home layout ─── */
+@media (min-width: 860px) {
+  .home-view-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  /* Auth token card always spans full width */
+  .home-view-grid > .home-token-card:first-child {
+    grid-column: 1 / -1;
+  }
+
+  /* Event log grows to match server config card height */
+  .home-view-grid > .home-token-card:nth-child(3) {
+    display: flex;
+    flex-direction: column;
+  }
+
+  #srv-event-log {
+    flex: 1;
+    max-height: none;
+    min-height: 0;
+  }
+}
+
 /* ── ≤ 900px: hide sidebar label text, tighten layout for tablets ─── */
 @media (max-width: 900px) {
   .overview-content {
-    padding: 20px 20px;
+    padding: 20px;
     gap: 16px;
   }
 
   .overview-grid {
     grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  }
+
+  .home-view {
+    padding: 20px 24px;
   }
 }
 
@@ -1611,6 +1716,15 @@ nav {
   .overview-grid {
     gap: 12px;
     grid-template-columns: 1fr;
+  }
+
+  /* Home view on mobile */
+  .home-view {
+    padding: 16px 14px;
+  }
+
+  .home-view-grid {
+    gap: 12px;
   }
 }
 
@@ -1713,9 +1827,17 @@ nav {
 
   /* Overview: single column */
   .overview-content {
-    padding: 12px 12px;
+    padding: 12px;
     gap: 12px;
     grid-template-columns: 1fr;
+  }
+
+  .home-view {
+    padding: 12px;
+  }
+
+  .home-view-grid {
+    gap: 10px;
   }
 }
 

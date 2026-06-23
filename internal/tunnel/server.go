@@ -183,12 +183,6 @@ type Server struct {
 	authLimiters    sync.Map       // IP → *authBucket for rate-limiting tunnel auth
 	allowedTCPPorts []string       // if non-empty, only these remote addrs are allowed for TCP tunnels
 
-	// poolEmptySince tracks when each named pool (http subdomain or TCP addr)
-	// was first observed empty by the janitor.  A pool is only removed once it
-	// has been continuously empty for poolEmptyGrace — transient emptiness
-	// (workers mid-reconnect or all busy serving requests) does not trigger deletion.
-	// Protected by s.mu (always held by the janitor when it reads/writes this map).
-
 	// done is closed when the server is shutting down.  It stops background
 	// goroutines (janitor) that would otherwise run until process exit.
 	done chan struct{}
@@ -215,9 +209,6 @@ var hopByHopSet = func() map[string]struct{} {
 func (s *Server) srvLog(level int, format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	log.Print(msg)
-	if s == nil {
-		return
-	}
 	s.logsMu.Lock()
 	s.logs = append(s.logs, ipc.LogEntry{
 		Time:    time.Now(),
@@ -652,32 +643,13 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 		s.mu.Unlock()
 
 		fmt.Fprintf(conn, "OK\n")
-		
+
 		session, err := mux.Client(&bufferedConn{Conn: conn, r: r}, mux.DefaultConfig())
 		if err != nil {
 			s.srvLog(LevelError, "mux session err: %v", err)
 			conn.Close()
 			return
 		}
-		
-		s.tunnelMetaMu.Lock()
-		prev := s.tunnelMeta[remoteAddr]
-		if prev.Session != nil {
-			if !prev.Session.IsClosed() {
-				prev.Session.Close()
-			}
-			removed := false
-			for k, v := range s.tunnelMeta {
-				if v.Session == prev.Session {
-					delete(s.tunnelMeta, k)
-					removed = true
-				}
-			}
-			if removed {
-				s.count.Add(-1)
-			}
-		}
-		n := s.count.Add(1)
 
 		proxyURL := "tcp://" + remoteAddr
 		if subdomain != "" {
@@ -693,31 +665,24 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 			}
 		}
 
-		tm := TunnelMeta{
-			APIKey:           prev.APIKey,
-			APIKeyEnabled:    prev.APIKeyEnabled,
-			BasicAuth:        prev.BasicAuth,
-			BasicAuthEnabled: prev.BasicAuthEnabled,
-			AIMode:           prev.AIMode,
-			Type:             "tcp",
-			Endpoint:         remoteAddr,
-			ProxyURL:         proxyURL,
-			ConnectedAt:      time.Now(),
-			ClientIP:         conn.RemoteAddr().String(),
-			Session:          session,
-		}
-		s.tunnelMeta[remoteAddr] = tm
+		extraKeys := []string{}
 		if subdomain != "" {
-			s.tunnelMeta[subdomain] = tm
+			extraKeys = append(extraKeys, subdomain)
 		}
-		s.tunnelMetaMu.Unlock()
+		n := s.registerSession(session, TunnelMeta{
+			Type:        "tcp",
+			Endpoint:    remoteAddr,
+			ProxyURL:    proxyURL,
+			ConnectedAt: time.Now(),
+			ClientIP:    conn.RemoteAddr().String(),
+		}, extraKeys...)
 		s.srvLog(LevelSuccess, "tunnel connected %s → tcp:%s (active: %d)", conn.RemoteAddr(), remoteAddr, n)
 		return
 	}
 
 	if tunnelType == "http" && remoteAddr != "" {
 		fmt.Fprintf(conn, "OK\n")
-		
+
 		session, err := mux.Client(&bufferedConn{Conn: conn, r: r}, mux.DefaultConfig())
 		if err != nil {
 			s.srvLog(LevelError, "mux session err: %v", err)
@@ -725,45 +690,20 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 			return
 		}
 
-		s.tunnelMetaMu.Lock()
-		prev := s.tunnelMeta[remoteAddr]
-		if prev.Session != nil {
-			if !prev.Session.IsClosed() {
-				prev.Session.Close()
-			}
-			removed := false
-			for k, v := range s.tunnelMeta {
-				if v.Session == prev.Session {
-					delete(s.tunnelMeta, k)
-					removed = true
-				}
-			}
-			if removed {
-				s.count.Add(-1)
-			}
-		}
-		n := s.count.Add(1)
-		s.tunnelMeta[remoteAddr] = TunnelMeta{
-			APIKey:           prev.APIKey,
-			APIKeyEnabled:    prev.APIKeyEnabled,
-			BasicAuth:        prev.BasicAuth,
-			BasicAuthEnabled: prev.BasicAuthEnabled,
-			AIMode:           prev.AIMode,
-			Type:             "http",
-			Endpoint:         remoteAddr,
-			ProxyURL:         s.buildProxyURL("http", remoteAddr),
-			ConnectedAt:      time.Now(),
-			ClientIP:         conn.RemoteAddr().String(),
-			Session:          session,
-		}
-		s.tunnelMetaMu.Unlock()
+		n := s.registerSession(session, TunnelMeta{
+			Type:        "http",
+			Endpoint:    remoteAddr,
+			ProxyURL:    s.buildProxyURL("http", remoteAddr),
+			ConnectedAt: time.Now(),
+			ClientIP:    conn.RemoteAddr().String(),
+		})
 		s.srvLog(LevelSuccess, "tunnel connected %s → http:%s (active: %d)", conn.RemoteAddr(), remoteAddr, n)
 		return
 	}
 
 	// Default HTTP pool.
 	fmt.Fprintf(conn, "OK\n")
-	
+
 	session, err := mux.Client(&bufferedConn{Conn: conn, r: r}, mux.DefaultConfig())
 	if err != nil {
 		s.srvLog(LevelError, "mux session err: %v", err)
@@ -771,38 +711,13 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 		return
 	}
 
-	s.tunnelMetaMu.Lock()
-	prev := s.tunnelMeta["(default)"]
-	if prev.Session != nil {
-		if !prev.Session.IsClosed() {
-			prev.Session.Close()
-		}
-		removed := false
-		for k, v := range s.tunnelMeta {
-			if v.Session == prev.Session {
-				delete(s.tunnelMeta, k)
-				removed = true
-			}
-		}
-		if removed {
-			s.count.Add(-1)
-		}
-	}
-	n := s.count.Add(1)
-	s.tunnelMeta["(default)"] = TunnelMeta{
-		APIKey:           prev.APIKey,
-		APIKeyEnabled:    prev.APIKeyEnabled,
-		BasicAuth:        prev.BasicAuth,
-		BasicAuthEnabled: prev.BasicAuthEnabled,
-		AIMode:           prev.AIMode,
-		Type:             "http",
-		Endpoint:         "(default)",
-		ProxyURL:         s.buildProxyURL("http", "(default)"),
-		ConnectedAt:      time.Now(),
-		ClientIP:         conn.RemoteAddr().String(),
-		Session:          session,
-	}
-	s.tunnelMetaMu.Unlock()
+	n := s.registerSession(session, TunnelMeta{
+		Type:        "http",
+		Endpoint:    "(default)",
+		ProxyURL:    s.buildProxyURL("http", "(default)"),
+		ConnectedAt: time.Now(),
+		ClientIP:    conn.RemoteAddr().String(),
+	})
 	s.srvLog(LevelSuccess, "tunnel connected %s → http:(default) (active: %d)", conn.RemoteAddr(), n)
 }
 
@@ -1001,20 +916,21 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, reqBody *capp
 		w.Header().Set("X-Accel-Buffering", "no")
 		w.Header().Set("Cache-Control", "no-cache, no-store")
 		// CORS — Open WebUI and similar browser clients call the API directly.
-		origin := r.Header.Get("Origin")
-		if origin == "" {
-			origin = "*"
-		}
-		w.Header().Set("Access-Control-Allow-Origin", origin)
-		w.Header().Set("Vary", "Origin")
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key")
-		// Handle CORS preflight so the browser doesn't block the actual request.
-		if r.Method == http.MethodOptions {
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS")
-			w.Header().Set("Access-Control-Max-Age", "86400")
-			w.WriteHeader(http.StatusNoContent)
-			return
+		// Only set ACAO when the request carries an Origin header: combining
+		// Access-Control-Allow-Origin: * with Allow-Credentials: true is
+		// forbidden by the Fetch spec and browsers will reject it.
+		if origin := r.Header.Get("Origin"); origin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key")
+			// Handle CORS preflight so the browser doesn't block the actual request.
+			if r.Method == http.MethodOptions {
+				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS")
+				w.Header().Set("Access-Control-Max-Age", "86400")
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
 		}
 	}
 
@@ -1166,12 +1082,9 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request) {
 		out.URL.Host = r.Host
 	}
 	// Strip gateway-level auth headers only when the gateway enforced them.
-	pwsEpKey := s.getEndpointKey(r.Host)
-	s.tunnelMetaMu.RLock()
-	pwsMeta := s.tunnelMeta[pwsEpKey]
-	s.tunnelMetaMu.RUnlock()
+	// tMeta was already fetched above under tunnelMetaMu — reuse it directly.
 	out.Header.Del("X-API-Key") // never forward our internal key header
-	if pwsMeta.APIKeyEnabled || pwsMeta.BasicAuthEnabled {
+	if tMeta.APIKeyEnabled || tMeta.BasicAuthEnabled {
 		out.Header.Del("Authorization")
 	}
 	out.Header.Set("X-Forwarded-For", clientIP(r))
@@ -1411,19 +1324,46 @@ func (s *Server) closeAllSessions() {
 	s.tunnelMetaMu.Unlock()
 }
 
+// registerSession replaces any existing session for the given primary key and
+// optional extra keys (e.g. subdomain alias), preserving dashboard-managed
+// settings (API key, basic auth, AI mode) from the previous session.
+// Must be called WITHOUT holding tunnelMetaMu.
+// Returns the new active count.
+func (s *Server) registerSession(session *mux.Session, meta TunnelMeta, extraKeys ...string) int64 {
+	s.tunnelMetaMu.Lock()
+	defer s.tunnelMetaMu.Unlock()
 
+	prev := s.tunnelMeta[meta.Endpoint]
+	if prev.Session != nil {
+		if !prev.Session.IsClosed() {
+			prev.Session.Close()
+		}
+		// Remove all map entries that pointed at the old session.
+		for k, v := range s.tunnelMeta {
+			if v.Session == prev.Session {
+				delete(s.tunnelMeta, k)
+			}
+		}
+		s.count.Add(-1)
+	}
 
-// keepAlive reports whether the tunnel connection should be returned to the
-// pool after this response (i.e. the server did not request close).
-func keepAlive(resp *http.Response) bool {
-	if strings.ToLower(resp.Header.Get("Connection")) == "close" {
-		return false
+	// Preserve dashboard-managed settings across reconnects.
+	meta.APIKey = prev.APIKey
+	meta.APIKeyEnabled = prev.APIKeyEnabled
+	meta.BasicAuth = prev.BasicAuth
+	meta.BasicAuthEnabled = prev.BasicAuthEnabled
+	meta.AIMode = prev.AIMode
+	meta.Session = session
+
+	n := s.count.Add(1)
+	s.tunnelMeta[meta.Endpoint] = meta
+	for _, k := range extraKeys {
+		s.tunnelMeta[k] = meta
 	}
-	if resp.Proto == "HTTP/1.0" {
-		return false
-	}
-	return true
+	return n
 }
+
+
 
 // removeHopByHop strips hop-by-hop headers from h, including any headers
 // listed in the Connection header itself.

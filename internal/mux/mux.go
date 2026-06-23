@@ -295,6 +295,12 @@ func (s *Session) OpenStream() (net.Conn, error) {
 	// Wait for ACK from the remote's readLoop.
 	select {
 	case <-st.synAckCh:
+		// synAckCh is also closed by forceClose (RST path). Distinguish
+		// a true ACK from a RST so callers get an error immediately.
+		if st.rst.Load() {
+			s.removeStream(id)
+			return nil, st.streamErr()
+		}
 		return st, nil
 	case <-s.closedCh:
 		s.removeStream(id)
@@ -443,19 +449,26 @@ func (s *Session) handleData(flags uint16, streamID uint32, payload []byte) erro
 		s.streamsMu.Unlock()
 		s.numStreams.Add(1)
 
-		// Acknowledge the SYN.
-		if err := s.sendCtrl(streamID, typeData, flagACK, 0); err != nil {
-			s.removeStream(streamID)
-			return err
-		}
-
+		// Try to enqueue the stream before ACKing. If the backlog is full
+		// we RST without ever ACKing, so OpenStream on the remote side
+		// never unblocks with a "live" stream that is immediately torn down.
 		select {
 		case s.acceptCh <- st:
+			// Backlog had room — now ACK the SYN.
+			if err := s.sendCtrl(streamID, typeData, flagACK, 0); err != nil {
+				// Network is broken; the stream is already in acceptCh.
+				// forceClose it so AcceptStream callers get an error.
+				st.forceClose(err)
+				s.removeStream(streamID)
+				return err
+			}
 		default:
-			// Backlog full – reject with RST.
+			// Backlog full — RST without ACKing. The remote OpenStream
+			// will see the RST close synAckCh and return an error.
 			s.removeStream(streamID)
 			return s.sendCtrl(streamID, typeData, flagRST, 0)
 		}
+
 		// A SYN frame may also carry payload (rare, but legal). Fall through.
 		if len(payload) == 0 && flags&flagFIN == 0 {
 			return nil

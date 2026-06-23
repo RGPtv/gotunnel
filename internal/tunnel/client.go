@@ -411,7 +411,9 @@ func (c *Client) handleStream(stream net.Conn) {
 		peek, err := reader.Peek(6)
 		stream.SetReadDeadline(time.Time{})
 		if err == nil && string(peek) == "START\n" {
-			c.handleTCPWorker(0, stream, reader)
+			if err := c.handleTCPWorker(0, stream, reader); err != nil {
+				log.Printf("[stream] tcp worker error: %v", err)
+			}
 			return
 		}
 		// If not START, fall through to HTTP handling.
@@ -427,7 +429,9 @@ func (c *Client) handleStream(stream net.Conn) {
 	stream.SetReadDeadline(time.Time{}) // clear before proxying
 
 	if strings.ToLower(req.Header.Get("Upgrade")) == "websocket" {
-		c.handleWebSocket(0, stream, reader, req)
+		if err := c.handleWebSocket(0, stream, reader, req); err != nil {
+			log.Printf("[stream] ws error: %v", err)
+		}
 		return
 	}
 
@@ -461,6 +465,7 @@ func targetHost(addr string) string {
 }
 
 func (c *Client) handleTCPWorker(id int, tunnelConn net.Conn, tunnelReader *bufio.Reader) error {
+	// Consume the "START\n" that handleStream already confirmed via Peek.
 	tunnelConn.SetReadDeadline(time.Now().Add(30 * time.Second))
 	line, err := tunnelReader.ReadString('\n')
 	tunnelConn.SetReadDeadline(time.Time{})
@@ -468,14 +473,15 @@ func (c *Client) handleTCPWorker(id int, tunnelConn net.Conn, tunnelReader *bufi
 		return fmt.Errorf("read tcp start: %w", err)
 	}
 	if strings.TrimSpace(line) != "START" {
-		return fmt.Errorf("unexpected command: %s", line)
+		return fmt.Errorf("unexpected tcp command: %s", strings.TrimSpace(line))
 	}
 
 	dialer := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
 	targetConn, err := dialer.DialContext(c.ctx, "tcp", targetHost(c.targetAddr))
 	if err != nil {
 		log.Printf("[w%d] tcp dial target failed: %v", id, err)
-		tunnelConn.Close() // forces server-side external client to get a clean reset
+		// Close tunnelConn to signal the server the request failed.
+		tunnelConn.Close()
 		return fmt.Errorf("dial target for tcp: %w", err)
 	}
 	defer targetConn.Close()
@@ -491,9 +497,12 @@ func (c *Client) handleTCPWorker(id int, tunnelConn net.Conn, tunnelReader *bufi
 	}
 	go cp(targetConn, tunnelReader)
 	go cp(tunnelConn, targetConn)
+	// Wait for either direction to finish, then close both ends to unblock
+	// the other goroutine. The second done receive ensures both goroutines
+	// have exited before we return and the defers run.
 	<-done
-	tunnelConn.Close()
 	targetConn.Close()
+	tunnelConn.Close()
 	<-done
 
 	log.Printf("[w%d] tcp session closed", id)

@@ -5,9 +5,15 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 )
+
+// configFileMu serialises concurrent reads+writes to the config file so that
+// two simultaneous token regenerations cannot interleave their file I/O and
+// corrupt the YAML.
+var configFileMu sync.Mutex
 
 // AppConfig is the top-level YAML configuration structure.
 // Exactly one of ServerConfig or ClientConfig must be set.
@@ -184,7 +190,12 @@ func validateClientConfig(c *ClientConfig) error {
 
 // UpdateTokenInConfig reads the config file, updates the server token, and saves it.
 // It uses simple string replacement to preserve comments and layout.
+// A package-level mutex serialises concurrent calls so two token regenerations
+// cannot interleave their file I/O and corrupt the YAML.
 func UpdateTokenInConfig(newToken string) error {
+	configFileMu.Lock()
+	defer configFileMu.Unlock()
+
 	data, filename, err := readConfigFile()
 	if err != nil {
 		return err

@@ -62,6 +62,7 @@ function copyToClipboard(text) {
 }
 
 function fmtUptime(s) {
+  s = Math.floor(s);
   if (s < 60)   return s + 's';
   if (s < 3600) return Math.floor(s / 60) + 'm ' + (s % 60) + 's';
   const h = Math.floor(s / 3600);
@@ -681,7 +682,9 @@ function _updateFilterUI() {
   const hasFilter = _filterMethod || _filterStatus || _filterSearch;
   const chip = document.getElementById('filter-chip');
   if (chip) {
-    chip.classList.toggle('show', !!hasFilter);
+    const active = !!hasFilter;
+    chip.style.display = active ? 'flex' : 'none';
+    chip.classList.toggle('show', active);
     const parts = [_filterMethod, _filterStatus, _filterSearch].filter(Boolean);
     const label = document.getElementById('filter-label');
     if (label) label.textContent = parts.length ? parts.join(' · ') : 'all';

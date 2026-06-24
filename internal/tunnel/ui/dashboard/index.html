@@ -5,25 +5,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="referrer" content="no-referrer">
-  <!-- Content Security Policy: tighten to no inline eval, only same-origin scripts,
-       allow fonts.googleapis.com for the Geist font, and block all framing. -->
-  <meta http-equiv="Content-Security-Policy"
-    content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'">
-  <meta http-equiv="X-Content-Type-Options" content="nosniff">
-  <meta http-equiv="X-Frame-Options" content="DENY">
   <title>GoTunnel · Dashboard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link
     href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600;700&display=swap"
     rel="stylesheet">
-  <script>
-  (function () {
-    var saved = localStorage.getItem('gotunnel-theme');
-    var theme = saved || 'dark';
-    document.documentElement.setAttribute('data-theme', theme);
-  })();
-</script>
-<link rel="stylesheet" href="/dashboard/styles.css">
+  <link rel="stylesheet" href="/dashboard/styles.css">
 </head>
 
 <body>

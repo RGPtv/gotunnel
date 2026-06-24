@@ -71,6 +71,13 @@ function fmtUptime(s) {
 }
 
 // ── State ────────────────────────────────────────────────────
+// ── Theme Init ─────────────────────────────────────────────────
+(function () {
+  var saved = localStorage.getItem('gotunnel-theme');
+  var theme = saved || 'dark';
+  document.documentElement.setAttribute('data-theme', theme);
+})();
+
 let activeTunnel     = null;
 let currentTab       = 'overview';
 let reqsByTunnel     = {};

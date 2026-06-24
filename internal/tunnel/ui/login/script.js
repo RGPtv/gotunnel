@@ -38,7 +38,7 @@
       csrf:       'Request validation failed. Please refresh and try again.',
     };
     errorMsg.textContent = messages[errCode] || 'Sign-in failed. Please try again.';
-    errorMsg.style.display = 'block';
+    errorMsg.style.display = 'flex';
   }
 
   // ── Form submit: show loading state ─────────────────────
@@ -51,7 +51,7 @@
       e.preventDefault();
       if (errorMsg) {
         errorMsg.textContent = 'Please enter both username and password.';
-        errorMsg.style.display = 'block';
+        errorMsg.style.display = 'flex';
       }
       return;
     }
@@ -59,7 +59,7 @@
     // Disable button and show spinner during server round-trip
     if (submitBtn) submitBtn.disabled = true;
     if (submitLbl) submitLbl.textContent = 'Signing in…';
-    if (spinner)   spinner.style.display = 'inline-block';
+    if (spinner)   spinner.style.display = 'inline-flex';
   });
 
   // ── Password visibility toggle ───────────────────────────

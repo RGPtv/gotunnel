@@ -103,20 +103,7 @@ body {
   -webkit-font-smoothing: antialiased;
   position: relative;
   overflow: hidden;
-  overscroll-behavior: none; /* Prevents Android Chrome rubber-band / page scroll bleed */
   z-index: 0;
-}
-
-/* Suppress Android Chrome's blue tap flash on every interactive element */
-a,
-button,
-input,
-select,
-textarea,
-[role="button"],
-[tabindex] {
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation; /* Removes the 300ms tap delay on Android */
 }
 
 /* Ambient Background Glow */
@@ -380,7 +367,6 @@ html[data-theme="dark"] .theme-toggle .icon-sun {
 
 /* ── Mobile overlay ───────────────────────────────────────── */
 .mobile-overlay {
-  display: none;
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, .6);
@@ -388,12 +374,13 @@ html[data-theme="dark"] .theme-toggle .icon-sun {
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
   opacity: 0;
+  pointer-events: none;
   transition: opacity 0.3s ease;
 }
 
 .mobile-overlay.show {
-  display: block;
   opacity: 1;
+  pointer-events: auto;
 }
 
 /* ── Layout ───────────────────────────────────────────────── */
@@ -606,7 +593,6 @@ html[data-theme="dark"] .sub-nav {
   color: var(--text-3);
   background: none;
   border: none;
-  border-bottom: 2px solid transparent;
   cursor: pointer;
   transition: var(--transition);
   font-family: inherit;
@@ -621,13 +607,12 @@ html[data-theme="dark"] .sub-nav {
 
 .nav-tab.active {
   color: var(--text);
-  border-bottom-color: var(--text);
 }
 
 .nav-tab::after {
   content: '';
   position: absolute;
-  bottom: -2px;
+  bottom: 0;
   left: 0;
   width: 100%;
   height: 2px;
@@ -666,6 +651,14 @@ html[data-theme="dark"] .sub-nav {
   transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
   box-shadow: var(--shadow-sm);
   animation: fadeSlideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.home-token-card:nth-child(2) {
+  animation-delay: 0.08s;
+}
+
+.home-token-card:nth-child(3) {
+  animation-delay: 0.16s;
 }
 
 .home-token-card:hover {
@@ -764,7 +757,7 @@ html[data-theme="dark"] .sub-nav {
   padding: 32px;
   display: grid;
   gap: 24px;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
   align-content: start;
   overflow-y: auto;
   flex: 1;
@@ -798,11 +791,7 @@ html[data-theme="dark"] .sub-nav {
   box-shadow: var(--shadow-sm);
   animation: fadeSlideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) backwards;
   position: relative;
-  overflow: hidden;
-  /* height: fit-content causes Chrome/Android to clip grid item content when
-     combined with overflow: hidden. Use align-self: start instead — it achieves
-     the same "shrink to content" behavior via the grid, without the clipping bug. */
-  align-self: start;
+  overflow: visible;
   height: auto;
 }
 
@@ -957,7 +946,7 @@ html[data-theme="dark"] .auth-toggle input:checked+.auth-toggle-slider {
 }
 
 .auth-toggle input:checked:active+.auth-toggle-slider::after {
-  transform: translateX(16px);
+  transform: translateX(14px);
 }
 
 .auth-toggle input:focus-visible+.auth-toggle-slider {
@@ -1234,15 +1223,11 @@ html[data-theme="dark"] .auth-toggle input:checked+.auth-toggle-slider {
   -webkit-overflow-scrolling: touch;
   flex-shrink: 0;
   padding-bottom: 4px;
-  /* for scrollbar if visible on mobile */
+  scrollbar-width: none;
 }
 
 .filter-group::-webkit-scrollbar {
   display: none;
-}
-
-.filter-group {
-  scrollbar-width: none;
 }
 
 .filter-pill {
@@ -1946,7 +1931,7 @@ html[data-theme="dark"] .mobile-tabs {
   .overview-content {
     padding: 24px;
     gap: 20px;
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
   }
 
   .detail-grid {
@@ -2013,7 +1998,6 @@ html[data-theme="dark"] .mobile-tabs {
   .home-view,
   .table-wrap {
     -webkit-overflow-scrolling: touch;
-    overscroll-behavior-y: contain; /* Prevents Android scroll bleed into the page */
   }
 
   .main {
@@ -2026,14 +2010,14 @@ html[data-theme="dark"] .mobile-tabs {
   }
 
   .status-footer {
-    bottom: calc(var(--mobile-tab-h) + 16px);
+    bottom: calc(var(--mobile-tab-h) + env(safe-area-inset-bottom) + 16px);
     right: 16px;
     padding: 6px 14px;
     font-size: 11px;
   }
 
   #toast-container {
-    bottom: calc(var(--mobile-tab-h) + 16px);
+    bottom: calc(var(--mobile-tab-h) + env(safe-area-inset-bottom) + 16px);
     right: 16px;
     left: 16px;
     max-width: 100%;
@@ -2050,6 +2034,17 @@ html[data-theme="dark"] .mobile-tabs {
     gap: 16px;
     grid-template-columns: 1fr;
     -webkit-overflow-scrolling: touch;
+    overflow-x: hidden;
+  }
+
+  .overview-content .sidebar-section {
+    overflow: visible;
+    height: auto;
+    min-height: 0;
+  }
+
+  .overview-grid {
+    gap: 16px;
   }
 
   .home-view {
@@ -2059,7 +2054,6 @@ html[data-theme="dark"] .mobile-tabs {
 
   /* Touch target sizes */
   .nav-hamburger,
-  .sidebar-close,
   .chip-btn,
   .mobile-tab,
   .nav-tab {
@@ -2121,8 +2115,9 @@ html[data-theme="dark"] .mobile-tabs {
   }
 
   .req-row:hover {
-    transform: translateY(-2px) translateX(2px);
-    box-shadow: var(--shadow-md);
+    transform: none;
+    box-shadow: var(--shadow-sm);
+    background: var(--surface);
   }
 
   .r-method {
@@ -2179,7 +2174,7 @@ html[data-theme="dark"] .mobile-tabs {
   .req-detail {
     padding: 16px;
     border-radius: 0 0 var(--r-sm) var(--r-sm);
-    margin-top: -12px;
+    margin-top: -8px;
     margin-bottom: 8px;
     border: 1px solid var(--border);
     border-top: none;
@@ -2361,7 +2356,8 @@ html[data-theme="dark"] .mobile-tabs {
 }
 
 .inline-style-17 {
-  height: 250px;
+  min-height: 200px;
+  max-height: 320px;
   overflow-y: auto;
   padding: 16px 0 0 0;
   font-family: 'Geist Mono', monospace;
@@ -2374,7 +2370,7 @@ html[data-theme="dark"] .mobile-tabs {
 }
 
 .inline-style-18 {
-  padding: 40px;
+  padding: 20px;
 }
 
 .inline-style-19 {

@@ -43,7 +43,7 @@ html, body {
   font-family: 'Geist', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   position: relative;
-  overflow: hidden;
+  /* removed overflow:hidden so the card is reachable on small viewports with keyboard open */
   z-index: 0;
 }
 
@@ -121,7 +121,6 @@ html[data-theme="dark"] .page::before { opacity: .12; }
   border-radius: 18px;
   padding: 36px 32px 32px;
   box-shadow:
-    0 0 0 1px rgba(255,255,255,.06) inset,
     0 2px 4px rgba(0,0,0,.04),
     0 12px 40px -8px rgba(26,25,25,.10);
   position: relative;
@@ -221,6 +220,15 @@ html[data-theme="dark"] .brand-icon svg { color: var(--bg); }
   padding: 10px 14px;
   margin-bottom: 18px;
   line-height: 1.5;
+  animation: errorShake 0.35s cubic-bezier(.36,.07,.19,.97) both;
+}
+
+@keyframes errorShake {
+  0%, 100% { transform: translateX(0); }
+  20%       { transform: translateX(-6px); }
+  40%       { transform: translateX(6px); }
+  60%       { transform: translateX(-4px); }
+  80%       { transform: translateX(4px); }
 }
 
 /* ── Form ─────────────────────────────────────────────────── */
@@ -261,13 +269,13 @@ html[data-theme="dark"] .brand-icon svg { color: var(--bg); }
 .password-wrap input { padding-right: 48px; }
 .pass-toggle {
   position: absolute;
-  right: 10px; top: 50%;
+  right: 6px; top: 50%;
   transform: translateY(-50%);
   display: flex; align-items: center; justify-content: center;
-  width: 32px; height: 32px;
+  width: 44px; height: 44px;
   border: none; background: none;
   color: var(--text-3);
-  cursor: pointer; border-radius: 6px;
+  cursor: pointer; border-radius: 8px;
   transition: color .15s, background .15s;
   padding: 0;
 }
@@ -298,7 +306,7 @@ html[data-theme="dark"] .submit-btn {
 html[data-theme="dark"] .submit-btn:disabled { color: #111111; }
 
 .submit-btn:hover:not(:disabled) {
-  filter: brightness(1.08);
+  opacity: 0.88;
   box-shadow: 0 2px 6px rgba(26,25,25,.3), 0 8px 20px -4px rgba(26,25,25,.25);
   transform: translateY(-1px);
 }
@@ -308,6 +316,9 @@ html[data-theme="dark"] .submit-btn:disabled { color: #111111; }
 
 /* Spinner */
 .spinner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 16px; height: 16px;
   border: 2px solid rgba(255,255,255,.3);
   border-top-color: #fff;
@@ -321,7 +332,14 @@ html[data-theme="dark"] .spinner {
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ── Footer ──────────────────────────────────────────────── */
-.footer-note { margin-top: 24px; font-size: 11px; color: var(--text-3); text-align: center; z-index: 1; }
+.footer-note {
+  margin-top: 24px;
+  font-size: 11px;
+  color: var(--text-3);
+  text-align: center;
+  position: relative; /* needed for z-index to take effect */
+  z-index: 1;
+}
 
 /* ── Mobile ──────────────────────────────────────────────── */
 @media (max-width: 440px) {
@@ -330,13 +348,14 @@ html[data-theme="dark"] .spinner {
 }
 
 @media (max-width: 360px) {
-  .card { padding: 24px 16px 20px; }
+  .card { padding: 24px 16px 20px; border-radius: 12px; }
 }
 
 /* ── Reduced motion ──────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   .card { animation: none; }
   .spinner { animation: none; }
+  .error-msg { animation: none; }
   .submit-btn, .field input { transition: none; }
 }
 

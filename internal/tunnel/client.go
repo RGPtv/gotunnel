@@ -172,8 +172,18 @@ func RunClient(cfg *ClientConfig) {
 		if tunnelType == "http" && t.Subdomain != "" {
 			remoteVal = t.Subdomain
 		}
-		if tunnelType == "tcp" && t.Subdomain != "" && t.Remote == "" {
-			remoteVal = t.Subdomain
+		if tunnelType == "tcp" && t.Remote == "" && t.Subdomain != "" {
+			// No explicit remote port — derive it from the target address so
+			// the server opens the same port number locally.
+			// e.g. target: "localhost:22", subdomain: "ssh"
+			// → server listens on :22, exposed as ssh.example.com:22
+			normTarget := normalizeTargetAddr(t.Target)
+			_, derivedPort, pErr := net.SplitHostPort(targetHost(normTarget))
+			if pErr == nil && derivedPort != "" {
+				remoteVal = ":" + derivedPort
+			}
+			// If we cannot parse a port, remoteVal stays "" and the server
+			// will return an error — which is the right thing to do.
 		}
 
 		name := t.Name
@@ -215,9 +225,12 @@ func RunClient(cfg *ClientConfig) {
 			// Single-tunnel mode: full banner.
 			fmt.Fprintf(os.Stderr, "  %-14s %s\n", "Type", tunnelType)
 			if tunnelType == "tcp" {
-				remoteDisplay := t.Remote
-				if remoteDisplay == "" && t.Subdomain != "" {
-					remoteDisplay = t.Subdomain
+				if t.Subdomain != "" {
+					fmt.Fprintf(os.Stderr, "  %-14s %s\n", "Subdomain", t.Subdomain)
+				}
+				remoteDisplay := remoteVal
+				if remoteDisplay == "" {
+					remoteDisplay = "(derived from target)"
 				}
 				fmt.Fprintf(os.Stderr, "  %-14s %s\n", "Remote Port", remoteDisplay)
 			}
@@ -233,11 +246,10 @@ func RunClient(cfg *ClientConfig) {
 			// Multi-tunnel mode: compact per-tunnel summary line.
 			fmt.Fprintf(os.Stderr, "  [%s] %s → %s\n", name, tunnelType, t.Target)
 			if tunnelType == "tcp" {
-				remoteDisplay := t.Remote
-				if remoteDisplay == "" && t.Subdomain != "" {
-					remoteDisplay = t.Subdomain
+				if t.Subdomain != "" {
+					fmt.Fprintf(os.Stderr, "         subdomain: %s\n", t.Subdomain)
 				}
-				fmt.Fprintf(os.Stderr, "         remote: %s\n", remoteDisplay)
+				fmt.Fprintf(os.Stderr, "         remote: %s\n", remoteVal)
 			}
 			if tunnelType == "http" && t.Subdomain != "" {
 				fmt.Fprintf(os.Stderr, "         subdomain: %s\n", t.Subdomain)
@@ -418,7 +430,7 @@ func (c *Client) handleStream(stream net.Conn) {
 	reader := bufio.NewReader(stream)
 
 	if c.tunnelType == "tcp" {
-		stream.SetReadDeadline(time.Now().Add(30 * time.Second))
+		stream.SetReadDeadline(time.Now().Add(10 * time.Second))
 		peek, err := reader.Peek(6)
 		stream.SetReadDeadline(time.Time{})
 		if err == nil && string(peek) == "START\n" {
@@ -477,7 +489,7 @@ func targetHost(addr string) string {
 
 func (c *Client) handleTCPWorker(id int, tunnelConn net.Conn, tunnelReader *bufio.Reader) error {
 	// Consume the "START\n" that handleStream already confirmed via Peek.
-	tunnelConn.SetReadDeadline(time.Now().Add(30 * time.Second))
+	tunnelConn.SetReadDeadline(time.Now().Add(10 * time.Second))
 	line, err := tunnelReader.ReadString('\n')
 	tunnelConn.SetReadDeadline(time.Time{})
 	if err != nil {
@@ -487,7 +499,7 @@ func (c *Client) handleTCPWorker(id int, tunnelConn net.Conn, tunnelReader *bufi
 		return fmt.Errorf("unexpected tcp command: %s", strings.TrimSpace(line))
 	}
 
-	dialer := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
+	dialer := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 15 * time.Second}
 	targetConn, err := dialer.DialContext(c.ctx, "tcp", targetHost(c.targetAddr))
 	if err != nil {
 		log.Printf("[w%d] tcp dial target failed: %v", id, err)
@@ -497,24 +509,28 @@ func (c *Client) handleTCPWorker(id int, tunnelConn net.Conn, tunnelReader *bufi
 	}
 	defer targetConn.Close()
 
+	// Enable TCP keepalive on the local target connection so that long-lived
+	// idle tunnels (SSH, DB, etc.) are not silently killed by NAT routers.
+	if tc, ok := targetConn.(*net.TCPConn); ok {
+		tc.SetKeepAlive(true)
+		tc.SetKeepAlivePeriod(15 * time.Second)
+	}
+
 	log.Printf("[w%d] tcp session started: %s", id, c.targetAddr)
 
-	done := make(chan struct{}, 2)
-	cp := func(dst io.Writer, src io.Reader) {
+	var wg sync.WaitGroup
+	wg.Add(2)
+	pipe := func(dst io.Writer, src io.Reader, closeFn func()) {
+		defer wg.Done()
 		bp := copyBufPool.Get().(*[]byte)
 		io.CopyBuffer(dst, src, *bp)
 		copyBufPool.Put(bp)
-		done <- struct{}{}
+		// Signal the other direction to finish.
+		closeFn()
 	}
-	go cp(targetConn, tunnelReader)
-	go cp(tunnelConn, targetConn)
-	// Wait for either direction to finish, then close both ends to unblock
-	// the other goroutine. The second done receive ensures both goroutines
-	// have exited before we return and the defers run.
-	<-done
-	targetConn.Close()
-	tunnelConn.Close()
-	<-done
+	go pipe(targetConn, tunnelReader, func() { targetConn.Close() })
+	go pipe(tunnelConn, targetConn, func() { tunnelConn.Close() })
+	wg.Wait()
 
 	log.Printf("[w%d] tcp session closed", id)
 	return nil

@@ -735,47 +735,67 @@ func (s *Server) acceptTCPConns(l net.Listener, remoteAddr string) {
 		}
 		if tc, ok := conn.(*net.TCPConn); ok {
 			tc.SetKeepAlive(true)
-			tc.SetKeepAlivePeriod(30 * time.Second)
+			tc.SetKeepAlivePeriod(15 * time.Second)
 		}
 		go s.handleExternalTCPConn(conn, remoteAddr)
 	}
 }
 
-// handleExternalTCPConn proxies a raw TCP connection through a tcp pool worker.
+// handleExternalTCPConn proxies a raw TCP connection through a mux stream on
+// the active tunnel session for remoteAddr.  It retries the session lookup
+// briefly to cover the transient gap between an old session closing and a
+// reconnecting client registering a new one.
 func (s *Server) handleExternalTCPConn(conn net.Conn, remoteAddr string) {
 	defer conn.Close()
 
-	s.tunnelMetaMu.RLock()
-	tMeta, ok := s.tunnelMeta[remoteAddr]
-	s.tunnelMetaMu.RUnlock()
-
-	if !ok || tMeta.Session == nil || tMeta.Session.IsClosed() {
-		return
+	// Retry loop: cover the brief window between session close and reconnect.
+	// We poll every 100 ms for up to 2 s before giving up.
+	const (
+		retryInterval = 100 * time.Millisecond
+		retryTimeout  = 2 * time.Second
+	)
+	deadline := time.Now().Add(retryTimeout)
+	var session *mux.Session
+	for {
+		s.tunnelMetaMu.RLock()
+		tMeta, ok := s.tunnelMeta[remoteAddr]
+		s.tunnelMetaMu.RUnlock()
+		if ok && tMeta.Session != nil && !tMeta.Session.IsClosed() {
+			session = tMeta.Session
+			break
+		}
+		if time.Now().After(deadline) {
+			s.srvLog(LevelWarn, "tcp %s: no active tunnel session for %s — dropping connection", conn.RemoteAddr(), remoteAddr)
+			return
+		}
+		time.Sleep(retryInterval)
 	}
 
-	stream, err := tMeta.Session.OpenStream()
+	stream, err := session.OpenStream()
 	if err != nil {
+		s.srvLog(LevelWarn, "tcp %s: OpenStream failed for %s: %v", conn.RemoteAddr(), remoteAddr, err)
 		return
 	}
 	defer stream.Close()
 
 	if _, err := fmt.Fprintf(stream, "START\n"); err != nil {
+		s.srvLog(LevelWarn, "tcp %s: START write failed: %v", conn.RemoteAddr(), err)
 		return
 	}
 
-	done := make(chan struct{}, 2)
-	cp := func(dst io.Writer, src io.Reader) {
+	var wg sync.WaitGroup
+	wg.Add(2)
+	pipe := func(dst io.Writer, src io.Reader, closeFn func()) {
+		defer wg.Done()
 		bp := copyBufPool.Get().(*[]byte)
 		io.CopyBuffer(dst, src, *bp)
 		copyBufPool.Put(bp)
-		done <- struct{}{}
+		// Signal the other direction to stop.
+		closeFn()
 	}
-	go cp(stream, conn)
-	go cp(conn, stream)
-	<-done
-	stream.Close()
-	conn.Close()
-	<-done
+	go pipe(stream, conn, func() { stream.Close() })
+	go pipe(conn, stream, func() { conn.Close() })
+	wg.Wait()
 }
 
 // ServeHTTP handles incoming HTTP requests from end users.
@@ -1409,18 +1429,71 @@ func scheme(r *http.Request) string {
 
 // isTCPPortAllowed checks if a remote address is permitted by the server's
 // AllowedTCPPorts configuration. An empty allow-list means all ports are allowed.
+//
+// Each entry in AllowedTCPPorts can be:
+//   - An exact addr/port string, e.g. ":22222" or "0.0.0.0:22222"
+//   - A port-only number, e.g. "22222"
+//   - A port range, e.g. "20000-30000" or ":20000-30000"
 func (s *Server) isTCPPortAllowed(remoteAddr string) bool {
 	if len(s.allowedTCPPorts) == 0 {
 		return true // default allow — backward compatible
 	}
+	// Extract the port from remoteAddr for comparison.
+	_, portStr, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		// remoteAddr has no host part — treat the whole thing as a port.
+		portStr = strings.TrimLeft(remoteAddr, ":")
+	}
+	var connPort int
+	for _, c := range portStr {
+		if c < '0' || c > '9' {
+			break
+		}
+		connPort = connPort*10 + int(c-'0')
+	}
+
 	for _, allowed := range s.allowedTCPPorts {
+		// Exact match first (most common case).
 		if allowed == remoteAddr {
 			return true
 		}
-		// Support wildcard port patterns like ":20000-:30000" — simple exact match for now.
-		// Operators can list specific ports like ":22222", ":33333".
+		// Normalise: strip leading colon and host part.
+		allowedPort := strings.TrimLeft(allowed, ":")
+		_, allowedPortOnly, splitErr := net.SplitHostPort(allowed)
+		if splitErr == nil {
+			allowedPort = allowedPortOnly
+		}
+		// Port-range: "20000-30000".
+		if idx := strings.Index(allowedPort, "-"); idx != -1 {
+			lo := parsePortNum(allowedPort[:idx])
+			hi := parsePortNum(allowedPort[idx+1:])
+			if lo > 0 && hi >= lo && connPort >= lo && connPort <= hi {
+				return true
+			}
+			continue
+		}
+		// Single port match.
+		if parsePortNum(allowedPort) == connPort && connPort > 0 {
+			return true
+		}
 	}
 	return false
+}
+
+// parsePortNum parses a decimal port string, returning 0 on error.
+func parsePortNum(s string) int {
+	s = strings.TrimSpace(s)
+	n := 0
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return 0
+		}
+		n = n*10 + int(c-'0')
+	}
+	if n < 1 || n > 65535 {
+		return 0
+	}
+	return n
 }
 
 

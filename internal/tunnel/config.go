@@ -178,7 +178,27 @@ func validateClientConfig(c *ClientConfig) error {
 			return fmt.Errorf("invalid clientConfig: %s has unknown type %q (must be 'http' or 'tcp')", label, t.Type)
 		}
 		if tunnelType == "tcp" && t.Remote == "" && t.Subdomain == "" {
-			return fmt.Errorf("invalid clientConfig: %s (type 'tcp') requires 'remote' or 'subdomain' field", label)
+			return fmt.Errorf(
+				"invalid clientConfig: %s (type 'tcp') requires either:\n"+
+					"  • 'remote' — explicit server port, e.g. remote: \":22222\"\n"+
+					"  • 'subdomain' — derives the server port from the target address",
+				label,
+			)
+		}
+		// Subdomain-only TCP: validate that the target has a port so we can
+		// derive the server listen address automatically.
+		if tunnelType == "tcp" && t.Remote == "" && t.Subdomain != "" {
+			target := t.Target
+			if !strings.Contains(target, "://") && !strings.HasPrefix(target, ":") {
+				// bare host:port — must have a colon
+				if !strings.Contains(target, ":") {
+					return fmt.Errorf(
+						"invalid clientConfig: %s (type 'tcp', subdomain-only) target %q has no port — "+
+							"specify a port in 'target' (e.g. \"localhost:22\") or set 'remote' explicitly",
+						label, target,
+					)
+				}
+			}
 		}
 	}
 

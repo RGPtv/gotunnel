@@ -162,6 +162,7 @@ function selectTunnel(ep) {
   const navTabs   = document.getElementById('nav-tabs');
 
   if (!ep) {
+    document.body.classList.remove('has-tunnel');
     if (viewEmpty) viewEmpty.style.display = 'flex';
     if (navTabs)   navTabs.style.display   = 'none';
     if ($mobileTabs) $mobileTabs.style.display = 'none';
@@ -173,6 +174,7 @@ function selectTunnel(ep) {
     return;
   }
 
+  document.body.classList.add('has-tunnel');
   if (viewEmpty) viewEmpty.style.display = 'none';
   if (navTabs)   navTabs.style.display   = 'flex';
   if ($mobileTabs && window.innerWidth <= 768) $mobileTabs.style.display = 'flex';
@@ -949,6 +951,7 @@ function replayReq(id) {
 function renderTunnels(tunnels) {
   if (!$tunList) return;
   lastTunnels = tunnels || [];
+  lastTunnels.sort((a, b) => (a.endpoint || '').localeCompare(b.endpoint || ''));
 
   if (!lastTunnels.length) {
     $tunList.innerHTML = '';

@@ -1970,6 +1970,9 @@ html[data-theme="dark"] .mobile-tabs {
 
   .layout {
     width: 100%;
+    height: calc(100vh - var(--nav-h));
+  }
+  body.has-tunnel .layout {
     height: calc(100vh - var(--nav-h) - var(--mobile-tab-h));
   }
 

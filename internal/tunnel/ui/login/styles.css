@@ -339,3 +339,7 @@ html[data-theme="dark"] .spinner {
   .spinner { animation: none; }
   .submit-btn, .field input { transition: none; }
 }
+
+
+/* Extracted inline styles */
+.inline-style-1 { display:none }

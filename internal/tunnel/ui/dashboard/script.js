@@ -204,7 +204,7 @@ function _applyTunnelInfo(t) {
   set('tun-conns',    t.connections ?? 0);
 
   const authSection = document.getElementById('tunnel-auth-section');
-  if (authSection) authSection.style.display = 'block';
+  if (authSection) authSection.style.display = 'contents';
 
   _apikeyEnabled = !!t.apikey_enabled;
   _aiEnabled     = !!t.aimode_enabled;

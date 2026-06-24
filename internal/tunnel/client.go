@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -69,6 +70,13 @@ func (c *Client) setStatus(s string) {
 	c.uiStatus = s
 	c.uiStatusMu.Unlock()
 }
+
+// serverError wraps a rejection message sent by the tunnel server (e.g.
+// "listen tcp :22: bind: address already in use"). It is distinguished from
+// a transient network error so the reconnect loop can surface it clearly.
+type serverError struct{ msg string }
+
+func (e *serverError) Error() string { return "server error: " + e.msg }
 
 func addUIReq(tunnel, method, path string, status int, dur time.Duration) {
 	uiMu.Lock()
@@ -286,16 +294,29 @@ func (c *Client) run() {
 		if c.ctx.Err() != nil {
 			return
 		}
-		c.setStatus("reconnecting")
+		c.setStatus("connecting")
 		err := c.connectAndServe()
 		if err != nil {
-			// Apply jitter: ±25% of current backoff.
-			jitter := time.Duration(mrand.Int63n(int64(backoff/2 + 1))) - backoff/4
-			wait := backoff + jitter
-			if wait < 0 {
-				wait = 0
+			// Permanent server-side rejections (port in use, not allowed, bad
+			// token after the challenge, etc.) get a longer backoff and a
+			// distinct status label so the user can see what went wrong.
+			var srvErr *serverError
+			if errors.As(err, &srvErr) {
+				c.setStatus("⚠ " + srvErr.Error())
+				log.Printf("[%s] %v", c.name, srvErr)
+				// Jump straight to the max backoff — no point hammering the
+				// server for a configuration problem.
+				backoff = 30 * time.Second
+			} else {
+				// Apply jitter: ±25% of current backoff.
+				jitter := time.Duration(mrand.Int63n(int64(backoff/2 + 1))) - backoff/4
+				backoff += jitter
+				if backoff < 0 {
+					backoff = 0
+				}
 			}
-			c.setStatus(fmt.Sprintf("connecting... (retrying in %v)", wait.Round(time.Millisecond)))
+			wait := backoff
+			c.setStatus(fmt.Sprintf("⚠ %v — retrying in %v", err, wait.Round(time.Millisecond)))
 			select {
 			case <-time.After(wait):
 			case <-c.ctx.Done():
@@ -397,7 +418,10 @@ func (c *Client) connectAndServe() error {
 	}
 	line = strings.TrimSpace(line)
 	if line != "OK" {
-		return fmt.Errorf("auth rejected: %s", line)
+		// Strip the "ERROR " prefix the server always prepends, then wrap
+		// as a serverError so run() can surface it clearly in the TUI.
+		msg := strings.TrimPrefix(line, "ERROR ")
+		return &serverError{msg: msg}
 	}
 
 	// Auth succeeded — clear the deadline so the data path is unbounded.

@@ -1990,6 +1990,7 @@ html[data-theme="dark"] .mobile-tabs {
 
   .main {
     width: 100%;
+    overflow-x: hidden; /* ← prevent horizontal bleed from card content */
   }
 
   .sub-nav {
@@ -2017,10 +2018,37 @@ html[data-theme="dark"] .mobile-tabs {
     justify-content: center;
   }
 
+  /* ── Overview layout fixes ─────────────────────────────────── */
   .overview-content {
     padding: 16px;
     gap: 16px;
     grid-template-columns: 1fr;
+    overflow-x: hidden; /* prevent horizontal bleed */
+  }
+
+  /* Clip any child that overflows its card boundary */
+  .overview-content .sidebar-section,
+  .home-token-card {
+    overflow: hidden;
+    min-width: 0;
+  }
+
+  /* ── Fix: Server Status row wraps instead of overflowing ───── */
+  .inline-style-12 {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  /* ── Fix: Dashboard-login & similar multi-item rows wrap ────── */
+  .stat-item .inline-style-6 {
+    flex-wrap: wrap;
+    min-width: 0;
+    gap: 6px;
+  }
+
+  /* Give nested flex groups room to shrink */
+  .stat-item > div {
+    min-width: 0;
   }
 
   .home-view {
@@ -2038,6 +2066,17 @@ html[data-theme="dark"] .mobile-tabs {
 
   .token-chip {
     flex-wrap: wrap;
+  }
+
+  /* ── Fix: mobile tab overlap — safety padding at scroll bottom ─
+     Adds breathing room so the last card is never hidden behind
+     the fixed bottom tab bar, including safe-area on notched
+     devices.                                                      */
+  body.has-tunnel .overview-content {
+    padding-bottom: calc(var(--mobile-tab-h) + env(safe-area-inset-bottom) + 16px);
+  }
+  body.has-tunnel .home-view {
+    padding-bottom: calc(var(--mobile-tab-h) + env(safe-area-inset-bottom) + 16px);
   }
 
   /* Mobile traffic table -> cards */
@@ -2170,6 +2209,25 @@ html[data-theme="dark"] .mobile-tabs {
   }
 
   .overview-content .sidebar-section {
+    padding: 16px;
+  }
+
+  /* Force the Server Config grid to a single column on narrow phones.
+     auto-fit with minmax(200px) can still try two columns around 420px;
+     this makes it unambiguously one column. */
+  .inline-style-4 {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Server Status: stack label above Live/Uptime on narrow screens */
+  .inline-style-12 {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  /* Reduce home-view side padding for maximum content space */
+  .home-view {
     padding: 16px;
   }
 }

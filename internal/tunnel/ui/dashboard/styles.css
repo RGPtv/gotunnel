@@ -103,7 +103,20 @@ body {
   -webkit-font-smoothing: antialiased;
   position: relative;
   overflow: hidden;
+  overscroll-behavior: none; /* Prevents Android Chrome rubber-band / page scroll bleed */
   z-index: 0;
+}
+
+/* Suppress Android Chrome's blue tap flash on every interactive element */
+a,
+button,
+input,
+select,
+textarea,
+[role="button"],
+[tabindex] {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation; /* Removes the 300ms tap delay on Android */
 }
 
 /* Ambient Background Glow */
@@ -786,7 +799,11 @@ html[data-theme="dark"] .sub-nav {
   animation: fadeSlideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) backwards;
   position: relative;
   overflow: hidden;
-  height: fit-content;
+  /* height: fit-content causes Chrome/Android to clip grid item content when
+     combined with overflow: hidden. Use align-self: start instead — it achieves
+     the same "shrink to content" behavior via the grid, without the clipping bug. */
+  align-self: start;
+  height: auto;
 }
 
 html[data-theme="dark"] .overview-content .sidebar-section {
@@ -1996,6 +2013,7 @@ html[data-theme="dark"] .mobile-tabs {
   .home-view,
   .table-wrap {
     -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain; /* Prevents Android scroll bleed into the page */
   }
 
   .main {
@@ -2041,6 +2059,7 @@ html[data-theme="dark"] .mobile-tabs {
 
   /* Touch target sizes */
   .nav-hamburger,
+  .sidebar-close,
   .chip-btn,
   .mobile-tab,
   .nav-tab {

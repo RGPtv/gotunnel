@@ -487,6 +487,10 @@ func (ins *Inspector) handleLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Dashboard is not available: no password configured.", http.StatusServiceUnavailable)
 		return
 	}
+	if r.Method == http.MethodGet && ins.isAuthenticated(r) {
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
 	if r.Method == http.MethodPost {
 		// Per-IP rate limiting on login attempts.
 		peerIP, _, _ := net.SplitHostPort(r.RemoteAddr)

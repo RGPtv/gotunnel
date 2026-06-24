@@ -177,8 +177,8 @@ func validateClientConfig(c *ClientConfig) error {
 		if tunnelType != "http" && tunnelType != "tcp" {
 			return fmt.Errorf("invalid clientConfig: %s has unknown type %q (must be 'http' or 'tcp')", label, t.Type)
 		}
-		if tunnelType == "tcp" && t.Remote == "" {
-			return fmt.Errorf("invalid clientConfig: %s (type 'tcp') requires 'remote' field (e.g. remote: ':22222')", label)
+		if tunnelType == "tcp" && t.Remote == "" && t.Subdomain == "" {
+			return fmt.Errorf("invalid clientConfig: %s (type 'tcp') requires 'remote' or 'subdomain' field", label)
 		}
 	}
 

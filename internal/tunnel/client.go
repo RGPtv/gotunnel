@@ -172,6 +172,9 @@ func RunClient(cfg *ClientConfig) {
 		if tunnelType == "http" && t.Subdomain != "" {
 			remoteVal = t.Subdomain
 		}
+		if tunnelType == "tcp" && t.Subdomain != "" && t.Remote == "" {
+			remoteVal = t.Subdomain
+		}
 
 		name := t.Name
 		if name == "" {
@@ -212,7 +215,11 @@ func RunClient(cfg *ClientConfig) {
 			// Single-tunnel mode: full banner.
 			fmt.Fprintf(os.Stderr, "  %-14s %s\n", "Type", tunnelType)
 			if tunnelType == "tcp" {
-				fmt.Fprintf(os.Stderr, "  %-14s %s\n", "Remote Port", t.Remote)
+				remoteDisplay := t.Remote
+				if remoteDisplay == "" && t.Subdomain != "" {
+					remoteDisplay = t.Subdomain
+				}
+				fmt.Fprintf(os.Stderr, "  %-14s %s\n", "Remote Port", remoteDisplay)
 			}
 			if tunnelType == "http" && t.Subdomain != "" {
 				fmt.Fprintf(os.Stderr, "  %-14s %s\n", "Subdomain", t.Subdomain)
@@ -226,7 +233,11 @@ func RunClient(cfg *ClientConfig) {
 			// Multi-tunnel mode: compact per-tunnel summary line.
 			fmt.Fprintf(os.Stderr, "  [%s] %s → %s\n", name, tunnelType, t.Target)
 			if tunnelType == "tcp" {
-				fmt.Fprintf(os.Stderr, "         remote: %s\n", t.Remote)
+				remoteDisplay := t.Remote
+				if remoteDisplay == "" && t.Subdomain != "" {
+					remoteDisplay = t.Subdomain
+				}
+				fmt.Fprintf(os.Stderr, "         remote: %s\n", remoteDisplay)
 			}
 			if tunnelType == "http" && t.Subdomain != "" {
 				fmt.Fprintf(os.Stderr, "         subdomain: %s\n", t.Subdomain)

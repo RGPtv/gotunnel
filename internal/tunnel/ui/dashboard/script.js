@@ -88,24 +88,7 @@ let _aiEnabled       = false;
 let _baPending       = false;
 
 // ── Local persistence ─────────────────────────────────────────
-const REQ_CACHE_PREFIX = 'gotunnel_reqs_';
 const REQ_CACHE_MAX    = 300;
-
-function _loadCachedReqs(endpoint) {
-  try {
-    const raw = localStorage.getItem(REQ_CACHE_PREFIX + endpoint);
-    if (!raw) return [];
-    const arr = JSON.parse(raw);
-    return Array.isArray(arr) ? arr : [];
-  } catch { return []; }
-}
-
-function _saveCachedReqs(endpoint) {
-  try {
-    const reqs = (reqsByTunnel[endpoint] || []).slice(0, REQ_CACHE_MAX);
-    localStorage.setItem(REQ_CACHE_PREFIX + endpoint, JSON.stringify(reqs));
-  } catch {}
-}
 
 function _mergeReqs(existing, incoming) {
   const seen = new Set(existing.map(r => r.id));
@@ -894,7 +877,6 @@ function prependReq(r) {
   if (reqsByTunnel[r.endpoint].length > REQ_CACHE_MAX) {
     reqsByTunnel[r.endpoint] = reqsByTunnel[r.endpoint].slice(0, REQ_CACHE_MAX);
   }
-  _saveCachedReqs(r.endpoint);
 
   // Update count even if we're on a different tab/tunnel
   if (r.endpoint === activeTunnel && $count) {
@@ -930,7 +912,6 @@ function prependReq(r) {
 function clearReqs() {
   if (activeTunnel) {
     reqsByTunnel[activeTunnel] = [];
-    try { localStorage.removeItem(REQ_CACHE_PREFIX + activeTunnel); } catch {}
   }
   _expandedIds.clear();
   _renderList();
@@ -1136,14 +1117,6 @@ $tunList?.addEventListener('keydown', e => {
 
 // ── Boot ─────────────────────────────────────────────────────
 (function boot() {
-  // Restore localStorage cache
-  try {
-    Object.keys(localStorage).forEach(key => {
-      if (!key.startsWith(REQ_CACHE_PREFIX)) return;
-      const ep = key.slice(REQ_CACHE_PREFIX.length);
-      reqsByTunnel[ep] = _loadCachedReqs(ep);
-    });
-  } catch {}
   _renderList();
 
   // Merge in server's ring buffer
@@ -1155,7 +1128,6 @@ $tunList?.addEventListener('keydown', e => {
       arr.forEach(r => { if (r.endpoint) { if (!byEp[r.endpoint]) byEp[r.endpoint] = []; byEp[r.endpoint].push(r); } });
       Object.keys(byEp).forEach(ep => {
         reqsByTunnel[ep] = _mergeReqs(reqsByTunnel[ep] || [], byEp[ep]);
-        _saveCachedReqs(ep);
       });
       _renderList();
     })

@@ -2293,8 +2293,9 @@ html[data-theme="dark"] .mobile-tabs {
 .inline-style-19 {
   display: none;
   flex-direction: column;
+  flex: 1;
+  min-height: 0;
   width: 100%;
-  height: 100%;
   overflow: hidden;
 }
 
@@ -2471,8 +2472,9 @@ html[data-theme="dark"] .mobile-tabs {
 .inline-style-45 {
   display: none;
   flex-direction: column;
+  flex: 1;
+  min-height: 0;
   width: 100%;
-  height: 100%;
 }
 
 .inline-style-46 {

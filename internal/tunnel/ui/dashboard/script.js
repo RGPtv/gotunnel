@@ -1139,13 +1139,24 @@ $tunList?.addEventListener('keydown', e => {
     .then(arr => { if (Array.isArray(arr)) renderTunnels(arr); })
     .catch(() => {});
 
+  let _lastUptime = -1;
   // Status SSE — uptime + tunnels + logs
   function connectStatus() {
     const evs = new EventSource('/api/status/stream');
     evs.onmessage = e => {
       try {
         const d = JSON.parse(e.data);
-        if ($uptime && d.uptime_sec != null) $uptime.textContent = fmtUptime(d.uptime_sec);
+        if (d.uptime_sec != null) {
+          if (_lastUptime !== -1 && d.uptime_sec < _lastUptime) {
+            Object.keys(reqsByTunnel).forEach(ep => { reqsByTunnel[ep] = []; });
+            _expandedIds.clear();
+            const logEl = document.getElementById('srv-event-log');
+            if (logEl) { logEl.innerHTML = '<div class="empty">No events yet...</div>'; logEl._empty = true; }
+            _renderList();
+          }
+          _lastUptime = d.uptime_sec;
+          if ($uptime) $uptime.textContent = fmtUptime(d.uptime_sec);
+        }
         if (Array.isArray(d.tunnels)) renderTunnels(d.tunnels);
 
         const setTxt = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val || '—'; };

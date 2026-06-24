@@ -759,6 +759,7 @@ html[data-theme="dark"] .sub-nav {
   gap: 24px;
   grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
   align-content: start;
+  align-items: start;
   overflow-y: auto;
   flex: 1;
   min-height: 0;
@@ -768,6 +769,7 @@ html[data-theme="dark"] .sub-nav {
   display: grid;
   gap: 24px;
   grid-template-columns: 1fr;
+  align-items: start;
 }
 
 /* Cards in overview */
@@ -792,7 +794,13 @@ html[data-theme="dark"] .sub-nav {
   animation: fadeSlideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) backwards;
   position: relative;
   overflow: visible;
+  /* Sizing: card wraps its content, never stretches to fill grid row */
   height: auto;
+  width: 100%;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
 }
 
 html[data-theme="dark"] .overview-content .sidebar-section {

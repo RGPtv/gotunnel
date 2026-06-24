@@ -2023,14 +2023,17 @@ html[data-theme="dark"] .mobile-tabs {
     padding: 16px;
     gap: 16px;
     grid-template-columns: 1fr;
-    overflow-x: hidden; /* prevent horizontal bleed */
+    /* Cards grow to their natural height; only block horizontal bleed */
+    overflow-x: hidden;
+    overflow-y: auto;
   }
 
-  /* Clip any child that overflows its card boundary */
+  /* Cards fill the single column without clipping — overview scrolls */
   .overview-content .sidebar-section,
   .home-token-card {
-    overflow: hidden;
     min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
   }
 
   /* ── Fix: Server Status row wraps instead of overflowing ───── */
@@ -2046,7 +2049,7 @@ html[data-theme="dark"] .mobile-tabs {
     gap: 6px;
   }
 
-  /* Give nested flex groups room to shrink */
+  /* Give nested flex groups room to shrink rather than push card wider */
   .stat-item > div {
     min-width: 0;
   }
@@ -2069,9 +2072,8 @@ html[data-theme="dark"] .mobile-tabs {
   }
 
   /* ── Fix: mobile tab overlap — safety padding at scroll bottom ─
-     Adds breathing room so the last card is never hidden behind
-     the fixed bottom tab bar, including safe-area on notched
-     devices.                                                      */
+     Ensures the last card is never hidden behind the fixed tab bar,
+     including safe-area on notched / iPhone-X+ devices.           */
   body.has-tunnel .overview-content {
     padding-bottom: calc(var(--mobile-tab-h) + env(safe-area-inset-bottom) + 16px);
   }

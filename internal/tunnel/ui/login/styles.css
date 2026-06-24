@@ -36,10 +36,46 @@ html, body {
   height: 100%;
   background: var(--bg);
   color: var(--text);
-  font-family: 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
-  font-size: 14px;
-  line-height: 1.5;
+  font-family: 'Geist', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+  position: relative;
+  overflow: hidden;
+  z-index: 0;
+}
+
+/* Ambient Background Glow */
+body::before, body::after {
+  content: '';
+  position: absolute;
+  width: 50vw;
+  height: 50vw;
+  min-width: 400px;
+  min-height: 400px;
+  border-radius: 50%;
+  filter: blur(120px);
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.08;
+  animation: float 20s ease-in-out infinite alternate;
+}
+body::before {
+  top: -15%;
+  right: -10%;
+  background: var(--blue);
+}
+body::after {
+  bottom: -15%;
+  left: -10%;
+  background: var(--green);
+  animation-delay: -10s;
+}
+html[data-theme="dark"] body::before, 
+html[data-theme="dark"] body::after {
+  opacity: 0.12;
+}
+@keyframes float {
+  0% { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(40px, -40px) scale(1.1); }
 }
 ::selection { background: var(--accent-dim); color: var(--text); }
 

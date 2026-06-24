@@ -1,5 +1,12 @@
 'use strict';
 
+// ── Theme Init ─────────────────────────────────────────────────
+(function () {
+  var saved = localStorage.getItem('gotunnel-theme');
+  var theme = saved || 'dark';
+  document.documentElement.setAttribute('data-theme', theme);
+})();
+
 (function () {
   const form      = document.getElementById('login-form');
   const submitBtn = document.getElementById('submit-btn');

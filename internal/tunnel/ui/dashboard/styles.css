@@ -786,6 +786,7 @@ html[data-theme="dark"] .sub-nav {
   animation: fadeSlideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) backwards;
   position: relative;
   overflow: hidden;
+  height: fit-content;
 }
 
 html[data-theme="dark"] .overview-content .sidebar-section {
@@ -2018,7 +2019,7 @@ html[data-theme="dark"] .mobile-tabs {
   }
 
   .overview-content {
-    padding: 16px;
+    padding: 16px 16px 0 16px;
     gap: 16px;
     grid-template-columns: 1fr;
   }

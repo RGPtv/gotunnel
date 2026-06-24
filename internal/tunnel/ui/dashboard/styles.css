@@ -1990,7 +1990,6 @@ html[data-theme="dark"] .mobile-tabs {
 
   .main {
     width: 100%;
-    overflow-x: hidden; /* ← prevent horizontal bleed from card content */
   }
 
   .sub-nav {
@@ -2018,40 +2017,10 @@ html[data-theme="dark"] .mobile-tabs {
     justify-content: center;
   }
 
-  /* ── Overview layout fixes ─────────────────────────────────── */
   .overview-content {
     padding: 16px;
     gap: 16px;
     grid-template-columns: 1fr;
-    /* Cards grow to their natural height; only block horizontal bleed */
-    overflow-x: hidden;
-    overflow-y: auto;
-  }
-
-  /* Cards fill the single column without clipping — overview scrolls */
-  .overview-content .sidebar-section,
-  .home-token-card {
-    min-width: 0;
-    max-width: 100%;
-    box-sizing: border-box;
-  }
-
-  /* ── Fix: Server Status row wraps instead of overflowing ───── */
-  .inline-style-12 {
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  /* ── Fix: Dashboard-login & similar multi-item rows wrap ────── */
-  .stat-item .inline-style-6 {
-    flex-wrap: wrap;
-    min-width: 0;
-    gap: 6px;
-  }
-
-  /* Give nested flex groups room to shrink rather than push card wider */
-  .stat-item > div {
-    min-width: 0;
   }
 
   .home-view {
@@ -2069,16 +2038,6 @@ html[data-theme="dark"] .mobile-tabs {
 
   .token-chip {
     flex-wrap: wrap;
-  }
-
-  /* ── Fix: mobile tab overlap — safety padding at scroll bottom ─
-     Ensures the last card is never hidden behind the fixed tab bar,
-     including safe-area on notched / iPhone-X+ devices.           */
-  body.has-tunnel .overview-content {
-    padding-bottom: calc(var(--mobile-tab-h) + env(safe-area-inset-bottom) + 16px);
-  }
-  body.has-tunnel .home-view {
-    padding-bottom: calc(var(--mobile-tab-h) + env(safe-area-inset-bottom) + 16px);
   }
 
   /* Mobile traffic table -> cards */
@@ -2211,25 +2170,6 @@ html[data-theme="dark"] .mobile-tabs {
   }
 
   .overview-content .sidebar-section {
-    padding: 16px;
-  }
-
-  /* Force the Server Config grid to a single column on narrow phones.
-     auto-fit with minmax(200px) can still try two columns around 420px;
-     this makes it unambiguously one column. */
-  .inline-style-4 {
-    grid-template-columns: 1fr !important;
-  }
-
-  /* Server Status: stack label above Live/Uptime on narrow screens */
-  .inline-style-12 {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 6px;
-  }
-
-  /* Reduce home-view side padding for maximum content space */
-  .home-view {
     padding: 16px;
   }
 }

@@ -3,8 +3,14 @@
 
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="referrer" content="no-referrer">
+  <!-- Content Security Policy: tighten to no inline eval, only same-origin scripts,
+       allow fonts.googleapis.com for the Geist font, and block all framing. -->
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'">
+  <meta http-equiv="X-Content-Type-Options" content="nosniff">
+  <meta http-equiv="X-Frame-Options" content="DENY">
   <title>GoTunnel · Dashboard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link
@@ -176,7 +182,7 @@
             </div>
           </div>
           <div class="home-card-body" style="padding-top: 12px;">
-            <div class="srv-config-grid">
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 12px;">
               <div class="stat-item">
                 <span class="stat-label">HTTP Proxy</span>
                 <span class="stat-value blue" id="srv-http">—</span>
@@ -195,16 +201,11 @@
               </div>
               <div class="stat-item" style="grid-column: 1 / -1; margin-top: 8px; padding-top: 12px; border-top: 1px solid var(--border);">
                 <span class="stat-label">Dashboard Login</span>
-                <div style="display:flex;align-items:center;gap:4px">
+                <div style="display:flex;align-items:center;gap:6px">
                   <span class="stat-value" id="srv-dash-user" style="color:var(--text-2);">—</span>
                   <span style="color:var(--text-3); font-size:12px;">/</span>
-                  <span class="stat-value masked-cred" id="srv-dash-pass" style="font-size:12px; color:var(--text-2);">••••••••</span>
-                  <button class="token-btn" id="srv-dash-pass-reveal" title="Reveal password" aria-label="Reveal password">
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                      <circle cx="12" cy="12" r="3"/>
-                    </svg>
-                  </button>
+                  <span style="font-size:11px;color:var(--text-3);font-family:'Geist Mono',monospace">••••••••</span>
+                  <span style="font-size:10px;color:var(--text-3);background:var(--surface-3);border-radius:4px;padding:1px 5px">redacted</span>
                 </div>
               </div>
               <div class="stat-item" style="grid-column: 1 / -1; margin-top: -4px; padding-top: 12px; border-top: 1px solid var(--border);">
@@ -520,16 +521,46 @@
       <div id="view-inspector" style="display: none; flex-direction: column; width: 100%; height: 100%;" role="tabpanel"
         aria-labelledby="tab-inspector">
         <div class="toolbar">
-          <span class="req-count"><strong id="t-count">0</strong> requests</span>
-          <div class="filter-chip show" id="filter-chip" aria-live="polite">
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
-            </svg>
-            <span id="filter-label">all</span>
+          <!-- Method filters -->
+          <div class="filter-group" id="method-filters" role="group" aria-label="Filter by method">
+            <button class="filter-pill active" data-method="" id="filt-method-all">All</button>
+            <button class="filter-pill" data-method="GET"    id="filt-method-GET">GET</button>
+            <button class="filter-pill" data-method="POST"   id="filt-method-POST">POST</button>
+            <button class="filter-pill" data-method="PUT"    id="filt-method-PUT">PUT</button>
+            <button class="filter-pill" data-method="PATCH"  id="filt-method-PATCH">PATCH</button>
+            <button class="filter-pill" data-method="DELETE" id="filt-method-DELETE">DELETE</button>
           </div>
-          <div class="ml-auto"></div>
-          <button class="btn-clear" id="btn-clear">Clear</button>
+
+          <div class="toolbar-divider" aria-hidden="true"></div>
+
+          <!-- Status filters -->
+          <div class="filter-group" id="status-filters" role="group" aria-label="Filter by status">
+            <button class="filter-pill active" data-status="" id="filt-status-all">Any</button>
+            <button class="filter-pill s2x" data-status="2xx" id="filt-status-2xx">2xx</button>
+            <button class="filter-pill s3x" data-status="3xx" id="filt-status-3xx">3xx</button>
+            <button class="filter-pill s4x" data-status="4xx" id="filt-status-4xx">4xx</button>
+            <button class="filter-pill s5x" data-status="5xx" id="filt-status-5xx">5xx</button>
+          </div>
+
+          <!-- Search -->
+          <div class="inspector-search-wrap">
+            <svg class="search-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input class="inspector-search" id="inspector-search" type="text"
+              placeholder="Filter by path or IP…" autocomplete="off" aria-label="Search requests">
+          </div>
+
+          <!-- Right side: count + active filter badge + clear -->
+          <div class="toolbar-right">
+            <span class="req-count" aria-live="polite">
+              <strong id="t-count">0</strong> <span id="t-count-label">requests</span>
+            </span>
+            <div class="filter-chip" id="filter-chip" title="Clear filters" aria-live="polite" style="display:none">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+              <span id="filter-label">all</span>
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </div>
+            <button class="btn-clear" id="btn-clear">Clear all</button>
+          </div>
         </div>
 
         <div class="table-wrap">

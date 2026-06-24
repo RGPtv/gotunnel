@@ -1879,6 +1879,11 @@ html[data-theme="dark"] .auth-toggle input:checked+.auth-toggle-slider {
   flex-shrink: 0;
   z-index: 90;
   box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.05);
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 html[data-theme="dark"] .mobile-tabs {
@@ -1973,10 +1978,13 @@ html[data-theme="dark"] .mobile-tabs {
     width: 100%;
     height: calc(100vh - var(--nav-h));
     height: calc(100dvh - var(--nav-h));
+    padding-bottom: env(safe-area-inset-bottom);
+    box-sizing: border-box;
   }
   body.has-tunnel .layout {
-    height: calc(100vh - var(--nav-h) - var(--mobile-tab-h));
-    height: calc(100dvh - var(--nav-h) - var(--mobile-tab-h));
+    height: calc(100vh - var(--nav-h) - var(--mobile-tab-h) - env(safe-area-inset-bottom));
+    height: calc(100dvh - var(--nav-h) - var(--mobile-tab-h) - env(safe-area-inset-bottom));
+    padding-bottom: 0;
   }
 
   .main {

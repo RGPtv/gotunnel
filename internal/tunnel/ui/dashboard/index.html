@@ -237,28 +237,271 @@
         </div>
       </div>
 
+      
       <!-- Overview View -->
       <div id="view-overview" role="tabpanel" aria-labelledby="tab-overview" class="inline-style-19">
-        
-<div class="overview-content overview-redesign" id="overview-grid">
-<div class="hero-overview-card">
-<div><div class="eyebrow">ACTIVE TUNNEL</div><h2 id="hero-tunnel-name">GoTunnel Endpoint</h2><div class="hero-url" id="tun-proxyurl">—</div></div>
-<div class="hero-status"><span class="status-dot"></span><span id="tun-type">ONLINE</span></div>
-</div>
-<div class="metric-grid">
-<div class="metric-card"><span>Connections</span><strong id="tun-conns">0</strong></div>
-<div class="metric-card"><span>Client IP</span><strong id="tun-clientip">—</strong></div>
-<div class="metric-card"><span>Type</span><strong id="tun-type-clone">—</strong></div>
-<div class="metric-card"><span>Status</span><strong>Healthy</strong></div>
-</div>
-<div class="overview-split">
-<div class="security-panel">
-<h3>Security</h3>
-<p>Authentication and access protection.</p>
-</div>
-<div id="tunnel-auth-section" class="overview-grid"></div>
-</div>
-</div>
+        <div class="overview-redesign">
+          <div class="overview-hero sidebar-section">
+            <div class="hero-top">
+              <div>
+                <div class="card-section-title">Tunnel Overview</div>
+                <div class="hero-url stat-value blue" id="tun-proxyurl">—</div>
+              </div>
+              <div class="live-badge"><div class="live-dot"></div><span>Active</span></div>
+            </div>
+          </div>
+
+          <div class="overview-stats">
+            <div class="sidebar-section stat-card"><div class="stat-label">Connections</div><div class="stat-value green" id="tun-conns">0</div></div>
+            <div class="sidebar-section stat-card"><div class="stat-label">Type</div><div class="stat-value" id="tun-type">—</div></div>
+            <div class="sidebar-section stat-card"><div class="stat-label">Client IP</div><div class="stat-value" id="tun-clientip">—</div></div>
+            <div class="sidebar-section stat-card"><div class="stat-label">Status</div><div class="stat-value green">Online</div></div>
+          </div>
+
+          <div id="tunnel-auth-section" class="overview-grid inline-style-21">
+
+
+            <!-- API Key card -->
+            <div class="sidebar-section" id="apikey-section">
+              <div class="card-section-head">
+                <div class="inline-style-3">
+                  <span class="card-section-title">API Key</span>
+                  <span class="card-section-badge disabled" id="apikey-badge">Off</span>
+                </div>
+                <label class="auth-toggle" title="Enable / disable API key authentication">
+                  <input type="checkbox" id="apikey-toggle" aria-label="Enable API key authentication">
+                  <span class="auth-toggle-slider"></span>
+                </label>
+              </div>
+              <div>
+                <div id="apikey-controls" class="inline-style-21">
+                  <div class="token-box">
+                    <div class="token-header">
+                      <span class="token-header-label">Active key</span>
+                      <div class="token-actions">
+                        <button class="token-btn" id="api-reveal" title="Reveal" aria-label="Reveal API key">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                            <circle cx="12" cy="12" r="3" />
+                          </svg>
+                        </button>
+                        <button class="token-btn" id="api-copy" title="Copy to clipboard" aria-label="Copy API key">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                          </svg>
+                        </button>
+                        <button class="token-btn" id="api-regen" title="Generate new random key"
+                          aria-label="Regenerate API key">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="23 4 23 10 17 10" />
+                            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                    <div class="token-value masked" id="api-val" aria-label="API key value">
+                      ••••••••••••••••••••••••••••••••</div>
+                  </div>
+                  <div id="apikey-custom-section" class="inline-style-22">
+                    <div class="inline-style-23">
+                      Set custom key</div>
+                    <div class="key-input-wrap">
+                      <input class="key-input" type="text" id="apikey-custom-input"
+                        placeholder="Paste or type a custom key…" autocomplete="off" maxlength="128"
+                        aria-label="Custom API key input">
+                      <button class="token-btn inline-style-24" title="Apply custom key" id="apikey-custom-save"
+                        disabled aria-label="Save custom API key">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                          stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      </button>
+                    </div>
+                    <div id="apikey-strength-bar" class="strength-bar inline-style-21" aria-hidden="true">
+                      <div class="strength-seg" id="aks-1"></div>
+                      <div class="strength-seg" id="aks-2"></div>
+                      <div class="strength-seg" id="aks-3"></div>
+                      <div class="strength-seg" id="aks-4"></div>
+                    </div>
+                    <div class="strength-label" id="apikey-strength-label" role="status" aria-live="polite"></div>
+                  </div>
+                  <div class="inline-style-25">
+                    Send as <code class="inline-style-26">X-API-Key</code>
+                    header or <code class="inline-style-26">Authorization: Bearer &lt;key&gt;</code>
+                  </div>
+                </div>
+                <div id="apikey-disabled-msg" class="inline-style-27">
+                  Enable to require an API key for all requests to this tunnel.
+                </div>
+              </div>
+            </div>
+
+            <!-- Basic Auth card -->
+            <div class="sidebar-section" id="basicauth-section">
+              <div class="card-section-head">
+                <div class="inline-style-3">
+                  <span class="card-section-title">Basic Auth</span>
+                  <span class="card-section-badge disabled" id="basicauth-badge">Off</span>
+                </div>
+                <label class="auth-toggle" title="Enable / disable HTTP Basic Authentication">
+                  <input type="checkbox" id="basicauth-toggle" aria-label="Enable Basic Auth">
+                  <span class="auth-toggle-slider"></span>
+                </label>
+              </div>
+              <div>
+                <div id="basicauth-cred-view" class="inline-style-21">
+                  <div class="stat-item">
+                    <span class="stat-label">Username</span>
+                    <div class="inline-style-6">
+                      <span class="stat-value masked-cred" id="ba-user-val">••••••</span>
+                      <button class="token-btn inline-style-28" id="ba-user-reveal" title="Reveal username"
+                        aria-label="Reveal username">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                          stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                  <div class="stat-item">
+                    <span class="stat-label">Password</span>
+                    <div class="inline-style-6">
+                      <span class="stat-value masked-cred" id="ba-pass-val">••••••••</span>
+                      <button class="token-btn inline-style-28" id="ba-pass-reveal" title="Reveal password"
+                        aria-label="Reveal password">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                          stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                  <div id="ba-curl-block" class="curl-block inline-style-21">
+                    <div class="inline-style-29">Example curl
+                    </div>
+                    <code class="curl-code" id="ba-curl-code"></code>
+                    <button class="curl-copy" id="ba-curl-copy">copy</button>
+                  </div>
+                  <button class="auth-save-btn inline-style-30" id="ba-edit-btn">Edit
+                    credentials</button>
+                </div>
+                <div id="basicauth-controls" class="inline-style-21">
+                  <div class="inline-style-31">
+                    <div class="inline-style-32">
+                      <input class="auth-input inline-style-33" type="text" id="basicauth-user" placeholder="Username"
+                        autocomplete="off" aria-label="Basic auth username">
+                      <button class="token-btn inline-style-34" id="ba-gen-user" title="Auto-generate username"
+                        aria-label="Generate username">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                          stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <polyline points="23 4 23 10 17 10" />
+                          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                        </svg>
+                      </button>
+                    </div>
+                    <div class="inline-style-35">
+                      <div class="inline-style-36">
+                        <input class="auth-input inline-style-37" type="password" id="basicauth-pass"
+                          placeholder="Password" autocomplete="new-password" aria-label="Basic auth password">
+                        <button class="token-btn inline-style-38" id="ba-toggle-pass-vis" title="Show/hide password"
+                          aria-label="Toggle password visibility">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                            <circle cx="12" cy="12" r="3" />
+                          </svg>
+                        </button>
+                      </div>
+                      <button class="token-btn inline-style-34" id="ba-gen-pass" title="Auto-generate strong password"
+                        aria-label="Generate password">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                          stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <polyline points="23 4 23 10 17 10" />
+                          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                        </svg>
+                      </button>
+                    </div>
+                    <div class="strength-bar" aria-hidden="true">
+                      <div class="strength-seg" id="bas-1"></div>
+                      <div class="strength-seg" id="bas-2"></div>
+                      <div class="strength-seg" id="bas-3"></div>
+                      <div class="strength-seg" id="bas-4"></div>
+                    </div>
+                    <div class="strength-label" id="ba-strength-label" role="status" aria-live="polite">&nbsp;</div>
+                    <div class="inline-style-39">
+                      <button class="auth-save-btn" id="ba-save-btn">Apply</button>
+                      <button class="auth-save-btn" id="ba-cancel-btn">Cancel</button>
+                    </div>
+                    <div id="basicauth-msg" role="alert" class="inline-style-40"></div>
+                  </div>
+                </div>
+                <div id="basicauth-disabled-msg" class="inline-style-27">
+                  Enable to protect this tunnel with HTTP Basic Authentication.
+                </div>
+              </div>
+            </div>
+
+            <!-- AI Optimization card -->
+            <div class="sidebar-section" id="aimode-section">
+              <div class="card-section-head">
+                <div class="inline-style-3">
+                  <span class="card-section-title">AI Optimization</span>
+                  <span class="card-section-badge disabled" id="aimode-badge">Off</span>
+                </div>
+                <label class="auth-toggle"
+                  title="Optimize tunnel for AI &amp; streaming workloads (LLMs, Ollama, etc.)">
+                  <input type="checkbox" id="aimode-toggle" aria-label="Enable AI optimization">
+                  <span class="auth-toggle-slider"></span>
+                </label>
+              </div>
+              <div>
+                <div class="inline-style-41">
+                  Optimizes the tunnel for streaming AI responses — ideal for LLMs, Ollama, and real-time token
+                  output.
+                </div>
+                <div id="aimode-feats" class="inline-style-42">
+                  <div class="inline-style-43">
+                    <span class="inline-style-44">Body limit</span>
+                    <span class="feat-pill off" id="ai-feat-body">10 MB</span>
+                  </div>
+                  <div class="inline-style-43">
+                    <span class="inline-style-44">Flush buffer</span>
+                    <span class="feat-pill off" id="ai-feat-flush">32 KB</span>
+                  </div>
+                  <div class="inline-style-43">
+                    <span class="inline-style-44">CORS headers</span>
+                    <span class="feat-pill off" id="ai-feat-cors">Disabled</span>
+                  </div>
+                  <div class="inline-style-43">
+                    <span class="inline-style-44">Proxy buffering</span>
+                    <span class="feat-pill off" id="ai-feat-buf">Enabled</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          
+          </div>
+
+          <div class="sidebar-section overview-activity">
+            <div class="card-section-head"><span class="card-section-title">Tunnel Activity</span></div>
+            <div class="overview-stats">
+              <div class="stat-card"><div class="stat-label">Requests Today</div><div class="stat-value">—</div></div>
+              <div class="stat-card"><div class="stat-label">Bandwidth</div><div class="stat-value">—</div></div>
+              <div class="stat-card"><div class="stat-label">Latency</div><div class="stat-value">—</div></div>
+              <div class="stat-card"><div class="stat-label">Errors</div><div class="stat-value">0</div></div>
+            </div>
+          </div>
+
+        </div>
+      </div><!-- /view-overview -->
+
 <!-- Inspector View -->
       <div id="view-inspector" role="tabpanel" aria-labelledby="tab-inspector" class="inline-style-45">
         <div class="toolbar">

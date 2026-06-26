@@ -48,8 +48,6 @@ type Client struct {
 	uiStatusMu sync.RWMutex
 	uiStatus   string
 	uiStreams  atomic.Int32
-
-	
 }
 
 type uiRequest struct {
@@ -68,6 +66,18 @@ var (
 func (c *Client) setStatus(s string) {
 	c.uiStatusMu.Lock()
 	c.uiStatus = s
+	c.uiStatusMu.Unlock()
+}
+
+func (c *Client) getRemoteAddr() string {
+	c.uiStatusMu.RLock()
+	defer c.uiStatusMu.RUnlock()
+	return c.remoteAddr
+}
+
+func (c *Client) setRemoteAddr(addr string) {
+	c.uiStatusMu.Lock()
+	c.remoteAddr = addr
 	c.uiStatusMu.Unlock()
 }
 
@@ -227,7 +237,7 @@ func RunClient(cfg *ClientConfig) {
 			uiStatus:  "connecting...",
 			ctx:       ctx,
 			cancel:    cancel,
-					}
+		}
 
 		if singleTunnel {
 			// Single-tunnel mode: full banner.
@@ -309,7 +319,7 @@ func (c *Client) run() {
 				backoff = 30 * time.Second
 			} else {
 				// Apply jitter: ±25% of current backoff.
-				jitter := time.Duration(mrand.Int63n(int64(backoff/2 + 1))) - backoff/4
+				jitter := time.Duration(mrand.Int63n(int64(backoff/2+1))) - backoff/4
 				backoff += jitter
 				if backoff < 0 {
 					backoff = 0
@@ -346,7 +356,7 @@ func (c *Client) connectAndServe() error {
 		return err
 	}
 	defer conn.Close()
-	
+
 	// connCtx is cancelled when connectAndServe returns (normal or error), so
 	// the close-on-shutdown goroutine below exits promptly instead of leaking
 	// until the whole program shuts down.
@@ -402,7 +412,7 @@ func (c *Client) connectAndServe() error {
 	mac.Write([]byte(nonceHex))
 	clientHmac := hex.EncodeToString(mac.Sum(nil))
 
-	remote := c.remoteAddr
+	remote := c.getRemoteAddr()
 	if remote == "" {
 		remote = "-"
 	}
@@ -417,11 +427,15 @@ func (c *Client) connectAndServe() error {
 		return err
 	}
 	line = strings.TrimSpace(line)
-	if line != "OK" {
+	fields := strings.Fields(line)
+	if len(fields) == 0 || fields[0] != "OK" {
 		// Strip the "ERROR " prefix the server always prepends, then wrap
 		// as a serverError so run() can surface it clearly in the TUI.
 		msg := strings.TrimPrefix(line, "ERROR ")
 		return &serverError{msg: msg}
+	}
+	if c.tunnelType == "tcp" && len(fields) > 1 {
+		c.setRemoteAddr(fields[1])
 	}
 
 	// Auth succeeded — clear the deadline so the data path is unbounded.
@@ -527,8 +541,7 @@ func (c *Client) handleTCPWorker(id int, tunnelConn net.Conn, tunnelReader *bufi
 	targetConn, err := dialer.DialContext(c.ctx, "tcp", targetHost(c.targetAddr))
 	if err != nil {
 		log.Printf("[w%d] tcp dial target failed: %v", id, err)
-		// Close tunnelConn to signal the server the request failed.
-		tunnelConn.Close()
+		fmt.Fprintf(tunnelConn, "ERR %s\n", sanitizeControlLine(err.Error()))
 		return fmt.Errorf("dial target for tcp: %w", err)
 	}
 	defer targetConn.Close()
@@ -541,19 +554,18 @@ func (c *Client) handleTCPWorker(id int, tunnelConn net.Conn, tunnelReader *bufi
 	}
 
 	log.Printf("[w%d] tcp session started: %s", id, c.targetAddr)
+	if _, err := fmt.Fprintf(tunnelConn, "OK\n"); err != nil {
+		return fmt.Errorf("ack tcp target: %w", err)
+	}
 
 	var wg sync.WaitGroup
 	wg.Add(2)
-	pipe := func(dst io.Writer, src io.Reader, closeFn func()) {
+	pipe := func(dst net.Conn, src io.Reader) {
 		defer wg.Done()
-		bp := copyBufPool.Get().(*[]byte)
-		io.CopyBuffer(dst, src, *bp)
-		copyBufPool.Put(bp)
-		// Signal the other direction to finish.
-		closeFn()
+		relayTCP(dst, src)
 	}
-	go pipe(targetConn, tunnelReader, func() { targetConn.Close() })
-	go pipe(tunnelConn, targetConn, func() { tunnelConn.Close() })
+	go pipe(targetConn, tunnelReader)
+	go pipe(tunnelConn, targetConn)
 	wg.Wait()
 
 	log.Printf("[w%d] tcp session closed", id)
@@ -597,8 +609,8 @@ func (c *Client) handleWebSocket(id int, tunnelConn net.Conn, tunnelReader *bufi
 		copyBufPool.Put(bp)
 		done <- struct{}{}
 	}
-	go cp(targetConn, tunnelReader)  
-	go cp(tunnelConn, targetReader)  
+	go cp(targetConn, tunnelReader)
+	go cp(tunnelConn, targetReader)
 	<-done
 	targetConn.Close()
 	tunnelConn.Close()
@@ -655,12 +667,13 @@ func startMultiIPC(clients []*Client) {
 		for i, c := range clients {
 			c.uiStatusMu.RLock()
 			status := c.uiStatus
+			remoteAddr := c.remoteAddr
 			c.uiStatusMu.RUnlock()
 			tunnels[i] = ipc.TunnelState{
 				Name:       c.name,
 				Status:     status,
 				ServerAddr: c.serverAddr,
-				RemoteAddr: c.remoteAddr,
+				RemoteAddr: remoteAddr,
 				TargetAddr: c.targetAddr,
 				TunnelType: c.tunnelType,
 				Workers:    int(c.uiStreams.Load()),

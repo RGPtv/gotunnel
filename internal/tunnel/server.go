@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/big"
 	"net"
 	"net/http"
 	"os"
@@ -42,10 +43,10 @@ var copyBufPool = sync.Pool{
 // ── Per-IP rate limiter for tunnel authentication ─────────────────────────────
 
 const (
-	authRateLimit    = 5               // max auth attempts per window
-	authRateWindow   = 30 * time.Second // sliding window duration
-	authFailDelay    = 500 * time.Millisecond // delay after failed auth to slow scanners
-	authLimiterExpiry = 5 * time.Minute // expire limiter entries after inactivity
+	authRateLimit     = 5                      // max auth attempts per window
+	authRateWindow    = 30 * time.Second       // sliding window duration
+	authFailDelay     = 500 * time.Millisecond // delay after failed auth to slow scanners
+	authLimiterExpiry = 5 * time.Minute        // expire limiter entries after inactivity
 )
 
 // authBucket tracks per-IP authentication attempt counts.
@@ -166,11 +167,11 @@ const (
 )
 
 type Server struct {
-	token           string
-	domain          string
-	httpAddr        string
-	httpsAddr       string
-	
+	token     string
+	domain    string
+	httpAddr  string
+	httpsAddr string
+
 	tcpListeners    map[string]net.Listener
 	mu              sync.RWMutex
 	count           atomic.Int64 // active tunnel connections
@@ -180,8 +181,8 @@ type Server struct {
 	logs            []ipc.LogEntry
 	logsMu          sync.Mutex
 	startTime       time.Time
-	authLimiters    sync.Map       // IP → *authBucket for rate-limiting tunnel auth
-	allowedTCPPorts []string       // if non-empty, only these remote addrs are allowed for TCP tunnels
+	authLimiters    sync.Map // IP → *authBucket for rate-limiting tunnel auth
+	allowedTCPPorts []string // if non-empty, only these remote addrs are allowed for TCP tunnels
 
 	// done is closed when the server is shutting down.  It stops background
 	// goroutines (janitor) that would otherwise run until process exit.
@@ -223,16 +224,24 @@ func (s *Server) srvLog(level int, format string, args ...any) {
 
 func RunServer(cfg *ServerConfig) {
 	httpAddr := cfg.HTTPAddr
-	if httpAddr == "" { httpAddr = ":8080" }
+	if httpAddr == "" {
+		httpAddr = ":8080"
+	}
 	tunAddr := cfg.TunAddr
-	if tunAddr == "" { tunAddr = ":2222" }
+	if tunAddr == "" {
+		tunAddr = ":2222"
+	}
 	token := cfg.Token
 	inspectUser := cfg.InspectUser
-	if inspectUser == "" { inspectUser = "admin" }
+	if inspectUser == "" {
+		inspectUser = "admin"
+	}
 	inspectPass := cfg.InspectPass
 	inspect := cfg.Inspect
-	if inspect == "" { inspect = ":4040" }
-	
+	if inspect == "" {
+		inspect = ":4040"
+	}
+
 	if token == "auto" {
 		b := make([]byte, 32)
 		if _, err := rand.Read(b); err != nil {
@@ -271,21 +280,20 @@ func RunServer(cfg *ServerConfig) {
 			log.Printf("dashboard credentials saved to %s", adminFile)
 		}
 	}
-	
+
 	srv := &Server{
-		token:           token,
-		domain:          cfg.Domain,
-		httpAddr:        httpAddr,
-		httpsAddr:       cfg.HTTPSAddr,
-		
-		tcpListeners:    make(map[string]net.Listener),
-		tunnelMeta:      make(map[string]TunnelMeta),
-		
+		token:     token,
+		domain:    cfg.Domain,
+		httpAddr:  httpAddr,
+		httpsAddr: cfg.HTTPSAddr,
+
+		tcpListeners: make(map[string]net.Listener),
+		tunnelMeta:   make(map[string]TunnelMeta),
+
 		startTime:       time.Now(),
 		allowedTCPPorts: cfg.AllowedTCPPorts,
 		done:            make(chan struct{}),
 	}
-
 
 	if _, err := ipc.StartIPCServer(41400, func() interface{} {
 		// Snapshot pool/meta state under the two read locks, then release
@@ -612,24 +620,16 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 	conn.SetDeadline(time.Time{})
 
 	if tunnelType == "tcp" {
-		if remoteAddr == "" {
-			fmt.Fprintf(conn, "ERROR remote address required for tcp\n")
-			conn.Close()
-			return
-		}
-
-		// Validate against allowed TCP ports if configured.
-		if !s.isTCPPortAllowed(remoteAddr) {
-			fmt.Fprintf(conn, "ERROR tcp port %s is not allowed\n", remoteAddr)
-			conn.Close()
-			s.srvLog(LevelWarn, "TCP port denied: %s from %s", remoteAddr, conn.RemoteAddr())
-			return
-		}
-
 		s.mu.Lock()
-		_, exists := s.tcpListeners[remoteAddr]
-		if !exists {
-			ln, err := net.Listen("tcp", remoteAddr)
+		ln, exists := s.tcpListeners[remoteAddr]
+		if remoteAddr == "" || strings.EqualFold(remoteAddr, "auto") {
+			exists = false
+		}
+		if exists {
+			_ = ln
+		} else {
+			var err error
+			ln, remoteAddr, err = s.listenTCPRemote(remoteAddr)
 			if err != nil {
 				s.mu.Unlock()
 				fmt.Fprintf(conn, "ERROR %v\n", err)
@@ -642,7 +642,8 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 		}
 		s.mu.Unlock()
 
-		fmt.Fprintf(conn, "OK\n")
+		proxyURL := s.buildTCPProxyURL(remoteAddr, subdomain)
+		fmt.Fprintf(conn, "OK %s %s\n", remoteAddr, proxyURL)
 
 		session, err := mux.Client(&bufferedConn{Conn: conn, r: r}, mux.DefaultConfig())
 		if err != nil {
@@ -650,32 +651,13 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 			conn.Close()
 			return
 		}
-
-		proxyURL := "tcp://" + remoteAddr
-		if subdomain != "" {
-			host := subdomain
-			if s.domain != "" {
-				host = subdomain + "." + s.domain
-			}
-			_, port, err := net.SplitHostPort(remoteAddr)
-			if err == nil {
-				proxyURL = "tcp://" + host + ":" + port
-			} else {
-				proxyURL = "tcp://" + host + remoteAddr
-			}
-		}
-
-		extraKeys := []string{}
-		if subdomain != "" {
-			extraKeys = append(extraKeys, subdomain)
-		}
 		n := s.registerSession(session, TunnelMeta{
 			Type:        "tcp",
 			Endpoint:    remoteAddr,
 			ProxyURL:    proxyURL,
 			ConnectedAt: time.Now(),
 			ClientIP:    conn.RemoteAddr().String(),
-		}, extraKeys...)
+		})
 		s.srvLog(LevelSuccess, "tunnel connected %s → tcp:%s (active: %d)", conn.RemoteAddr(), remoteAddr, n)
 		return
 	}
@@ -782,19 +764,28 @@ func (s *Server) handleExternalTCPConn(conn net.Conn, remoteAddr string) {
 		s.srvLog(LevelWarn, "tcp %s: START write failed: %v", conn.RemoteAddr(), err)
 		return
 	}
+	streamReader := bufio.NewReaderSize(stream, 64*1024)
+	stream.SetReadDeadline(time.Now().Add(15 * time.Second))
+	line, err := streamReader.ReadString('\n')
+	stream.SetReadDeadline(time.Time{})
+	if err != nil {
+		s.srvLog(LevelWarn, "tcp %s: target handshake failed for %s: %v", conn.RemoteAddr(), remoteAddr, err)
+		return
+	}
+	line = strings.TrimSpace(line)
+	if line != "OK" {
+		s.srvLog(LevelWarn, "tcp %s: target unavailable for %s: %s", conn.RemoteAddr(), remoteAddr, strings.TrimPrefix(line, "ERR "))
+		return
+	}
 
 	var wg sync.WaitGroup
 	wg.Add(2)
-	pipe := func(dst io.Writer, src io.Reader, closeFn func()) {
+	pipe := func(dst net.Conn, src io.Reader) {
 		defer wg.Done()
-		bp := copyBufPool.Get().(*[]byte)
-		io.CopyBuffer(dst, src, *bp)
-		copyBufPool.Put(bp)
-		// Signal the other direction to stop.
-		closeFn()
+		relayTCP(dst, src)
 	}
-	go pipe(stream, conn, func() { stream.Close() })
-	go pipe(conn, stream, func() { conn.Close() })
+	go pipe(stream, conn)
+	go pipe(conn, streamReader)
 	wg.Wait()
 }
 
@@ -864,12 +855,12 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, reqBody *capp
 	s.tunnelMetaMu.RLock()
 	tMeta, hasMeta := s.tunnelMeta[epKey]
 	s.tunnelMetaMu.RUnlock()
-	
+
 	if !hasMeta || tMeta.Session == nil || tMeta.Session.IsClosed() {
 		http.Error(w, "no tunnel clients connected — is the client running?", http.StatusServiceUnavailable)
 		return
 	}
-	
+
 	sub := ""
 	if epKey != "(default)" {
 		sub = epKey
@@ -1142,7 +1133,7 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request) {
 		copyBufPool.Put(bp)
 		done <- struct{}{}
 	}
-	go cp(stream, brw.Reader) 
+	go cp(stream, brw.Reader)
 	go cp(browserConn, stream)
 	<-done
 	browserConn.Close()
@@ -1174,8 +1165,6 @@ func (c *cappedBuffer) Write(p []byte) (int, error) {
 	}
 	return len(p), nil
 }
-
-
 
 // getEndpointKey returns the tunnel endpoint key for a given host (subdomain or "(default)").
 func (s *Server) getEndpointKey(host string) string {
@@ -1254,13 +1243,124 @@ func (s *Server) buildProxyURL(tunnelType, endpoint string) string {
 	return "http://" + endpoint + s.httpAddr
 }
 
+func (s *Server) buildTCPProxyURL(remoteAddr, subdomain string) string {
+	host, port, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		port = strings.TrimLeft(remoteAddr, ":")
+	}
 
+	publicHost := ""
+	if subdomain != "" {
+		publicHost = subdomain
+		if s.domain != "" {
+			publicHost = subdomain + "." + s.domain
+		}
+	} else if s.domain != "" {
+		publicHost = s.domain
+	} else if host != "" && host != "0.0.0.0" && host != "::" && host != "[::]" {
+		publicHost = host
+	}
 
+	if publicHost != "" && port != "" {
+		return "tcp://" + net.JoinHostPort(publicHost, port)
+	}
+	return "tcp://" + remoteAddr
+}
 
+func (s *Server) listenTCPRemote(requested string) (net.Listener, string, error) {
+	requested = strings.TrimSpace(requested)
+	if requested == "" || strings.EqualFold(requested, "auto") {
+		return s.listenAutoTCPRemote()
+	}
+	if !s.isTCPPortAllowed(requested) {
+		return nil, "", fmt.Errorf("tcp port %s is not allowed", requested)
+	}
+	ln, err := net.Listen("tcp", requested)
+	if err != nil {
+		return nil, "", err
+	}
+	return ln, canonicalTCPAddr(requested, ln.Addr().String()), nil
+}
 
+func (s *Server) listenAutoTCPRemote() (net.Listener, string, error) {
+	if len(s.allowedTCPPorts) == 0 {
+		ln, err := net.Listen("tcp", ":0")
+		if err != nil {
+			return nil, "", err
+		}
+		return ln, canonicalTCPAddr(":0", ln.Addr().String()), nil
+	}
 
+	var lastErr error
+	for _, allowed := range s.allowedTCPPorts {
+		allowed = strings.TrimSpace(allowed)
+		if allowed == "" {
+			continue
+		}
+		host := ""
+		portExpr := strings.TrimLeft(allowed, ":")
+		if h, p, err := net.SplitHostPort(allowed); err == nil {
+			host, portExpr = h, p
+		}
+		if idx := strings.Index(portExpr, "-"); idx != -1 {
+			lo := parsePortNum(portExpr[:idx])
+			hi := parsePortNum(portExpr[idx+1:])
+			if lo == 0 || hi < lo {
+				continue
+			}
+			for i := 0; i < 64; i++ {
+				port := lo + randomInt(hi-lo+1)
+				addr := net.JoinHostPort(host, fmt.Sprintf("%d", port))
+				ln, err := net.Listen("tcp", addr)
+				if err == nil {
+					return ln, canonicalTCPAddr(addr, ln.Addr().String()), nil
+				}
+				lastErr = err
+			}
+			continue
+		}
+		port := parsePortNum(portExpr)
+		if port == 0 {
+			continue
+		}
+		addr := net.JoinHostPort(host, fmt.Sprintf("%d", port))
+		ln, err := net.Listen("tcp", addr)
+		if err == nil {
+			return ln, canonicalTCPAddr(addr, ln.Addr().String()), nil
+		}
+		lastErr = err
+	}
+	if lastErr != nil {
+		return nil, "", fmt.Errorf("no allowed TCP ports available: %w", lastErr)
+	}
+	return nil, "", errors.New("no allowed TCP ports available")
+}
 
+func canonicalTCPAddr(requested, actual string) string {
+	host, port, err := net.SplitHostPort(actual)
+	if err != nil {
+		return actual
+	}
+	reqHost, _, reqErr := net.SplitHostPort(requested)
+	if reqErr == nil && reqHost != "" {
+		host = reqHost
+	}
+	if host == "" || host == "::" || host == "0.0.0.0" {
+		return ":" + port
+	}
+	return net.JoinHostPort(host, port)
+}
 
+func randomInt(n int) int {
+	if n <= 1 {
+		return 0
+	}
+	v, err := rand.Int(rand.Reader, big.NewInt(int64(n)))
+	if err != nil {
+		return int(time.Now().UnixNano() % int64(n))
+	}
+	return int(v.Int64())
+}
 
 // startJanitor periodically scans all pools and removes dead connections.
 // Named pools (subdomain / TCP) are only deleted after they have been
@@ -1383,8 +1483,6 @@ func (s *Server) registerSession(session *mux.Session, meta TunnelMeta, extraKey
 	return n
 }
 
-
-
 // removeHopByHop strips hop-by-hop headers from h, including any headers
 // listed in the Connection header itself.
 func removeHopByHop(h http.Header) {
@@ -1496,7 +1594,6 @@ func parsePortNum(s string) int {
 	return n
 }
 
-
 type bufferedConn struct {
 	net.Conn
 	r *bufio.Reader
@@ -1504,4 +1601,36 @@ type bufferedConn struct {
 
 func (b *bufferedConn) Read(p []byte) (int, error) {
 	return b.r.Read(p)
+}
+
+type closeWriter interface {
+	CloseWrite() error
+}
+
+func relayTCP(dst net.Conn, src io.Reader) {
+	bp := copyBufPool.Get().(*[]byte)
+	_, _ = io.CopyBuffer(dst, src, *bp)
+	copyBufPool.Put(bp)
+	closeTCPWrite(dst)
+}
+
+func closeTCPWrite(conn net.Conn) {
+	if cw, ok := conn.(closeWriter); ok {
+		_ = cw.CloseWrite()
+		return
+	}
+	_ = conn.Close()
+}
+
+func sanitizeControlLine(s string) string {
+	s = strings.ReplaceAll(s, "\r", " ")
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.TrimSpace(s)
+	if len(s) > 200 {
+		return s[:200]
+	}
+	if s == "" {
+		return "unavailable"
+	}
+	return s
 }

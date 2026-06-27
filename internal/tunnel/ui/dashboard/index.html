@@ -280,6 +280,24 @@
           </div>
 
           <!-- ── Auth & Feature Cards ───────────────────────── -->
+          <div id="tunnel-tcp-section" style="display: none">
+            <div class="ov-card">
+              <div class="ov-card-head">
+                <div class="ov-card-title-group">
+                  <div class="ov-icon-wrap">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                    </svg>
+                  </div>
+                  <span class="ov-card-title">TCP Stream</span>
+                </div>
+              </div>
+              <p class="ov-disabled-state" style="margin-top: 12px;">
+                This tunnel is a raw TCP stream. HTTP-specific features like authentication and request inspection are not applicable.
+              </p>
+            </div>
+          </div>
+
           <div id="tunnel-auth-section" style="display: none">
 
             <!-- API Key -->
@@ -503,7 +521,17 @@
 
       <!-- Inspector View -->
       <div id="view-inspector" role="tabpanel" aria-labelledby="tab-inspector" class="inline-style-45">
-        <div class="toolbar">
+        <!-- TCP Empty State -->
+        <div id="tcp-inspector-empty" style="display: none; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-3); text-align: center; padding: 2rem;">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 1rem; opacity: 0.5;">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+          </svg>
+          <p style="font-size: 14px; margin-bottom: 4px; color: var(--text-1); font-weight: 500;">Raw TCP Connection</p>
+          <span style="font-size: 12px;">Traffic inspection is not supported for raw TCP tunnels.</span>
+        </div>
+
+        <div id="http-inspector-content" style="display: flex; flex-direction: column; height: 100%;">
+          <div class="toolbar">
           <!-- Method filters -->
           <div class="filter-group" id="method-filters" role="group" aria-label="Filter by method">
             <button class="filter-pill active" data-method="" id="filt-method-all">All</button>
@@ -579,6 +607,7 @@
             </div>
             <div id="req-list" role="list"></div>
           </div>
+        </div>
         </div>
       </div>
 

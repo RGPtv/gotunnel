@@ -195,6 +195,12 @@ function _clearTunnelInfo() {
   });
   const authSection = document.getElementById('tunnel-auth-section');
   if (authSection) authSection.style.display = 'none';
+  const tcpSection = document.getElementById('tunnel-tcp-section');
+  if (tcpSection) tcpSection.style.display = 'none';
+  const tcpEmpty = document.getElementById('tcp-inspector-empty');
+  const httpContent = document.getElementById('http-inspector-content');
+  if (tcpEmpty) tcpEmpty.style.display = 'none';
+  if (httpContent) httpContent.style.display = 'flex';
   _renderList();
 }
 
@@ -206,7 +212,21 @@ function _applyTunnelInfo(t) {
   set('tun-conns',    t.connections ?? 0);
 
   const authSection = document.getElementById('tunnel-auth-section');
-  if (authSection) authSection.style.display = 'contents';
+  const tcpSection = document.getElementById('tunnel-tcp-section');
+  const tcpEmpty = document.getElementById('tcp-inspector-empty');
+  const httpContent = document.getElementById('http-inspector-content');
+
+  if (t.type === 'tcp') {
+    if (authSection) authSection.style.display = 'none';
+    if (tcpSection) tcpSection.style.display = 'contents';
+    if (tcpEmpty) tcpEmpty.style.display = 'flex';
+    if (httpContent) httpContent.style.display = 'none';
+  } else {
+    if (authSection) authSection.style.display = 'contents';
+    if (tcpSection) tcpSection.style.display = 'none';
+    if (tcpEmpty) tcpEmpty.style.display = 'none';
+    if (httpContent) httpContent.style.display = 'flex';
+  }
 
   _apikeyEnabled = !!t.apikey_enabled;
   _aiEnabled     = !!t.aimode_enabled;

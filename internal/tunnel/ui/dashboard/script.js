@@ -245,14 +245,31 @@ function showToast(msg, type = 'info', duration = 3000) {
   if (!container) return;
   const toast = document.createElement('div');
   toast.className = 'toast' + (type !== 'info' ? ' ' + type : '');
-  toast.textContent = msg;       // textContent — no XSS risk
-  container.appendChild(toast);
-  setTimeout(() => {
-    toast.style.transition = 'opacity .3s, transform .3s';
+
+  const msgSpan = document.createElement('span');
+  msgSpan.className = 'toast-msg';
+  msgSpan.textContent = msg;   // textContent — no XSS risk
+
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'toast-close';
+  closeBtn.setAttribute('aria-label', 'Dismiss notification');
+  closeBtn.innerHTML = '&times;';
+
+  const dismiss = () => {
+    toast.style.transition = 'opacity .2s, transform .2s';
     toast.style.opacity    = '0';
     toast.style.transform  = 'translateY(6px)';
-    setTimeout(() => toast.remove(), 320);
-  }, duration);
+    setTimeout(() => toast.remove(), 220);
+  };
+
+  closeBtn.addEventListener('click', dismiss);
+  toast.append(msgSpan, closeBtn);
+  container.appendChild(toast);
+
+  const timer = setTimeout(dismiss, duration);
+  // Pause auto-dismiss on hover so users can read longer messages
+  toast.addEventListener('mouseenter', () => clearTimeout(timer));
+  toast.addEventListener('mouseleave', () => setTimeout(dismiss, 1500));
 }
 
 // ── Token ─────────────────────────────────────────────────────
@@ -278,7 +295,7 @@ function _maskToken() {
   const val = document.getElementById('home-token-val');
   const btn = document.getElementById('home-token-reveal');
   if (!val) return;
-  val.textContent = '••••••••';
+  val.textContent = '••••••••••••••';
   val.classList.add('masked');
   if (btn) btn.title = 'Reveal';
   clearTimeout(_tokenHideTimer);
@@ -830,15 +847,15 @@ function _populateDetail(detail, r) {
       `<div class="detail-pane">` +
         `<div class="detail-pane-title">Request Headers</div>` +
         `<div class="header-table">${mkHeaders(r.req_headers)}</div>` +
-      `</div>` +
-      `<div class="detail-pane">` +
-        `<div class="detail-pane-title">Response Headers</div>` +
-        `<div class="header-table">${mkHeaders(r.resp_headers)}</div>` +
-        `<div class="detail-pane-title" style="margin-top:12px">` +
+        `<div class="detail-pane-title" style="margin-top:16px">` +
           `Request Body` +
           (sizeTxt ? `<span style="margin-left:6px;font-size:9px;color:var(--text-3);font-weight:400">${sizeTxt}</span>` : '') +
         `</div>` +
         `${bodyHtml}` +
+      `</div>` +
+      `<div class="detail-pane">` +
+        `<div class="detail-pane-title">Response Headers</div>` +
+        `<div class="header-table">${mkHeaders(r.resp_headers)}</div>` +
       `</div>` +
     `</div>`;
 }
@@ -973,6 +990,12 @@ function renderTunnels(tunnels) {
   lastTunnels = tunnels || [];
   lastTunnels.sort((a, b) => (a.endpoint || '').localeCompare(b.endpoint || ''));
 
+  // Clean up request cache for tunnels that no longer exist
+  const activeEndpoints = new Set(lastTunnels.map(t => t.endpoint));
+  Object.keys(reqsByTunnel).forEach(ep => {
+    if (!activeEndpoints.has(ep)) delete reqsByTunnel[ep];
+  });
+
   if (!lastTunnels.length) {
     $tunList.innerHTML = '';
     const msg = document.createElement('div');
@@ -1018,6 +1041,17 @@ $hamburger?.addEventListener('click', () =>
   $sidebar?.classList.contains('open') ? closeMobileMenu() : openMobileMenu());
 $mobileOverlay?.addEventListener('click', closeMobileMenu);
 document.getElementById('sidebar-close')?.addEventListener('click', closeMobileMenu);
+
+// Escape key: close mobile menu or brand dropdown
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if ($sidebar?.classList.contains('open')) { closeMobileMenu(); return; }
+  const menu = document.getElementById('brand-menu');
+  if (menu?.classList.contains('open')) {
+    menu.classList.remove('open');
+    document.getElementById('nav-brand')?.setAttribute('aria-expanded', 'false');
+  }
+});
 
 window.addEventListener('resize', () => {
   if (window.innerWidth > 768) {

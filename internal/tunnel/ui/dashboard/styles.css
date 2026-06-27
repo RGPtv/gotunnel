@@ -512,6 +512,11 @@ html[data-theme="dark"] .sidebar {
   border-radius: 0 3px 3px 0;
 }
 
+.tunnel-item:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: -2px;
+}
+
 .tunnel-dot {
   width: 8px;
   height: 8px;
@@ -1473,6 +1478,14 @@ html[data-theme="dark"] .auth-toggle input:checked+.auth-toggle-slider {
   border-left-color: var(--red);
 }
 
+.req-row:has(.r-method.PATCH) {
+  border-left-color: #8b5cf6;
+}
+
+.req-row:has(.r-method.HEAD) {
+  border-left-color: #ec4899;
+}
+
 .req-row.new-row {
   animation: slideIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
@@ -1499,7 +1512,19 @@ html[data-theme="dark"] .auth-toggle input:checked+.auth-toggle-slider {
 
 .req-detail.open {
   display: block;
-  animation: fadeIn 0.3s ease;
+  animation: fadeIn 0.25s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .r-time {
@@ -1857,6 +1882,35 @@ html[data-theme="dark"] .auth-toggle input:checked+.auth-toggle-slider {
   align-items: center;
   gap: 10px;
   line-height: 1.4;
+  pointer-events: auto;
+}
+
+.toast-msg {
+  flex: 1;
+  min-width: 0;
+}
+
+.toast-close {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: var(--transition);
+  padding: 0;
+  line-height: 1;
+  font-size: 16px;
+}
+
+.toast-close:hover {
+  background: var(--surface-3);
+  color: var(--text);
 }
 
 .toast.success {

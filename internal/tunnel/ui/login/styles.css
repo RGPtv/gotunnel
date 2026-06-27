@@ -291,7 +291,7 @@ html[data-theme="dark"] .card {
   width: 34px;
   height: 34px;
   border: 1px solid var(--border);
-  border-radius: var(--r);
+  border-radius: 50%;
   background: var(--surface-2);
   color: var(--text-3);
   cursor: pointer;

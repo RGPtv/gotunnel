@@ -3083,14 +3083,9 @@ html[data-theme="dark"] .ov-icon-wrap {
   max-width: 760px;
   box-shadow: var(--shadow-sm);
   animation: fadeSlideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) backwards;
-  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
 }
 
-.hv-card:hover {
-  border-color: var(--border-2);
-  box-shadow: var(--shadow-md);
-  transform: translateY(-1px);
-}
+
 
 html[data-theme="dark"] .hv-card {
   background: linear-gradient(160deg, rgba(255,255,255,0.035) 0%, transparent 60%), var(--surface);

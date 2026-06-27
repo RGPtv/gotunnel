@@ -288,20 +288,22 @@ html[data-theme="dark"] .card {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
-  border: 1px solid var(--border);
+  width: 36px;
+  height: 36px;
+  border: 1px solid transparent;
   border-radius: 50%;
   background: var(--surface-2);
-  color: var(--text-3);
+  color: var(--text-2);
   cursor: pointer;
-  transition: background .15s, color .15s, border-color .15s;
+  transition: background .15s, color .15s, transform .15s;
+  flex-shrink: 0;
+  overflow: hidden;
 }
 
 .theme-toggle:hover {
   color: var(--text);
-  border-color: var(--border-2);
   background: var(--surface-3);
+  transform: rotate(15deg);
 }
 
 .theme-toggle:focus-visible,
@@ -313,15 +315,15 @@ html[data-theme="dark"] .card {
 }
 
 .theme-toggle svg {
-  width: 15px;
-  height: 15px;
+  width: 18px;
+  height: 18px;
   position: absolute;
-  transition: opacity .2s, transform .2s;
+  transition: opacity .3s, transform .3s cubic-bezier(.4, 0, .2, 1);
 }
 
 .theme-toggle .icon-moon { opacity: 1; transform: scale(1); }
-.theme-toggle .icon-sun  { opacity: 0; transform: scale(.6) rotate(-20deg); }
-html[data-theme="dark"] .theme-toggle .icon-moon { opacity: 0; transform: scale(.6) rotate(20deg); }
+.theme-toggle .icon-sun  { opacity: 0; transform: scale(.5) translateY(10px); }
+html[data-theme="dark"] .theme-toggle .icon-moon { opacity: 0; transform: scale(.5) translateY(-10px); }
 html[data-theme="dark"] .theme-toggle .icon-sun  { opacity: 1; transform: scale(1); }
 
 /* ── Mobile brand (hidden on desktop) ──────────────────────── */

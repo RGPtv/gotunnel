@@ -3052,3 +3052,304 @@ html[data-theme="dark"] .ov-icon-wrap {
     gap: 10px;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   Home View — redesigned (hv-* namespace)
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Panel — fills the main area, centred column of cards */
+.hv-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px 24px 48px;
+  gap: 20px;
+  overflow-y: auto;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+/* ── Base card ─────────────────────────────────────────────── */
+.hv-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: 760px;
+  box-shadow: var(--shadow-sm);
+  animation: fadeSlideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+}
+
+.hv-card:hover {
+  border-color: var(--border-2);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+html[data-theme="dark"] .hv-card {
+  background: linear-gradient(160deg, rgba(255,255,255,0.035) 0%, transparent 60%), var(--surface);
+  border-color: rgba(255,255,255,0.06);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), var(--shadow-sm);
+}
+
+.hv-card:nth-child(1) { animation-delay: 0s; }
+.hv-card:nth-child(2) { animation-delay: 0.08s; }
+.hv-card:nth-child(3) { animation-delay: 0.16s; }
+
+/* ── Card head ─────────────────────────────────────────────── */
+.hv-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.hv-title-group {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.hv-card-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.2px;
+}
+
+/* ── Auth Token card ───────────────────────────────────────── */
+
+/* Override the legacy #home-token-val chip styles for the new token-box context */
+.token-box #home-token-val {
+  font-family: 'Geist Mono', monospace;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  padding: 12px 16px;
+  word-break: break-all;
+  white-space: normal;
+  line-height: 1.5;
+  min-height: 46px;
+  flex: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.token-box #home-token-val.masked {
+  color: var(--text-3);
+  letter-spacing: 5px;
+  font-size: 11px;
+  padding-top: 14px;
+}
+
+.hv-hint {
+  font-size: 12px;
+  color: var(--text-3);
+  line-height: 1.7;
+  margin: 0;
+}
+
+/* ── Server config card ────────────────────────────────────── */
+.hv-config-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.hv-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 12px 14px;
+  background: var(--bg);
+}
+
+.hv-stat-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  white-space: nowrap;
+}
+
+.hv-stat-val {
+  font-family: 'Geist Mono', monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hv-stat-val.hv-blue  { color: var(--blue); }
+.hv-stat-val.hv-muted { color: var(--text-2); }
+
+.hv-full-col {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hv-login-val {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hv-sep {
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+.hv-pass-dots {
+  font-family: 'Geist Mono', monospace;
+  font-size: 13px;
+  color: var(--text-3);
+  font-weight: 600;
+  letter-spacing: 2px;
+}
+
+.hv-redacted-badge {
+  font-size: 9px;
+  font-weight: 800;
+  color: var(--text-3);
+  background: var(--surface-3);
+  border-radius: 4px;
+  padding: 2px 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Status bar */
+.hv-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.hv-live {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--green);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.hv-status-sep {
+  width: 1px;
+  height: 14px;
+  background: var(--border-2);
+  flex-shrink: 0;
+}
+
+.hv-uptime-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+.hv-uptime-val {
+  font-family: 'Geist Mono', monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+/* ── Event log card ────────────────────────────────────────── */
+.hv-log-card {
+  gap: 14px;
+}
+
+.hv-log {
+  min-height: 180px;
+  max-height: 300px;
+  overflow-y: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: 'Geist Mono', monospace;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--text-2);
+}
+
+/* The JS-created empty state uses .empty — give it tighter padding inside log */
+.hv-log .empty {
+  padding: 28px 16px;
+  gap: 8px;
+}
+
+.hv-log .empty svg {
+  width: 28px;
+  height: 28px;
+}
+
+.hv-log .empty p {
+  font-size: 13px;
+}
+
+.hv-log .empty span {
+  font-size: 12px;
+}
+
+/* ── Responsive ────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .hv-panel {
+    padding: 20px 16px 40px;
+    gap: 14px;
+  }
+
+  .hv-card {
+    padding: 16px;
+    gap: 14px;
+  }
+
+  .hv-config-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hv-full-col {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+}
+
+@media (max-width: 480px) {
+  .hv-panel {
+    padding: 16px 12px 40px;
+    gap: 12px;
+  }
+
+  .hv-log {
+    min-height: 140px;
+    max-height: 220px;
+  }
+}

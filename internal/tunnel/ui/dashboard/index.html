@@ -118,126 +118,124 @@
       </div>
 
       <!-- Home View -->
-      <div id="view-empty" class="home-view" role="main">
-        <div class="home-token-card">
-          <div class="card-section-head">
-            <div class="inline-style-3">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-              </svg>
-              <span class="card-section-title">Auth Token</span>
+      <div id="view-empty" class="hv-panel" role="main">
+
+        <!-- ── Auth Token ────────────────────────────────────── -->
+        <div class="hv-card">
+          <div class="hv-card-head">
+            <div class="hv-title-group">
+              <div class="ov-icon-wrap">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                </svg>
+              </div>
+              <span class="hv-card-title">Auth Token</span>
             </div>
           </div>
-          <div class="home-card-body">
-            <div class="token-chip" id="home-token-chip" title="Session token">
-              <span class="chip-label">Token:</span>
-              <span id="home-token-val" class="masked" aria-label="Token value">••••••••••••••</span>
-              <button class="chip-btn" id="home-token-reveal" title="Reveal token" aria-label="Reveal token">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                  <circle cx="12" cy="12" r="3" />
-                </svg>
-              </button>
-              <button class="chip-btn" id="home-token-copy" title="Copy token" aria-label="Copy token">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                </svg>
-              </button>
-              <button class="chip-btn" id="home-token-regen" title="Generate new token" aria-label="Regenerate token">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                  stroke-linecap="round" stroke-linejoin="round">
-                  <polyline points="23 4 23 10 17 10" />
-                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-                </svg>
-              </button>
+
+          <div class="token-box">
+            <div class="token-header">
+              <span class="token-header-label">Session token</span>
+              <div class="token-actions">
+                <button class="token-btn" id="home-token-reveal" title="Reveal token" aria-label="Reveal token">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+                  </svg>
+                </button>
+                <button class="token-btn" id="home-token-copy" title="Copy token" aria-label="Copy token">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                  </svg>
+                </button>
+                <button class="token-btn" id="home-token-regen" title="Generate new token" aria-label="Regenerate token">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                  </svg>
+                </button>
+              </div>
             </div>
-            <p class="home-hint">Copy this token and paste it into the client config.</p>
+            <div id="home-token-val" class="token-value masked" aria-label="Token value">••••••••••••••</div>
+          </div>
+
+          <p class="hv-hint">Paste this token into your <code class="ov-code">gotunnel</code> client config to authenticate connections to this server.</p>
+        </div>
+
+        <!-- ── Server Configuration ──────────────────────────── -->
+        <div class="hv-card">
+          <div class="hv-card-head">
+            <div class="hv-title-group">
+              <div class="ov-icon-wrap">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/>
+                  <rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>
+                  <line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/>
+                </svg>
+              </div>
+              <span class="hv-card-title">Server Configuration</span>
+            </div>
+          </div>
+
+          <div class="hv-config-grid">
+            <div class="hv-stat">
+              <span class="hv-stat-label">HTTP Proxy</span>
+              <span class="hv-stat-val hv-blue" id="srv-http">—</span>
+            </div>
+            <div class="hv-stat">
+              <span class="hv-stat-label">Tunnel Port</span>
+              <span class="hv-stat-val" id="srv-tun">—</span>
+            </div>
+            <div class="hv-stat">
+              <span class="hv-stat-label">HTTPS Proxy</span>
+              <span class="hv-stat-val hv-blue" id="srv-https">—</span>
+            </div>
+            <div class="hv-stat">
+              <span class="hv-stat-label">Dashboard</span>
+              <span class="hv-stat-val" id="srv-dash-addr">—</span>
+            </div>
+            <div class="hv-stat hv-full-col">
+              <span class="hv-stat-label">Login</span>
+              <div class="hv-login-val">
+                <span class="hv-stat-val hv-muted" id="srv-dash-user">—</span>
+                <span class="hv-sep">/</span>
+                <span class="hv-pass-dots">••••••••</span>
+                <span class="hv-redacted-badge">redacted</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="hv-status-bar">
+            <div class="hv-live">
+              <div class="live-dot" aria-hidden="true"></div>
+              <span>Live</span>
+            </div>
+            <span class="hv-status-sep" aria-hidden="true"></span>
+            <span class="hv-uptime-label">Uptime</span>
+            <span class="hv-uptime-val" id="uptime">—</span>
           </div>
         </div>
 
-        <div class="home-token-card">
-          <div class="card-section-head">
-            <div class="inline-style-3">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <rect x="2" y="2" width="20" height="8" rx="2" ry="2" />
-                <rect x="2" y="14" width="20" height="8" rx="2" ry="2" />
-                <line x1="6" y1="6" x2="6.01" y2="6" />
-                <line x1="6" y1="18" x2="6.01" y2="18" />
-              </svg>
-              <span class="card-section-title">Server Configuration</span>
+        <!-- ── Event Log ──────────────────────────────────────── -->
+        <div class="hv-card hv-log-card">
+          <div class="hv-card-head">
+            <div class="hv-title-group">
+              <div class="ov-icon-wrap">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
+                </svg>
+              </div>
+              <span class="hv-card-title">Event Log</span>
             </div>
           </div>
-          <div class="home-card-body">
-            <div class="inline-style-4">
-              <div class="stat-item">
-                <span class="stat-label">HTTP Proxy</span>
-                <span class="stat-value blue" id="srv-http">—</span>
-              </div>
-              <div class="stat-item">
-                <span class="stat-label">Tunnel Port</span>
-                <span class="stat-value" id="srv-tun">—</span>
-              </div>
-              <div class="stat-item">
-                <span class="stat-label">HTTPS Proxy</span>
-                <span class="stat-value blue" id="srv-https">—</span>
-              </div>
-              <div class="stat-item">
-                <span class="stat-label">Dashboard Address</span>
-                <span class="stat-value" id="srv-dash-addr">—</span>
-              </div>
-              <div class="stat-item inline-style-5">
-                <span class="stat-label">Dashboard Login</span>
-                <div class="inline-style-6">
-                  <span class="stat-value inline-style-7" id="srv-dash-user">—</span>
-                  <span class="inline-style-8">/</span>
-                  <span class="inline-style-9">••••••••</span>
-                  <span class="inline-style-10">redacted</span>
-                </div>
-              </div>
-              <div class="stat-item inline-style-11">
-                <span class="stat-label">Server Status</span>
-                <div class="inline-style-12">
-                  <div class="live-badge inline-style-13">
-                    <div class="live-dot" aria-hidden="true"></div>
-                    <span>Live</span>
-                  </div>
-                  <span class="inline-style-14">|</span>
-                  <div class="inline-style-6">
-                    <span class="stat-label">Uptime:</span>
-                    <span class="nav-uptime inline-style-15" id="uptime">—</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+
+          <div id="srv-event-log" class="hv-log">
+            <div class="empty hv-log-empty">No events yet…</div>
           </div>
         </div>
 
-        <div class="home-token-card">
-          <div class="card-section-head">
-            <div class="inline-style-3">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-                stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <polyline points="4 17 10 11 4 5"></polyline>
-                <line x1="12" y1="19" x2="20" y2="19"></line>
-              </svg>
-              <span class="card-section-title">Event Log</span>
-            </div>
-          </div>
-          <div class="home-card-body inline-style-16">
-            <div id="srv-event-log" class="inline-style-17">
-              <div class="empty inline-style-18">No events yet...</div>
-            </div>
-          </div>
-        </div>
       </div>
 
-      <!-- Overview View -->
+            <!-- Overview View -->
       <div id="view-overview" role="tabpanel" aria-labelledby="tab-overview" class="ov-panel">
         <div class="ov-grid" id="overview-grid">
 

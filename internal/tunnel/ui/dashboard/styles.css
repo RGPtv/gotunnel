@@ -1024,6 +1024,24 @@ html[data-theme="dark"] .auth-toggle input:checked+.auth-toggle-slider {
   transform: scale(0.95);
 }
 
+.token-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Spinner used inside token-btn when loading */
+@keyframes btn-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.btn-spinner {
+  animation: btn-spin 0.75s linear infinite;
+  transform-origin: center;
+  display: block;
+}
+
 .token-value {
   font-family: 'Geist Mono', monospace;
   font-size: 13px;

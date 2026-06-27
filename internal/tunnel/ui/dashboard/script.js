@@ -27,6 +27,53 @@ function esc(s) {
     .replace(/'/g, '&#039;');
 }
 
+// ── Reveal-button icon helpers ────────────────────────────────
+/** Eye-open or eye-slash SVG string. slashed=true → hide icon. */
+function _svgEye(slashed, size) {
+  size = size || 14;
+  if (slashed) {
+    return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
+  }
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+}
+
+/** Spinning arc SVG for loading state. */
+function _svgSpinner(size) {
+  size = size || 14;
+  return `<svg class="btn-spinner" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" stroke-dasharray="14 42" stroke-linecap="round"/></svg>`;
+}
+
+/**
+ * Update a reveal button's icon + accessible label.
+ * isRevealed=true  → eye-slash + "Hide"   (value is now visible)
+ * isRevealed=false → eye-open  + "Reveal" (value is hidden)
+ */
+function _setRevealIcon(btn, isRevealed) {
+  if (!btn) return;
+  const size = btn.classList.contains('ov-sm-btn') ? 12 : 14;
+  btn.innerHTML = _svgEye(isRevealed, size);
+  const label = isRevealed ? 'Hide' : 'Reveal';
+  btn.title = label;
+  btn.setAttribute('aria-label', label);
+}
+
+/**
+ * Put a button into / out of loading state.
+ * loading=true  → disable + show spinner
+ * loading=false → re-enable + restore reveal icon (fallbackRevealed sets which icon)
+ */
+function _setBtnLoading(btn, loading, fallbackRevealed) {
+  if (!btn) return;
+  if (loading) {
+    const size = btn.classList.contains('ov-sm-btn') ? 12 : 14;
+    btn.innerHTML = _svgSpinner(size);
+    btn.disabled  = true;
+  } else {
+    btn.disabled = false;
+    if (fallbackRevealed !== undefined) _setRevealIcon(btn, fallbackRevealed);
+  }
+}
+
 /** Return a safe numeric string from a request ID. Prevents attribute injection. */
 function safeId(id) {
   const n = parseInt(id, 10);
@@ -278,17 +325,18 @@ function tokenReveal() {
   const btn = document.getElementById('home-token-reveal');
   if (!val) return;
   if (!val.classList.contains('masked')) { _maskToken(); return; }
+  _setBtnLoading(btn, true);
   fetch('/api/token', { method: 'POST', headers: { 'X-CSRF-Token': getCsrfToken() } })
     .then(r => { if (!r.ok) return r.text().then(t => { throw new Error(t || 'Server error ' + r.status); }); return r.json(); })
     .then(d => {
-      if (!d.token) { showToast('Token not available', 'error'); return; }
+      if (!d.token) { _setBtnLoading(btn, false, false); showToast('Token not available', 'error'); return; }
       val.textContent = d.token;  // textContent — safe
       val.classList.remove('masked');
-      if (btn) btn.title = 'Hide';
+      _setBtnLoading(btn, false, true);
       clearTimeout(_tokenHideTimer);
       _tokenHideTimer = setTimeout(_maskToken, 30000);
     })
-    .catch(err => showToast('Could not fetch token: ' + (err.message || 'unknown error'), 'error'));
+    .catch(err => { _setBtnLoading(btn, false, false); showToast('Could not fetch token: ' + (err.message || 'unknown error'), 'error'); });
 }
 
 function _maskToken() {
@@ -297,7 +345,7 @@ function _maskToken() {
   if (!val) return;
   val.textContent = '••••••••••••••';
   val.classList.add('masked');
-  if (btn) btn.title = 'Reveal';
+  _setRevealIcon(btn, false);
   clearTimeout(_tokenHideTimer);
 }
 
@@ -318,7 +366,7 @@ function tokenRegenerate() {
       const val = document.getElementById('home-token-val');
       const btn = document.getElementById('home-token-reveal');
       if (val) { val.textContent = d.token; val.classList.remove('masked'); }
-      if (btn) btn.title = 'Hide';
+      _setRevealIcon(btn, true);
       clearTimeout(_tokenHideTimer);
       _tokenHideTimer = setTimeout(_maskToken, 30000);
       showToast('New Auth Token generated', 'success');
@@ -358,6 +406,7 @@ function apiReveal() {
   const btn = document.getElementById('api-reveal');
   if (!val || !activeTunnel) return;
   if (!val.classList.contains('masked')) { _maskApiKey(); return; }
+  _setBtnLoading(btn, true);
   fetch('/api/tunnels/apikey', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
@@ -365,14 +414,14 @@ function apiReveal() {
   })
     .then(r => { if (!r.ok) throw new Error(); return r.json(); })
     .then(d => {
-      if (!d.apikey) return;
+      if (!d.apikey) { _setBtnLoading(btn, false, false); return; }
       val.textContent = d.apikey;   // textContent — safe
       val.classList.remove('masked');
-      if (btn) btn.title = 'Hide key';
+      _setBtnLoading(btn, false, true);
       clearTimeout(_apikeyHideTimer);
       _apikeyHideTimer = setTimeout(_maskApiKey, 30000);
     })
-    .catch(() => showToast('Could not fetch API key', 'error'));
+    .catch(() => { _setBtnLoading(btn, false, false); showToast('Could not fetch API key', 'error'); });
 }
 
 function _maskApiKey() {
@@ -381,7 +430,7 @@ function _maskApiKey() {
   if (!val) return;
   val.textContent = '••••••••••••••••••••••••••••••••';
   val.classList.add('masked');
-  if (btn) btn.title = 'Reveal';
+  _setRevealIcon(btn, false);
   clearTimeout(_apikeyHideTimer);
 }
 
@@ -523,6 +572,10 @@ function basicAuthToggleChanged() {
     if (controls)    controls.style.display    = 'block';
     if (disabledMsg) disabledMsg.style.display = 'none';
     toggle.checked = true;
+    // Always start with password hidden when the form opens
+    const passInput = document.getElementById('basicauth-pass');
+    if (passInput) passInput.type = 'password';
+    _setRevealIcon(document.getElementById('ba-toggle-pass-vis'), false);
     const msgEl = document.getElementById('basicauth-msg');
     if (msgEl) { msgEl.textContent = 'Enter credentials and click Apply to enable.'; msgEl.style.display = 'block'; msgEl.style.color = 'var(--text-3)'; }
     showToast('Enter credentials and click Apply to enable Basic Auth', 'info');
@@ -541,6 +594,10 @@ function basicAuthToggleChanged() {
 function baOpenEdit() {
   document.getElementById('basicauth-cred-view')?.style.setProperty('display','none');
   document.getElementById('basicauth-controls')?.style.setProperty('display','block');
+  // Always start with password hidden when opening the form
+  const passInput = document.getElementById('basicauth-pass');
+  if (passInput) passInput.type = 'password';
+  _setRevealIcon(document.getElementById('ba-toggle-pass-vis'), false);
 }
 
 function baCancelEdit() {
@@ -576,7 +633,10 @@ function basicAuthSave() {
     .then(r => { if (!r.ok) return r.text().then(t => { throw new Error(t); }); return r.json(); })
     .then(() => {
       _baPending = false; _baEnabled = true; _applyBasicAuthState(true);
-      userInput.value = ''; passInput.value = ''; baPassStrength();
+      userInput.value = ''; passInput.value = '';
+      passInput.type = 'password';
+      _setRevealIcon(document.getElementById('ba-toggle-pass-vis'), false);
+      baPassStrength();
       showToast('Basic auth credentials saved', 'success');
     })
     .catch(err => showMsg(err.message || 'Failed to save credentials', 'var(--red)'));
@@ -589,8 +649,10 @@ function baReveal(field) {
   if (!valEl.classList.contains('masked-cred')) {
     valEl.textContent = field === 'user' ? '••••••' : '••••••••';
     valEl.classList.add('masked-cred');
+    _setRevealIcon(btnEl, false);
     return;
   }
+  _setBtnLoading(btnEl, true);
   fetch('/api/tunnels/basicauth-creds', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
@@ -599,20 +661,20 @@ function baReveal(field) {
     .then(r => { if (!r.ok) throw new Error(); return r.json(); })
     .then(d => {
       const val = field === 'user' ? d.username : d.password;
-      if (!val) return;
+      if (!val) { _setBtnLoading(btnEl, false, false); return; }
       valEl.textContent = val;   // textContent — safe
       valEl.classList.remove('masked-cred');
-      if (btnEl) btnEl.title = 'Hide';
+      _setBtnLoading(btnEl, false, true);
       const hide = () => {
         valEl.textContent = field === 'user' ? '••••••' : '••••••••';
         valEl.classList.add('masked-cred');
-        if (btnEl) btnEl.title = 'Reveal';
+        _setRevealIcon(btnEl, false);
       };
       if (field === 'user') _baUserHideTimer = setTimeout(hide, 15000);
       else                  _baPassHideTimer = setTimeout(hide, 15000);
       _updateCurlBlock(d);
     })
-    .catch(() => showToast('Could not fetch credentials', 'error'));
+    .catch(() => { _setBtnLoading(btnEl, false, false); showToast('Could not fetch credentials', 'error'); });
 }
 
 function _updateCurlBlock(d) {
@@ -660,7 +722,9 @@ function baTogglePassVis() {
   if (!input) return;
   const isPass = input.type === 'password';
   input.type = isPass ? 'text' : 'password';
-  if (btn) btn.title = isPass ? 'Hide password' : 'Show password';
+  // isPass=true means it WAS hidden, now revealed → show eye-slash (click to hide)
+  // isPass=false means it WAS visible, now hidden → show eye-open (click to reveal)
+  _setRevealIcon(btn, isPass);
 }
 
 function baPassStrength() {

@@ -68,7 +68,7 @@
 
     <span class="nav-active-tunnel" id="nav-active-tunnel" aria-live="polite"></span>
 
-    <button type="button" id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode"
+    <button type="button" id="theme-toggle" class="theme-toggle inline-style-1" aria-label="Toggle dark mode"
       title="Toggle dark mode">
       <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -110,7 +110,7 @@
     <!-- ── Main ─────────────────────────────────── -->
     <div class="main">
 
-      <div class="sub-nav" id="nav-tabs" role="tablist">
+      <div class="sub-nav inline-style-2" id="nav-tabs" role="tablist">
         <button class="nav-tab active" id="tab-overview" role="tab" aria-selected="true"
           aria-controls="view-overview">Overview</button>
         <button class="nav-tab" id="tab-inspector" role="tab" aria-selected="false"
@@ -292,7 +292,7 @@
                   <span class="ov-card-title">TCP Stream</span>
                 </div>
               </div>
-              <p class="ov-disabled-state">
+              <p class="ov-disabled-state" style="margin-top: 12px;">
                 This tunnel is a raw TCP stream. HTTP-specific features like authentication and request inspection are not applicable.
               </p>
             </div>
@@ -520,17 +520,17 @@
       </div><!-- /view-overview -->
 
       <!-- Inspector View -->
-      <div id="view-inspector" role="tabpanel" aria-labelledby="tab-inspector" class="inspector-panel">
+      <div id="view-inspector" role="tabpanel" aria-labelledby="tab-inspector" class="inline-style-45">
         <!-- TCP Empty State -->
-        <div id="tcp-inspector-empty" class="tcp-empty-state">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="tcp-es-icon">
+        <div id="tcp-inspector-empty" style="display: none; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-3); text-align: center; padding: 2rem;">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 1rem; opacity: 0.5;">
             <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
           </svg>
-          <p class="tcp-es-title">Raw TCP Connection</p>
-          <span class="tcp-es-sub">Traffic inspection is not supported for raw TCP tunnels.</span>
+          <p style="font-size: 14px; margin-bottom: 4px; color: var(--text-1); font-weight: 500;">Raw TCP Connection</p>
+          <span style="font-size: 12px;">Traffic inspection is not supported for raw TCP tunnels.</span>
         </div>
 
-        <div id="http-inspector-content" class="inspector-body">
+        <div id="http-inspector-content" style="display: flex; flex-direction: column; height: 100%;">
           <div class="toolbar">
           <!-- Method filters -->
           <div class="filter-group" id="method-filters" role="group" aria-label="Filter by method">
@@ -569,7 +569,7 @@
             <span class="req-count" aria-live="polite">
               <strong id="t-count">0</strong> <span id="t-count-label">requests</span>
             </span>
-            <div class="filter-chip" id="filter-chip" title="Clear filters" aria-live="polite">
+            <div class="filter-chip inline-style-21" id="filter-chip" title="Clear filters" aria-live="polite">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
@@ -593,7 +593,7 @@
             <span class="th">Path</span>
             <span class="th">Status</span>
             <span class="th">Duration</span>
-            <span class="th th-right">Actions</span>
+            <span class="th inline-style-46">Actions</span>
           </div>
           <div class="table-body" id="table-body" role="list">
             <div class="empty" id="empty-state" role="status">
@@ -619,7 +619,7 @@
 
 
   <!-- Mobile bottom tabs (only shown when a tunnel is selected, only visible on mobile) -->
-  <div class="mobile-tabs" id="mobile-tabs" role="tablist" aria-label="View selector">
+  <div class="mobile-tabs inline-style-21" id="mobile-tabs" role="tablist" aria-label="View selector">
     <button class="mobile-tab active" id="mob-tab-overview" role="tab" aria-selected="true"
       aria-controls="view-overview">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"

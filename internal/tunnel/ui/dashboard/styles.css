@@ -2572,11 +2572,483 @@ html[data-theme="dark"] .mobile-tabs {
   text-align: right
 }
 
-.overview-redesign{display:flex;flex-direction:column;gap:18px;animation:fadeIn .35s ease}
-.overview-hero{padding:24px}
-.hero-top{display:flex;justify-content:space-between;align-items:center;gap:16px}
-.hero-url{font-size:1.1rem;margin-top:8px;word-break:break-all}
-.overview-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px}
-.stat-card{padding:18px;transition:transform .2s ease}
-.stat-card:hover{transform:translateY(-2px)}
-.overview-activity{margin-top:6px}
+/* ═══════════════════════════════════════════════════════════════
+   Overview — redesigned (replaces inline-style-19 through -44)
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Panel (mirrors what inline-style-19 did) */
+.ov-panel {
+  display: none;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
+/* Scrollable grid */
+.ov-grid {
+  display: grid;
+  gap: 20px;
+  padding: 28px;
+  grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr));
+  align-content: start;
+  align-items: start;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ── Base card ─────────────────────────────────────────────── */
+.ov-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: var(--shadow-sm);
+  animation: fadeSlideUp 0.45s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  align-self: start;
+}
+
+.ov-card:hover {
+  border-color: var(--border-2);
+  box-shadow: var(--shadow-md);
+}
+
+html[data-theme="dark"] .ov-card {
+  background: linear-gradient(160deg, rgba(255,255,255,0.035) 0%, transparent 60%), var(--surface);
+  border-color: rgba(255,255,255,0.06);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), var(--shadow-sm);
+}
+
+/* Animation stagger for auth cards */
+.ov-tunnel-card                  { animation-delay: 0s; }
+#apikey-section.ov-card          { animation-delay: 0.06s; }
+#basicauth-section.ov-card       { animation-delay: 0.12s; }
+#aimode-section.ov-card          { animation-delay: 0.18s; }
+
+/* ── Card head ─────────────────────────────────────────────── */
+.ov-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ov-card-title-group {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  flex: 1;
+}
+
+.ov-icon-wrap {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--text-2);
+  transition: var(--transition);
+}
+
+html[data-theme="dark"] .ov-icon-wrap {
+  background: var(--surface-3);
+  border-color: rgba(255,255,255,0.08);
+}
+
+.ov-card:hover .ov-icon-wrap {
+  color: var(--text);
+  border-color: var(--border-2);
+}
+
+.ov-card-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.2px;
+  white-space: nowrap;
+}
+
+/* ── Tunnel info card ──────────────────────────────────────── */
+.ov-tunnel-card {
+  grid-column: 1 / -1;
+  gap: 14px;
+}
+
+.ov-live-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--green);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  padding: 5px 10px;
+  background: var(--green-dim);
+  border-radius: 20px;
+  flex-shrink: 0;
+}
+
+/* URL hero block */
+.ov-url-block {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 13px 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  transition: border-color 0.2s;
+}
+
+.ov-url-block:hover {
+  border-color: var(--border-2);
+}
+
+.ov-url-label {
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.ov-url-val {
+  font-family: 'Geist Mono', monospace;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--blue);
+  word-break: break-all;
+  line-height: 1.4;
+}
+
+/* Stats strip */
+.ov-stat-strip {
+  display: flex;
+  align-items: stretch;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.ov-stat-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 11px 14px;
+  flex: 1;
+  min-width: 0;
+}
+
+.ov-strip-divider {
+  width: 1px;
+  background: var(--border);
+  flex-shrink: 0;
+  margin: 8px 0;
+}
+
+.ov-chip-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  white-space: nowrap;
+}
+
+.ov-chip-val {
+  font-family: 'Geist Mono', monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ov-chip-val.ov-green { color: var(--green); }
+.ov-uppercase { text-transform: uppercase; }
+
+/* ── Shared auth card elements ─────────────────────────────── */
+.ov-disabled-state {
+  font-size: 13px;
+  color: var(--text-3);
+  line-height: 1.6;
+  margin: 0;
+  padding: 4px 0 2px;
+}
+
+.ov-sublabel {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin: 0 0 8px;
+}
+
+.ov-hint {
+  font-size: 12px;
+  color: var(--text-3);
+  line-height: 1.7;
+  margin: 4px 0 0;
+}
+
+.ov-code {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  background: var(--surface-2);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--text);
+}
+
+/* ── API Key card ──────────────────────────────────────────── */
+.ov-custom-key {
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.ov-apply-btn {
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.ov-apply-btn:not(:disabled):hover {
+  background: var(--green-dim);
+  border-color: var(--green);
+  color: var(--green);
+}
+
+/* ── Basic Auth card ───────────────────────────────────────── */
+.ov-cred-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.ov-cred-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ov-cred-row:last-child {
+  border-bottom: none;
+}
+
+.ov-cred-val {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ov-sm-btn {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  flex-shrink: 0;
+}
+
+/* Input rows for form */
+.ov-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.ov-flex-input {
+  flex: 1;
+  margin: 0 !important;
+}
+
+.ov-pass-wrap {
+  position: relative;
+  flex: 1;
+}
+
+.ov-pass-input {
+  margin: 0 !important;
+  padding-right: 40px !important;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.ov-vis-btn {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: none !important;
+  background: none !important;
+  padding: 4px;
+  width: auto;
+  height: auto;
+}
+
+.ov-gen-btn {
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.ov-form-btns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.ov-primary-btn {
+  background: var(--text);
+  border: 1px solid var(--text);
+  border-radius: var(--r-sm);
+  color: var(--bg);
+  font-size: 13px;
+  font-family: inherit;
+  font-weight: 600;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: var(--transition);
+  width: 100%;
+  min-height: 40px;
+}
+
+.ov-primary-btn:hover {
+  background: var(--accent-2);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.ov-primary-btn:active {
+  transform: translateY(0);
+}
+
+.ov-secondary-btn {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  font-weight: 600;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: var(--transition);
+  width: 100%;
+  min-height: 40px;
+}
+
+.ov-secondary-btn:hover {
+  background: var(--surface-3);
+  transform: translateY(-1px);
+}
+
+.ov-form-msg {
+  font-size: 12px;
+  margin-top: 8px;
+  display: none;
+  line-height: 1.5;
+}
+
+/* ── AI mode card ──────────────────────────────────────────── */
+.ov-feats {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ov-feat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  transition: border-color 0.15s;
+}
+
+.ov-feat-row:hover {
+  border-color: var(--border-2);
+}
+
+.ov-feat-label {
+  font-size: 13px;
+  color: var(--text-2);
+  font-weight: 500;
+}
+
+/* ── Responsive ────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .ov-grid {
+    padding: 16px 16px 32px;
+    gap: 14px;
+    grid-template-columns: 1fr;
+  }
+
+  .ov-tunnel-card {
+    grid-column: 1;
+  }
+
+  .ov-stat-strip {
+    flex-direction: column;
+  }
+
+  .ov-strip-divider {
+    width: 100%;
+    height: 1px;
+    margin: 0;
+  }
+
+  .ov-stat-chip {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+  }
+
+  .ov-form-btns {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .ov-card {
+    padding: 16px;
+    gap: 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .ov-grid {
+    padding: 12px 12px 32px;
+    gap: 10px;
+  }
+}

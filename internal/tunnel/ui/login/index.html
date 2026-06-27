@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
-<title>GoTunnel - Sign In</title>
+<title>GoTunnel — Sign In</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/login/styles.css">
@@ -12,6 +12,8 @@
 <body>
 <main class="page">
   <section class="login-shell" aria-label="GoTunnel sign in">
+
+    <!-- Brand panel -->
     <aside class="brand-panel" aria-hidden="true">
       <div class="brand-mark">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
@@ -20,17 +22,25 @@
           <path d="M2 12l10 5 10-5"/>
         </svg>
       </div>
-      <div>
+
+      <div class="brand-body">
         <p class="panel-kicker">Secure dashboard</p>
-        <h1>GoTunnel</h1>
+        <h1 class="panel-heading">GoTunnel</h1>
         <p class="panel-copy">Manage live tunnels, inspect traffic, and control access from one protected console.</p>
+        <ul class="panel-features">
+          <li>Real-time traffic inspection</li>
+          <li>API key &amp; Basic Auth protection</li>
+          <li>Live connection monitoring</li>
+        </ul>
       </div>
+
       <div class="panel-status">
         <span class="status-dot"></span>
         <span>Dashboard ready</span>
       </div>
     </aside>
 
+    <!-- Form card -->
     <section class="card">
       <button type="button" id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode" title="Toggle dark mode">
         <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -54,9 +64,8 @@
       </div>
 
       <div class="form-head">
-        <p class="eyebrow">Welcome back</p>
         <h2 class="heading">Sign in</h2>
-        <p class="sub">Use your dashboard credentials to continue.</p>
+        <p class="sub">Enter your dashboard credentials to continue.</p>
       </div>
 
       <div id="error-msg" class="error-msg hidden" role="alert" aria-live="assertive"></div>
@@ -74,7 +83,7 @@
             spellcheck="false"
             required
             aria-required="true"
-            placeholder="admin"
+            placeholder="Username"
           >
         </div>
 
@@ -88,12 +97,11 @@
               autocomplete="current-password"
               required
               aria-required="true"
-              placeholder="Enter password"
+              placeholder="Password"
             >
             <button type="button" id="toggle-pass" class="pass-toggle" aria-label="Show password" title="Show password">
               <svg id="pass-icon-show" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                <circle cx="12" cy="12" r="3"/>
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
               </svg>
               <svg id="pass-icon-hide" class="hidden" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
@@ -109,10 +117,12 @@
           <span id="submit-spinner" class="spinner hidden" aria-hidden="true"></span>
         </button>
       </form>
+
+      <p class="card-footer">GoTunnel &mdash; Secure tunnel management</p>
     </section>
+
   </section>
 </main>
-
 <script src="/login/script.js" defer></script>
 </body>
 </html>

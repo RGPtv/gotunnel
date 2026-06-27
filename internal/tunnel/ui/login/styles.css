@@ -290,9 +290,9 @@ html[data-theme="dark"] .card {
   justify-content: center;
   width: 36px;
   height: 36px;
-  border: 1px solid transparent;
+  border: 1px solid var(--border);
   border-radius: 50%;
-  background: var(--surface-2);
+  background: var(--surface-3);
   color: var(--text-2);
   cursor: pointer;
   transition: background .15s, color .15s, transform .15s;
@@ -302,7 +302,8 @@ html[data-theme="dark"] .card {
 
 .theme-toggle:hover {
   color: var(--text);
-  background: var(--surface-3);
+  background: var(--border);
+  border-color: var(--border-2);
   transform: rotate(15deg);
 }
 

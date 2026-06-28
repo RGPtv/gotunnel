@@ -137,6 +137,7 @@ let _tokenHideTimer  = null;
 let _apikeyHideTimer = null;
 let _baUserHideTimer = null;
 let _baPassHideTimer = null;
+let _curlHideTimer   = null;
 let _apikeyEnabled   = false;
 let _baEnabled       = false;
 let _aiEnabled       = false;
@@ -608,6 +609,11 @@ function baOpenEdit() {
     clearTimeout(_baPassHideTimer);
   }
 
+  // Hide the curl block immediately when entering edit mode
+  clearTimeout(_curlHideTimer);
+  const curlBlock = document.getElementById('ba-curl-block');
+  if (curlBlock) { curlBlock.classList.remove('curl-fading'); curlBlock.style.display = 'none'; }
+
   document.getElementById('basicauth-cred-view')?.style.setProperty('display', 'none');
   document.getElementById('basicauth-controls')?.style.setProperty('display', 'block');
 
@@ -741,7 +747,20 @@ function _updateCurlBlock(d) {
   if (!block || !codeEl) return;
   // Use textContent — proxyUrl and creds come from server, not DOM strings
   codeEl.textContent = `curl -u '${d.username || '…'}:${(d.password || '…').replace(/'/g, "'\\''")}' ${proxyUrl}`;
+
+  // Reset any ongoing fade and show fresh
+  clearTimeout(_curlHideTimer);
+  block.classList.remove('curl-fading');
   block.style.display = 'block';
+
+  // Auto-hide after 15s with a smooth fade
+  _curlHideTimer = setTimeout(() => {
+    block.classList.add('curl-fading');
+    setTimeout(() => {
+      block.style.display = 'none';
+      block.classList.remove('curl-fading');
+    }, 500);
+  }, 15000);
 }
 
 function baCopyCurl() {

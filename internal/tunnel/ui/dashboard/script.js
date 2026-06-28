@@ -592,30 +592,82 @@ function basicAuthToggleChanged() {
 }
 
 function baOpenEdit() {
-  document.getElementById('basicauth-cred-view')?.style.setProperty('display','none');
-  document.getElementById('basicauth-controls')?.style.setProperty('display','block');
-  // Always start with password hidden when opening the form
+  _baPending = true;   // ← THE FIX: prevents SSE ticks from reverting the form
+
+  // Re-mask credentials before switching to edit view
+  const userVal = document.getElementById('ba-user-val');
+  const passVal = document.getElementById('ba-pass-val');
+  if (userVal && !userVal.classList.contains('masked-cred')) {
+    userVal.textContent = '••••••'; userVal.classList.add('masked-cred');
+    _setRevealIcon(document.getElementById('ba-user-reveal'), false);
+    clearTimeout(_baUserHideTimer);
+  }
+  if (passVal && !passVal.classList.contains('masked-cred')) {
+    passVal.textContent = '••••••••'; passVal.classList.add('masked-cred');
+    _setRevealIcon(document.getElementById('ba-pass-reveal'), false);
+    clearTimeout(_baPassHideTimer);
+  }
+
+  document.getElementById('basicauth-cred-view')?.style.setProperty('display', 'none');
+  document.getElementById('basicauth-controls')?.style.setProperty('display', 'block');
+
+  // Clear any stale error message
+  const msgEl = document.getElementById('basicauth-msg');
+  if (msgEl) { msgEl.style.display = 'none'; msgEl.textContent = ''; }
+
+  // Reset password field and eye icon
   const passInput = document.getElementById('basicauth-pass');
-  if (passInput) passInput.type = 'password';
+  if (passInput) { passInput.value = ''; passInput.type = 'password'; }
   _setRevealIcon(document.getElementById('ba-toggle-pass-vis'), false);
+  baPassStrength();
+
+  // Pre-fill username from server so the user only needs to re-enter the password
+  if (activeTunnel) {
+    fetch('/api/tunnels/basicauth-creds', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+      body: JSON.stringify({ endpoint: activeTunnel })
+    })
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then(d => {
+        const userInput = document.getElementById('basicauth-user');
+        if (userInput && d.username) {
+          userInput.value = d.username;
+          document.getElementById('basicauth-pass')?.focus();
+        } else {
+          document.getElementById('basicauth-user')?.focus();
+        }
+      })
+      .catch(() => { document.getElementById('basicauth-user')?.focus(); });
+  }
 }
 
 function baCancelEdit() {
   _baPending = false;
+  // Clear form cleanly
+  const userInput = document.getElementById('basicauth-user');
+  const passInput = document.getElementById('basicauth-pass');
+  const msgEl     = document.getElementById('basicauth-msg');
+  if (userInput) userInput.value = '';
+  if (passInput) { passInput.value = ''; passInput.type = 'password'; }
+  _setRevealIcon(document.getElementById('ba-toggle-pass-vis'), false);
+  baPassStrength();
+  if (msgEl) { msgEl.style.display = 'none'; msgEl.textContent = ''; }
   if (!_baEnabled) {
     const toggle = document.getElementById('basicauth-toggle');
     if (toggle) toggle.checked = false;
     _applyBasicAuthState(false);
     return;
   }
-  document.getElementById('basicauth-cred-view')?.style.setProperty('display','block');
-  document.getElementById('basicauth-controls')?.style.setProperty('display','none');
+  document.getElementById('basicauth-cred-view')?.style.setProperty('display', 'block');
+  document.getElementById('basicauth-controls')?.style.setProperty('display', 'none');
 }
 
 function basicAuthSave() {
   if (!activeTunnel) return;
   const userInput = document.getElementById('basicauth-user');
   const passInput = document.getElementById('basicauth-pass');
+  const saveBtn   = document.getElementById('ba-save-btn');
   const msgEl     = document.getElementById('basicauth-msg');
   if (!userInput || !passInput) return;
   const username = userInput.value.trim();
@@ -625,6 +677,7 @@ function basicAuthSave() {
   if (username.includes(':'))   { showMsg('Username must not contain a colon.', 'var(--red)'); return; }
   if (username.length > 128 || password.length > 128) { showMsg('Credentials exceed maximum length.', 'var(--red)'); return; }
   if (msgEl) msgEl.style.display = 'none';
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
   fetch('/api/tunnels/basicauth', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
@@ -637,9 +690,13 @@ function basicAuthSave() {
       passInput.type = 'password';
       _setRevealIcon(document.getElementById('ba-toggle-pass-vis'), false);
       baPassStrength();
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
       showToast('Basic auth credentials saved', 'success');
     })
-    .catch(err => showMsg(err.message || 'Failed to save credentials', 'var(--red)'));
+    .catch(err => {
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
+      showMsg(err.message || 'Failed to save credentials', 'var(--red)');
+    });
 }
 
 function baReveal(field) {
@@ -1190,6 +1247,14 @@ document.getElementById('ba-gen-pass')?.addEventListener('click',        baGenPa
 document.getElementById('ba-toggle-pass-vis')?.addEventListener('click', baTogglePassVis);
 document.getElementById('basicauth-pass')?.addEventListener('input',     baPassStrength);
 document.getElementById('ba-curl-copy')?.addEventListener('click',       baCopyCurl);
+
+// Clear validation error as soon as the user edits either credential field
+['basicauth-user', 'basicauth-pass'].forEach(id => {
+  document.getElementById(id)?.addEventListener('input', () => {
+    const msgEl = document.getElementById('basicauth-msg');
+    if (msgEl && msgEl.style.color === 'var(--red)') { msgEl.style.display = 'none'; }
+  });
+});
 
 // AI Mode
 document.getElementById('aimode-toggle')?.addEventListener('change', aiModeToggleChanged);

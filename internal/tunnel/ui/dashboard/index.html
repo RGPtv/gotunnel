@@ -431,7 +431,7 @@
               <div id="basicauth-controls" style="display: none">
                 <div class="ov-input-row">
                   <input class="auth-input ov-flex-input" type="text" id="basicauth-user"
-                    placeholder="Username" autocomplete="off" aria-label="Basic auth username">
+                    placeholder="Username" autocomplete="off" aria-label="Basic auth username" spellcheck="false">
                   <button class="token-btn ov-gen-btn" id="ba-gen-user" title="Auto-generate username" aria-label="Generate username">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                       <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
@@ -441,7 +441,7 @@
                 <div class="ov-input-row">
                   <div class="ov-pass-wrap">
                     <input class="auth-input ov-pass-input" type="password" id="basicauth-pass"
-                      placeholder="Password" autocomplete="new-password" aria-label="Basic auth password">
+                      placeholder="New password" autocomplete="new-password" aria-label="Basic auth password">
                     <button class="token-btn ov-vis-btn" id="ba-toggle-pass-vis" title="Show/hide password" aria-label="Toggle password visibility">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
@@ -462,7 +462,7 @@
                 </div>
                 <div class="strength-label" id="ba-strength-label" role="status" aria-live="polite">&nbsp;</div>
                 <div class="ov-form-btns">
-                  <button class="ov-primary-btn" id="ba-save-btn">Apply</button>
+                  <button class="ov-primary-btn" id="ba-save-btn">Save</button>
                   <button class="ov-secondary-btn" id="ba-cancel-btn">Cancel</button>
                 </div>
                 <div id="basicauth-msg" role="alert" class="ov-form-msg"></div>

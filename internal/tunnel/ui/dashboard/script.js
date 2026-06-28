@@ -598,16 +598,16 @@ function baOpenEdit() {
   // Re-mask credentials before switching to edit view
   const userVal = document.getElementById('ba-user-val');
   const passVal = document.getElementById('ba-pass-val');
+  const revealAllBtn = document.getElementById('ba-reveal-all');
   if (userVal && !userVal.classList.contains('masked-cred')) {
     userVal.textContent = '••••••'; userVal.classList.add('masked-cred');
-    _setRevealIcon(document.getElementById('ba-user-reveal'), false);
     clearTimeout(_baUserHideTimer);
   }
   if (passVal && !passVal.classList.contains('masked-cred')) {
     passVal.textContent = '••••••••'; passVal.classList.add('masked-cred');
-    _setRevealIcon(document.getElementById('ba-pass-reveal'), false);
     clearTimeout(_baPassHideTimer);
   }
+  _setRevealAllBtn(revealAllBtn, false);
 
   // Hide the curl block immediately when entering edit mode
   clearTimeout(_curlHideTimer);
@@ -703,6 +703,69 @@ function basicAuthSave() {
       if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
       showMsg(err.message || 'Failed to save credentials', 'var(--red)');
     });
+}
+
+// ── Single combined credentials reveal ───────────────────────
+function _setRevealAllBtn(btn, isRevealed) {
+  if (!btn) return;
+  const iconEl  = btn.querySelector('.ba-reveal-icon');
+  const labelEl = btn.querySelector('.ba-reveal-label');
+  if (iconEl)  iconEl.innerHTML = _svgEye(isRevealed, 13);
+  if (labelEl) labelEl.textContent = isRevealed ? 'Hide credentials' : 'Show credentials';
+  btn.setAttribute('aria-label', isRevealed ? 'Hide credentials' : 'Show credentials');
+}
+
+function _setRevealAllLoading(btn, loading, fallbackRevealed) {
+  if (!btn) return;
+  const iconEl = btn.querySelector('.ba-reveal-icon');
+  btn.disabled = loading;
+  if (loading) {
+    if (iconEl) iconEl.innerHTML = _svgSpinner(13);
+  } else if (fallbackRevealed !== undefined) {
+    _setRevealAllBtn(btn, fallbackRevealed);
+  }
+}
+
+function baRevealAll() {
+  const userVal = document.getElementById('ba-user-val');
+  const passVal = document.getElementById('ba-pass-val');
+  const btn     = document.getElementById('ba-reveal-all');
+  if (!userVal || !passVal) return;
+
+  // If both already revealed → hide both
+  const bothRevealed = !userVal.classList.contains('masked-cred') && !passVal.classList.contains('masked-cred');
+  if (bothRevealed) {
+    userVal.textContent = '••••••';   userVal.classList.add('masked-cred');
+    passVal.textContent = '••••••••'; passVal.classList.add('masked-cred');
+    _setRevealAllBtn(btn, false);
+    clearTimeout(_baUserHideTimer);
+    clearTimeout(_baPassHideTimer);
+    return;
+  }
+
+  if (!activeTunnel) return;
+  _setRevealAllLoading(btn, true);
+  fetch('/api/tunnels/basicauth-creds', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
+    body: JSON.stringify({ endpoint: activeTunnel })
+  })
+    .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+    .then(d => {
+      if (d.username) { userVal.textContent = d.username; userVal.classList.remove('masked-cred'); }
+      if (d.password) { passVal.textContent = d.password; passVal.classList.remove('masked-cred'); }
+      _setRevealAllLoading(btn, false, true);
+      clearTimeout(_baUserHideTimer);
+      clearTimeout(_baPassHideTimer);
+      const hide = () => {
+        userVal.textContent = '••••••';   userVal.classList.add('masked-cred');
+        passVal.textContent = '••••••••'; passVal.classList.add('masked-cred');
+        _setRevealAllBtn(btn, false);
+      };
+      _baUserHideTimer = setTimeout(hide, 15000);
+      _updateCurlBlock(d);
+    })
+    .catch(() => { _setRevealAllLoading(btn, false, false); showToast('Could not fetch credentials', 'error'); });
 }
 
 function baReveal(field) {
@@ -1256,8 +1319,7 @@ document.getElementById('apikey-custom-save')?.addEventListener('click',    apik
 
 // Basic Auth
 document.getElementById('basicauth-toggle')?.addEventListener('change',  basicAuthToggleChanged);
-document.getElementById('ba-user-reveal')?.addEventListener('click',     () => baReveal('user'));
-document.getElementById('ba-pass-reveal')?.addEventListener('click',     () => baReveal('pass'));
+document.getElementById('ba-reveal-all')?.addEventListener('click',      baRevealAll);
 document.getElementById('ba-edit-btn')?.addEventListener('click',        baOpenEdit);
 document.getElementById('ba-save-btn')?.addEventListener('click',        basicAuthSave);
 document.getElementById('ba-cancel-btn')?.addEventListener('click',      baCancelEdit);

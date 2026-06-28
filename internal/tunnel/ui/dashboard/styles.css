@@ -2941,6 +2941,40 @@ html[data-theme="dark"] .ov-icon-wrap {
   border-bottom: none;
 }
 
+.ov-cred-reveal-row {
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ba-reveal-all-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  color: var(--text-3);
+  font-size: 12px;
+  font-family: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 2px 0;
+  transition: var(--transition);
+  line-height: 1;
+}
+
+.ba-reveal-all-btn:hover {
+  color: var(--text);
+}
+
+.ba-reveal-all-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 .ov-cred-val {
   display: flex;
   align-items: center;
@@ -3006,6 +3040,17 @@ html[data-theme="dark"] .ov-icon-wrap {
   grid-template-columns: 1fr 1fr;
   gap: 10px;
   margin-top: 12px;
+  align-items: stretch;
+}
+
+.ov-form-btns .ov-primary-btn,
+.ov-form-btns .ov-secondary-btn {
+  height: 40px;
+  min-height: unset;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .ov-primary-btn {

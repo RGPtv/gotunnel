@@ -399,25 +399,21 @@
                 <div class="ov-cred-box">
                   <div class="ov-cred-row">
                     <span class="ov-sublabel">Username</span>
-                    <div class="ov-cred-val">
-                      <span class="masked-cred" id="ba-user-val">••••••</span>
-                      <button class="token-btn ov-sm-btn" id="ba-user-reveal" title="Reveal username" aria-label="Reveal username">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
-                        </svg>
-                      </button>
-                    </div>
+                    <span class="masked-cred" id="ba-user-val">••••••</span>
                   </div>
                   <div class="ov-cred-row">
                     <span class="ov-sublabel">Password</span>
-                    <div class="ov-cred-val">
-                      <span class="masked-cred" id="ba-pass-val">••••••••</span>
-                      <button class="token-btn ov-sm-btn" id="ba-pass-reveal" title="Reveal password" aria-label="Reveal password">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <span class="masked-cred" id="ba-pass-val">••••••••</span>
+                  </div>
+                  <div class="ov-cred-reveal-row">
+                    <button class="ba-reveal-all-btn" id="ba-reveal-all" aria-label="Show credentials">
+                      <span class="ba-reveal-icon">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                           <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
                         </svg>
-                      </button>
-                    </div>
+                      </span>
+                      <span class="ba-reveal-label">Show credentials</span>
+                    </button>
                   </div>
                 </div>
                 <div id="ba-curl-block" class="curl-block" style="display: none">

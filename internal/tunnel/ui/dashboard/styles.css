@@ -2974,13 +2974,14 @@ html[data-theme="dark"] .ov-icon-wrap {
 .ov-vis-btn {
   position: absolute;
   right: 8px;
-  top: 50%;
-  margin-top: -11px;
+  top: 0;
+  bottom: 0;
+  height: fit-content;
+  margin: auto 0;
   border: none !important;
   background: none !important;
   padding: 4px;
   width: auto;
-  height: auto;
 }
 
 .ov-gen-btn {
@@ -3115,11 +3116,6 @@ html[data-theme="dark"] .ov-icon-wrap {
   .ov-card {
     padding: 16px;
     gap: 12px;
-  }
-
-  .ov-vis-btn {
-    top: 25%;
-    margin-top: 0;
   }
 }
 

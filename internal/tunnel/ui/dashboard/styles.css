@@ -1136,7 +1136,7 @@ html[data-theme="dark"] .auth-toggle input:checked+.auth-toggle-slider {
   transform: translateY(0);
 }
 
-#ba-save-btn,
+/* Edit credentials button — standalone below curl block */
 #ba-edit-btn {
   background: var(--text);
   border-color: var(--text);
@@ -1144,11 +1144,18 @@ html[data-theme="dark"] .auth-toggle input:checked+.auth-toggle-slider {
   margin-top: 16px;
 }
 
+/* Save button — inside .ov-form-btns, no margin */
+#ba-save-btn {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--bg);
+}
+
 #ba-save-btn:hover,
 #ba-edit-btn:hover {
-  background: var(--accent-2);
-  box-shadow: var(--shadow-md);
+  opacity: 0.85;
   transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
 }
 
 /* Strength bar */
@@ -2921,7 +2928,6 @@ html[data-theme="dark"] .ov-icon-wrap {
 .ov-cred-box {
   display: flex;
   flex-direction: column;
-  gap: 0;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -2933,12 +2939,11 @@ html[data-theme="dark"] .ov-icon-wrap {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border);
+  padding: 11px 14px;
 }
 
-.ov-cred-row:last-child {
-  border-bottom: none;
+.ov-cred-row + .ov-cred-row {
+  border-top: 1px solid var(--border);
 }
 
 .ov-cred-reveal-row {
@@ -3046,10 +3051,12 @@ html[data-theme="dark"] .ov-icon-wrap {
 #ba-cancel-btn {
   height: 40px;
   min-height: 0;
+  margin: 0;
   padding: 0 16px;
   display: flex;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
 }
 
 .ov-primary-btn {
@@ -3064,11 +3071,10 @@ html[data-theme="dark"] .ov-icon-wrap {
   cursor: pointer;
   transition: var(--transition);
   width: 100%;
-  min-height: 40px;
 }
 
 .ov-primary-btn:hover {
-  background: var(--accent-2);
+  opacity: 0.85;
   box-shadow: var(--shadow-md);
   transform: translateY(-1px);
 }
@@ -3089,7 +3095,6 @@ html[data-theme="dark"] .ov-icon-wrap {
   cursor: pointer;
   transition: var(--transition);
   width: 100%;
-  min-height: 40px;
 }
 
 .ov-secondary-btn:hover {

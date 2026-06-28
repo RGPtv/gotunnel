@@ -3116,6 +3116,11 @@ html[data-theme="dark"] .ov-icon-wrap {
     padding: 16px;
     gap: 12px;
   }
+
+  .ov-vis-btn {
+    top: 25%;
+    margin-top: 0;
+  }
 }
 
 @media (max-width: 480px) {

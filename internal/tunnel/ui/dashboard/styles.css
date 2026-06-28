@@ -3040,13 +3040,12 @@ html[data-theme="dark"] .ov-icon-wrap {
   grid-template-columns: 1fr 1fr;
   gap: 10px;
   margin-top: 12px;
-  align-items: stretch;
 }
 
-.ov-form-btns .ov-primary-btn,
-.ov-form-btns .ov-secondary-btn {
+#ba-save-btn,
+#ba-cancel-btn {
   height: 40px;
-  min-height: unset;
+  min-height: 0;
   padding: 0 16px;
   display: flex;
   align-items: center;

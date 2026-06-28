@@ -652,8 +652,7 @@ function baReveal(field) {
     _setRevealIcon(btnEl, false);
     return;
   }
-  // Only show the loading spinner for the username button; password reveal is instant
-  if (field === 'user') _setBtnLoading(btnEl, true);
+  _setBtnLoading(btnEl, true);
   fetch('/api/tunnels/basicauth-creds', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrfToken() },
@@ -662,14 +661,10 @@ function baReveal(field) {
     .then(r => { if (!r.ok) throw new Error(); return r.json(); })
     .then(d => {
       const val = field === 'user' ? d.username : d.password;
-      if (!val) {
-        if (field === 'user') _setBtnLoading(btnEl, false, false);
-        return;
-      }
+      if (!val) { _setBtnLoading(btnEl, false, false); return; }
       valEl.textContent = val;   // textContent — safe
       valEl.classList.remove('masked-cred');
-      if (field === 'user') _setBtnLoading(btnEl, false, true);
-      else                  _setRevealIcon(btnEl, true);
+      _setBtnLoading(btnEl, false, true);
       const hide = () => {
         valEl.textContent = field === 'user' ? '••••••' : '••••••••';
         valEl.classList.add('masked-cred');
@@ -679,10 +674,7 @@ function baReveal(field) {
       else                  _baPassHideTimer = setTimeout(hide, 15000);
       _updateCurlBlock(d);
     })
-    .catch(() => {
-      if (field === 'user') _setBtnLoading(btnEl, false, false);
-      showToast('Could not fetch credentials', 'error');
-    });
+    .catch(() => { _setBtnLoading(btnEl, false, false); showToast('Could not fetch credentials', 'error'); });
 }
 
 function _updateCurlBlock(d) {

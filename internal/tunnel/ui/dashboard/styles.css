@@ -2975,7 +2975,7 @@ html[data-theme="dark"] .ov-icon-wrap {
   position: absolute;
   right: 8px;
   top: 50%;
-  transform: translateY(-50%);
+  margin-top: -11px;
   border: none !important;
   background: none !important;
   padding: 4px;

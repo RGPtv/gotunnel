@@ -226,13 +226,16 @@
                 </svg>
               </div>
               <span class="hv-card-title">Event Log</span>
+              <span class="hv-log-count" id="srv-log-count" aria-live="polite"></span>
             </div>
+            <button class="hv-log-clear-btn" id="srv-log-clear" title="Clear event log" aria-label="Clear event log">Clear</button>
           </div>
 
-          <div id="srv-event-log" class="hv-log">
+          <div id="srv-event-log" class="hv-log" role="log" aria-label="Server event log" aria-live="polite">
             <div class="empty hv-log-empty">No events yet…</div>
           </div>
         </div>
+
 
       </div>
 

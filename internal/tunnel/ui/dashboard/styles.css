@@ -3420,6 +3420,170 @@ html[data-theme="dark"] .hv-card {
   font-size: 12px;
 }
 
+/* Count badge next to title */
+.hv-log-count {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 20px;
+  background: var(--bg-2, rgba(0,0,0,.12));
+  color: var(--text-3);
+  font-family: 'Geist Mono', monospace;
+  letter-spacing: 0;
+  margin-left: 4px;
+  transition: background .2s;
+}
+
+/* Clear button */
+.hv-log-clear-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-3);
+  font-size: 11px;
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: color .15s, border-color .15s, background .15s;
+  white-space: nowrap;
+}
+.hv-log-clear-btn:hover {
+  color: var(--text-1);
+  border-color: var(--text-3);
+  background: var(--bg-2, rgba(0,0,0,.06));
+}
+
+/* Structured log row */
+.hv-log-row {
+  display: grid;
+  grid-template-columns: 66px 16px 42px auto;
+  gap: 6px;
+  align-items: baseline;
+  padding: 1px 0;
+  border-radius: 4px;
+  transition: background .1s;
+}
+.hv-log-row:hover {
+  background: var(--bg-2, rgba(128,128,128,.06));
+}
+
+/* Time cell */
+.hv-log-ts {
+  color: var(--text-3);
+  flex-shrink: 0;
+  font-size: 11.5px;
+}
+
+/* Level icon */
+.hv-log-ic {
+  flex-shrink: 0;
+  font-size: 11px;
+  text-align: center;
+}
+
+/* Level label pill */
+.hv-log-lvl {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .4px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+  text-align: center;
+}
+.hv-log-lvl.info  { color: var(--accent);  background: color-mix(in srgb, var(--accent)  14%, transparent); }
+.hv-log-lvl.warn  { color: var(--yellow);  background: color-mix(in srgb, var(--yellow)  14%, transparent); }
+.hv-log-lvl.error { color: var(--red);     background: color-mix(in srgb, var(--red)     14%, transparent); }
+.hv-log-lvl.ok    { color: var(--green);   background: color-mix(in srgb, var(--green)   14%, transparent); }
+
+/* Body of the log row — flex so sub-elements flow nicely */
+.hv-log-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Tunnel badge */
+.hv-log-tunnel {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .2px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+  flex-shrink: 0;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* HTTP method badge */
+.hv-log-method {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .3px;
+  flex-shrink: 0;
+}
+.hv-log-method.GET     { color: #60a5fa; }
+.hv-log-method.POST    { color: #34d399; }
+.hv-log-method.PUT     { color: #fbbf24; }
+.hv-log-method.PATCH   { color: #fb923c; }
+.hv-log-method.DELETE  { color: #f87171; }
+.hv-log-method.HEAD,
+.hv-log-method.OPTIONS { color: var(--text-3); }
+
+/* Path */
+.hv-log-path {
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 60px;
+  max-width: 260px;
+}
+
+/* Status code */
+.hv-log-status {
+  font-weight: 700;
+  flex-shrink: 0;
+  font-size: 12px;
+}
+.hv-log-status.s2 { color: var(--green); }
+.hv-log-status.s3 { color: var(--yellow); }
+.hv-log-status.s4 { color: #fb923c; }
+.hv-log-status.s5 { color: var(--red); }
+
+/* Duration */
+.hv-log-dur {
+  color: var(--text-3);
+  flex-shrink: 0;
+  font-size: 11px;
+}
+
+/* Client IP */
+.hv-log-ip {
+  color: var(--text-3);
+  flex-shrink: 0;
+  font-size: 11px;
+  font-style: italic;
+}
+
+/* Plain message text */
+.hv-log-msg {
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
 /* ── Responsive ────────────────────────────────────────────── */
 @media (max-width: 768px) {
   .hv-panel {

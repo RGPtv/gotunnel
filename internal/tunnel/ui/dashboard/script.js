@@ -1344,6 +1344,21 @@ document.getElementById('aimode-toggle')?.addEventListener('change', aiModeToggl
 document.getElementById('btn-clear')?.addEventListener('click', clearReqs);
 document.getElementById('filter-chip')?.addEventListener('click', clearAllFilters);
 
+// Event Log clear button — wipes the locally-cached log display
+document.getElementById('srv-log-clear')?.addEventListener('click', () => {
+  const logEl   = document.getElementById('srv-event-log');
+  const countEl = document.getElementById('srv-log-count');
+  if (logEl) {
+    logEl.innerHTML = '';
+    const msg = document.createElement('div');
+    msg.className = 'empty'; msg.textContent = 'No events yet...';
+    logEl.appendChild(msg);
+    logEl._empty = true;
+    logEl._sig   = '';   // force re-render on next SSE tick
+  }
+  if (countEl) countEl.textContent = '';
+});
+
 // Inspector search
 document.getElementById('inspector-search')?.addEventListener('input', e => {
   _filterSearch = e.target.value.trim();
@@ -1449,7 +1464,8 @@ $tunList?.addEventListener('keydown', e => {
         // on window or any global. The dashboard password field is display-only.
 
         if (Array.isArray(d.logs)) {
-          const logEl = document.getElementById('srv-event-log');
+          const logEl    = document.getElementById('srv-event-log');
+          const countEl  = document.getElementById('srv-log-count');
           if (logEl) {
             if (d.logs.length === 0) {
               if (!logEl._empty) {
@@ -1459,6 +1475,7 @@ $tunList?.addEventListener('keydown', e => {
                 logEl.appendChild(msg);
                 logEl._empty = true;
               }
+              if (countEl) countEl.textContent = '';
             } else {
               const lastLog = d.logs[d.logs.length - 1];
               const sig     = d.logs.length + ':' + (lastLog?.time || '');
@@ -1466,21 +1483,89 @@ $tunList?.addEventListener('keydown', e => {
                 logEl._sig   = sig;
                 logEl._empty = false;
                 logEl.innerHTML = '';
+                if (countEl) countEl.textContent = d.logs.length;
                 const frag = document.createDocumentFragment();
                 d.logs.forEach(l => {
                   const row = document.createElement('div');
-                  row.style.cssText = 'display:flex;gap:8px';
-                  const ts  = document.createElement('span'); ts.style.cssText = 'color:var(--text-3);flex-shrink:0'; ts.textContent = fmtTime(l.time);
-                  let color = 'var(--text-2)', sym = 'ℹ';
+                  row.className = 'hv-log-row';
+
+                  // ── Timestamp ──
+                  const ts = document.createElement('span');
+                  ts.className   = 'hv-log-ts';
+                  ts.textContent = fmtTime(l.time);
+
+                  // ── Level icon ──
+                  let lvlClass = 'info', sym = 'ℹ';
                   switch (l.level) {
-                    case 1: color = 'var(--yellow)'; sym = '⚠'; break;
-                    case 2: color = 'var(--red)';    sym = '✗'; break;
-                    case 3: color = 'var(--green)';  sym = '✓'; break;
-                    default: color = 'var(--accent)';            break;
+                    case 1: lvlClass = 'warn';  sym = '⚠'; break;
+                    case 2: lvlClass = 'error'; sym = '✗'; break;
+                    case 3: lvlClass = 'ok';    sym = '✓'; break;
                   }
-                  const ic  = document.createElement('span'); ic.style.cssText = `color:${color};flex-shrink:0`; ic.textContent = sym;
-                  const msg = document.createElement('span'); msg.textContent = l.message;
-                  row.append(ts, ic, msg);
+                  const ic = document.createElement('span');
+                  ic.className   = 'hv-log-ic';
+                  ic.textContent = sym;
+
+                  // ── Level label ──
+                  const lvl = document.createElement('span');
+                  lvl.className   = 'hv-log-lvl ' + lvlClass;
+                  lvl.textContent = lvlClass.toUpperCase();
+
+                  // ── Body ──
+                  const body = document.createElement('span');
+                  body.className = 'hv-log-body';
+
+                  if (l.tunnel) {
+                    const tb = document.createElement('span');
+                    tb.className   = 'hv-log-tunnel';
+                    tb.textContent = l.tunnel;
+                    tb.title       = 'Tunnel: ' + l.tunnel;
+                    body.appendChild(tb);
+                  }
+
+                  // Structured HTTP entry
+                  if (l.method && l.status) {
+                    const mth = String(l.method || '').toUpperCase();
+                    const mEl = document.createElement('span');
+                    mEl.className   = 'hv-log-method ' + (mth || '');
+                    mEl.textContent = mth;
+                    body.appendChild(mEl);
+
+                    if (l.path) {
+                      const pEl = document.createElement('span');
+                      pEl.className   = 'hv-log-path';
+                      pEl.textContent = l.path;
+                      pEl.title       = l.path;
+                      body.appendChild(pEl);
+                    }
+
+                    const sc   = Math.floor(l.status / 100);
+                    const sEl  = document.createElement('span');
+                    sEl.className   = 'hv-log-status s' + sc;
+                    sEl.textContent = l.status;
+                    body.appendChild(sEl);
+
+                    if (l.duration && l.duration !== '0s') {
+                      const dEl = document.createElement('span');
+                      dEl.className   = 'hv-log-dur';
+                      dEl.textContent = l.duration;
+                      body.appendChild(dEl);
+                    }
+
+                    if (l.clientIP) {
+                      const ipEl = document.createElement('span');
+                      ipEl.className   = 'hv-log-ip';
+                      ipEl.textContent = l.clientIP;
+                      body.appendChild(ipEl);
+                    }
+                  } else {
+                    // Plain message fallback
+                    const msgEl = document.createElement('span');
+                    msgEl.className   = 'hv-log-msg';
+                    msgEl.textContent = l.message;
+                    body.appendChild(msgEl);
+                  }
+
+                  row.append(ts, ic, lvl, body);
                   frag.appendChild(row);
                 });
                 logEl.appendChild(frag);

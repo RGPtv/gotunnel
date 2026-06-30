@@ -243,15 +243,79 @@ func drawServerFrame(ipcClient *ipc.Client) {
 	for _, e := range last {
 		col2, sym, lvl := logStyleFull(e.Level)
 		ts := e.Time.Format("15:04:05")
+
+		// Structured HTTP request log — render a compact columnar line.
+		if e.Method != "" && e.Status > 0 {
+			sc := statusColor(e.Status)
+			tb := ""
+			tbVis := 0
+			if e.Tunnel != "" {
+				tb = tunnelBadge(e.Tunnel) + " "
+				tbVis = len([]rune(e.Tunnel)) + 3 // " tunnel " + space
+			}
+			ipPart := ""
+			ipVis := 0
+			if e.ClientIP != "" {
+				ipPart = dim + "  " + e.ClientIP + reset
+				ipVis = 2 + len([]rune(e.ClientIP))
+			}
+			// Method + path + arrow + status + duration
+			statusStr := fmt.Sprintf("%d", e.Status)
+			durStr := ""
+			if e.Duration != "" && e.Duration != "0s" {
+				durStr = " (" + e.Duration + ")"
+			}
+			reqPart := fmt.Sprintf("%s%s%s %s → %s%s%s%s",
+				bold, e.Method, reset,
+				e.Path,
+				sc+bold, statusStr, reset,
+				dim+durStr+reset)
+			reqVis := len([]rune(e.Method)) + 1 + len([]rune(e.Path)) + 3 + len([]rune(statusStr)) + len([]rune(durStr))
+
+			// Timestamp (8) + "  " (2) + sym (1) + " " (1) + lvl (5) + "  " (2) = 19 fixed
+			avail := w - 27 - tbVis - ipVis
+			if avail > 0 && reqVis > avail {
+				// Truncate the path portion to fit
+				pathMax := avail - len([]rune(e.Method)) - 1 - 3 - len([]rune(statusStr)) - len([]rune(durStr))
+				if pathMax < 3 {
+					pathMax = 3
+				}
+				pathRunes := []rune(e.Path)
+				truncPath := e.Path
+				if len(pathRunes) > pathMax {
+					truncPath = string(pathRunes[:pathMax-1]) + "…"
+				}
+				reqPart = fmt.Sprintf("%s%s%s %s → %s%s%s%s",
+					bold, e.Method, reset,
+					truncPath,
+					sc+bold, statusStr, reset,
+					dim+durStr+reset)
+			}
+
+			line := fmt.Sprintf("%s%s%s  %s%s %s%s  %s%s%s",
+				dim, ts, reset,
+				col2, sym, lvl, reset,
+				tb, reqPart, ipPart)
+			panelRow(&b, line, w)
+			continue
+		}
+
+		// Non-HTTP log — show tunnel badge if present, then the message.
+		tb := ""
+		tbVis := 0
+		if e.Tunnel != "" {
+			tb = tunnelBadge(e.Tunnel) + " "
+			tbVis = len([]rune(e.Tunnel)) + 3
+		}
 		msg := e.Message
-		maxMsg := w - 27
+		maxMsg := w - 27 - tbVis
 		if maxMsg > 0 && len([]rune(msg)) > maxMsg {
 			msg = string([]rune(msg)[:maxMsg-1]) + "…"
 		}
-		line := fmt.Sprintf("%s%s%s  %s%s %s%s  %s",
+		line := fmt.Sprintf("%s%s%s  %s%s %s%s  %s%s",
 			dim, ts, reset,
 			col2, sym, lvl, reset,
-			msg)
+			tb, msg)
 		panelRow(&b, line, w)
 	}
 	// Pad remaining log rows so the box bottom stays at a fixed position.

@@ -175,6 +175,7 @@ type Server struct {
 	tcpListeners    map[string]net.Listener
 	mu              sync.RWMutex
 	count           atomic.Int64 // active tunnel connections
+	totalReqs       atomic.Int64 // total HTTP requests served
 	inspector       *Inspector
 	tunnelMeta      map[string]TunnelMeta
 	tunnelMetaMu    sync.RWMutex
@@ -215,6 +216,46 @@ func (s *Server) srvLog(level int, format string, args ...any) {
 		Time:    time.Now(),
 		Level:   level,
 		Message: msg,
+	})
+	if len(s.logs) > 200 {
+		s.logs = s.logs[len(s.logs)-200:]
+	}
+	s.logsMu.Unlock()
+}
+
+// srvLogT is like srvLog but also attaches a tunnel endpoint to the log entry.
+func (s *Server) srvLogT(level int, tunnel string, format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	log.Print(msg)
+	s.logsMu.Lock()
+	s.logs = append(s.logs, ipc.LogEntry{
+		Time:    time.Now(),
+		Level:   level,
+		Message: msg,
+		Tunnel:  tunnel,
+	})
+	if len(s.logs) > 200 {
+		s.logs = s.logs[len(s.logs)-200:]
+	}
+	s.logsMu.Unlock()
+}
+
+// srvLogHTTP logs an HTTP request event with full structured context.
+func (s *Server) srvLogHTTP(level int, tunnel, method, path, host, cIP string, status int, dur time.Duration, format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	log.Print(msg)
+	s.logsMu.Lock()
+	s.logs = append(s.logs, ipc.LogEntry{
+		Time:     time.Now(),
+		Level:    level,
+		Message:  msg,
+		Tunnel:   tunnel,
+		Method:   method,
+		Path:     path,
+		Host:     host,
+		Status:   status,
+		Duration: dur.Round(time.Millisecond).String(),
+		ClientIP: cIP,
 	})
 	if len(s.logs) > 200 {
 		s.logs = s.logs[len(s.logs)-200:]
@@ -333,7 +374,7 @@ func RunServer(cfg *ServerConfig) {
 			DashUser:    inspectUser,
 			DashPass:    "[redacted]",
 			ActiveConns: srv.count.Load(),
-			TotalReqs:   0,
+			TotalReqs:   srv.totalReqs.Load(),
 			Uptime:      int64(time.Since(srv.startTime).Seconds()),
 			Tunnels:     tunnels,
 			Logs:        logs,
@@ -638,7 +679,7 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 			}
 			s.tcpListeners[remoteAddr] = ln
 			go s.acceptTCPConns(ln, remoteAddr)
-			s.srvLog(LevelSuccess, "TCP listener opened on %s", remoteAddr)
+			s.srvLogT(LevelSuccess, remoteAddr, "TCP listener opened on %s", remoteAddr)
 		}
 		s.mu.Unlock()
 
@@ -658,7 +699,7 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 			ConnectedAt: time.Now(),
 			ClientIP:    conn.RemoteAddr().String(),
 		})
-		s.srvLog(LevelSuccess, "tunnel connected %s → tcp:%s (active: %d)", conn.RemoteAddr(), remoteAddr, n)
+		s.srvLogT(LevelSuccess, remoteAddr, "tunnel connected %s → tcp:%s (active: %d)", conn.RemoteAddr(), remoteAddr, n)
 		return
 	}
 
@@ -679,7 +720,7 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 			ConnectedAt: time.Now(),
 			ClientIP:    conn.RemoteAddr().String(),
 		})
-		s.srvLog(LevelSuccess, "tunnel connected %s → http:%s (active: %d)", conn.RemoteAddr(), remoteAddr, n)
+		s.srvLogT(LevelSuccess, remoteAddr, "tunnel connected %s → http:%s (active: %d)", conn.RemoteAddr(), remoteAddr, n)
 		return
 	}
 
@@ -700,7 +741,7 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 		ConnectedAt: time.Now(),
 		ClientIP:    conn.RemoteAddr().String(),
 	})
-	s.srvLog(LevelSuccess, "tunnel connected %s → http:(default) (active: %d)", conn.RemoteAddr(), n)
+	s.srvLogT(LevelSuccess, "(default)", "tunnel connected %s → http:(default) (active: %d)", conn.RemoteAddr(), n)
 }
 
 // acceptTCPConns loops, accepting connections from external TCP clients.
@@ -972,7 +1013,9 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, reqBody *capp
 	// Success — stream the response.
 	s.streamResponse(w, resp, stream, aiMode)
 	elapsed := time.Since(start)
-	s.srvLog(LevelInfo, "%s %s → %d (%s)", r.Method, r.URL.Path, resp.StatusCode, elapsed.Round(time.Millisecond))
+	s.totalReqs.Add(1)
+	s.srvLogHTTP(LevelInfo, epKey, r.Method, r.URL.Path, r.Host, clientIP(r), resp.StatusCode, elapsed,
+		"%s %s → %d (%s) [%s]", r.Method, r.URL.Path, resp.StatusCode, elapsed.Round(time.Millisecond), epKey)
 	if s.inspector != nil {
 		var capturedBody []byte
 		if reqBody != nil {
@@ -1121,7 +1164,9 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request) {
 	resp.Write(brw)
 	brw.Flush()
 
-	s.srvLog(LevelInfo, "ws tunnel open: %s %s", r.Method, r.URL.Path)
+	s.totalReqs.Add(1)
+	s.srvLogHTTP(LevelInfo, epKey, r.Method, r.URL.Path, r.Host, clientIP(r), 101, 0,
+		"ws tunnel open: %s %s [%s]", r.Method, r.URL.Path, epKey)
 
 	// Pipe both directions concurrently until either side closes.
 	// FIX: write to browserConn directly (not brw.Writer) so WebSocket frames
@@ -1140,7 +1185,7 @@ func (s *Server) proxyWebSocket(w http.ResponseWriter, r *http.Request) {
 	stream.Close()
 	<-done
 
-	s.srvLog(LevelInfo, "ws tunnel closed: %s", r.URL.Path)
+	s.srvLogT(LevelInfo, epKey, "ws tunnel closed: %s [%s]", r.URL.Path, epKey)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1429,7 +1474,7 @@ func (s *Server) startJanitor() {
 		s.mu.Unlock()
 
 		for _, ce := range closed {
-			s.srvLog(LevelInfo, "tunnel session closed and removed: %s", ce.ep)
+			s.srvLogT(LevelInfo, ce.ep, "tunnel session closed and removed: %s", ce.ep)
 		}
 	}
 }

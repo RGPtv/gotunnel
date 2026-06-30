@@ -37,6 +37,14 @@ type LogEntry struct {
 	Time    time.Time `json:"time"`
 	Level   int       `json:"level"`
 	Message string    `json:"message"`
+	// Structured fields (zero-value = not applicable for this entry).
+	Tunnel   string `json:"tunnel,omitempty"`   // endpoint key, e.g. "myapp", "(default)", ":22222"
+	Method   string `json:"method,omitempty"`   // HTTP method (GET, POST, …)
+	Path     string `json:"path,omitempty"`     // URL path
+	Host     string `json:"host,omitempty"`     // request Host header
+	Status   int    `json:"status,omitempty"`   // HTTP response status code
+	Duration string `json:"duration,omitempty"` // human-readable elapsed time
+	ClientIP string `json:"clientIP,omitempty"` // requester's IP address
 }
 
 // ClientState represents the live state of the tunnel client.

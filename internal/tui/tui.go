@@ -321,4 +321,30 @@ func orDash(s string) string {
 	return s
 }
 
+// statusColor returns an ANSI color based on the HTTP status code range.
+func statusColor(code int) string {
+	switch {
+	case code >= 500:
+		return lred
+	case code >= 400:
+		return amber
+	case code >= 300:
+		return yellow
+	case code >= 200:
+		return lgreen
+	case code > 0:
+		return lblue
+	default:
+		return dim
+	}
+}
+
+// tunnelBadge renders a compact colored badge for a tunnel endpoint name.
+func tunnelBadge(tunnel string) string {
+	if tunnel == "" {
+		return ""
+	}
+	return bgDark + lteal + bold + " " + tunnel + " " + reset
+}
+
 

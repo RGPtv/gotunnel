@@ -420,19 +420,23 @@ func RunServer(cfg *ServerConfig) {
 	var inspSrv *http.Server
 	if inspect != "" {
 		srv.inspector = NewInspector(httpAddr, tunAddr, inspect, token, inspectUser, inspectPass, &srv.count, srv)
-		inspSrv = &http.Server{
-			Addr:              inspect,
-			Handler:           srv.inspector,
-			ReadHeaderTimeout: 10 * time.Second,
-			ReadTimeout:       30 * time.Second,
-			IdleTimeout:       120 * time.Second,
-		}
-		go func() {
-			srv.srvLog(LevelSuccess, "dashboard at http://%s", inspect)
-			if err := inspSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				srv.srvLog(LevelError, "inspector: %v", err)
+		if inspect != httpAddr && inspect != cfg.HTTPSAddr {
+			inspSrv = &http.Server{
+				Addr:              inspect,
+				Handler:           srv.inspector,
+				ReadHeaderTimeout: 10 * time.Second,
+				ReadTimeout:       30 * time.Second,
+				IdleTimeout:       120 * time.Second,
 			}
-		}()
+			go func() {
+				srv.srvLog(LevelSuccess, "dashboard at http://%s", inspect)
+				if err := inspSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+					srv.srvLog(LevelError, "inspector: %v", err)
+				}
+			}()
+		} else {
+			srv.srvLog(LevelSuccess, "dashboard integrated on proxy port %s", inspect)
+		}
 	}
 
 	go srv.acceptTunnelConns(tunLn)
@@ -829,6 +833,18 @@ func (s *Server) handleExternalTCPConn(conn net.Conn, remoteAddr string) {
 
 // ServeHTTP handles incoming HTTP requests from end users.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// ── Serve Dashboard on base domain ───────────────────────────────────────
+	if s.inspector != nil && s.domain != "" {
+		hostOnly, _, err := net.SplitHostPort(r.Host)
+		if err != nil {
+			hostOnly = r.Host
+		}
+		if strings.EqualFold(hostOnly, s.domain) {
+			s.inspector.ServeHTTP(w, r)
+			return
+		}
+	}
+
 	// ── Per-tunnel API key check ─────────────────────────────────────────────
 	endpointKey := s.getEndpointKey(r.Host)
 	s.tunnelMetaMu.RLock()

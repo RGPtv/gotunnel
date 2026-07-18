@@ -1602,3 +1602,48 @@ $tunList?.addEventListener('keydown', e => {
     localStorage.setItem('gotunnel-theme', next);
   });
 })();
+
+// ── Event Log UI ──────────────────────────────────────────────
+(function() {
+  const expandBtn = document.getElementById('srv-log-expand');
+  const clearBtn = document.getElementById('srv-log-clear');
+  const card = document.getElementById('srv-log-card');
+  const backdrop = document.getElementById('log-backdrop');
+  const logEl = document.getElementById('srv-event-log');
+  const countEl = document.getElementById('srv-log-count');
+
+  if (expandBtn && card && backdrop) {
+    const toggleExpand = () => {
+      const isExpanded = card.classList.contains('expanded');
+      if (isExpanded) {
+        card.classList.remove('expanded');
+        backdrop.classList.remove('show');
+        setTimeout(() => { backdrop.style.display = 'none'; }, 300);
+        expandBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>Expand`;
+      } else {
+        card.classList.add('expanded');
+        backdrop.style.display = 'block';
+        void backdrop.offsetWidth; // force reflow
+        backdrop.classList.add('show');
+        expandBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><polyline points="4 14 10 14 10 20"></polyline><polyline points="20 10 14 10 14 4"></polyline><line x1="14" y1="10" x2="21" y2="3"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>Collapse`;
+      }
+    };
+
+    expandBtn.addEventListener('click', toggleExpand);
+    backdrop.addEventListener('click', () => {
+      if (card.classList.contains('expanded')) toggleExpand();
+    });
+  }
+
+  if (clearBtn && logEl) {
+    clearBtn.addEventListener('click', () => {
+      logEl.innerHTML = '<div class="empty">No events yet...</div>';
+      logEl._empty = true;
+      logEl._sig = ''; // reset signature
+      if (countEl) countEl.textContent = '';
+      
+      // We could also call an API to clear server-side if it existed.
+    });
+  }
+})();
+

@@ -19,6 +19,9 @@
   <!-- Mobile overlay (tap to close drawer) -->
   <div class="mobile-overlay" id="mobile-overlay" aria-hidden="true"></div>
 
+  <!-- Log backdrop -->
+  <div class="log-backdrop" id="log-backdrop" aria-hidden="true"></div>
+
   <!-- ── Nav ─────────────────────────────────── -->
   <nav role="navigation" aria-label="Main navigation">
     <button class="nav-hamburger" id="nav-hamburger" aria-label="Open tunnels menu" aria-expanded="false"
@@ -217,7 +220,7 @@
         </div>
 
         <!-- ── Event Log ──────────────────────────────────────── -->
-        <div class="hv-card hv-log-card">
+        <div class="hv-card hv-log-card" id="srv-log-card">
           <div class="hv-card-head">
             <div class="hv-title-group">
               <div class="ov-icon-wrap">
@@ -228,7 +231,15 @@
               <span class="hv-card-title">Event Log</span>
               <span class="hv-log-count" id="srv-log-count" aria-live="polite"></span>
             </div>
-            <button class="hv-log-clear-btn" id="srv-log-clear" title="Clear event log" aria-label="Clear event log">Clear</button>
+            <div style="display: flex; gap: 8px;">
+              <button class="hv-log-clear-btn" id="srv-log-expand" title="Expand event log" aria-label="Expand event log">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
+                  <polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line>
+                </svg>
+                Expand
+              </button>
+              <button class="hv-log-clear-btn" id="srv-log-clear" title="Clear event log" aria-label="Clear event log">Clear</button>
+            </div>
           </div>
 
           <div id="srv-event-log" class="hv-log" role="log" aria-label="Server event log" aria-live="polite">

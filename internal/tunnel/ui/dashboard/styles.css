@@ -3382,6 +3382,48 @@ html[data-theme="dark"] .hv-card {
 /* ── Event log card ────────────────────────────────────────── */
 .hv-log-card {
   gap: 14px;
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.hv-log-card.expanded {
+  position: fixed;
+  top: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 90vw;
+  max-width: 1200px;
+  height: calc(100vh - 80px);
+  z-index: 1000;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+  margin: 0;
+  animation: logExpand .3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes logExpand {
+  from { opacity: 0; transform: translate(-50%, 20px) scale(0.95); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+
+.log-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 999;
+  display: none;
+  opacity: 0;
+  transition: opacity .3s;
+}
+
+.log-backdrop.show {
+  display: block;
+  opacity: 1;
+}
+
+.hv-log-card.expanded .hv-log {
+  max-height: none;
+  flex: 1;
 }
 
 .hv-log {
@@ -3396,7 +3438,7 @@ html[data-theme="dark"] .hv-card {
   flex-direction: column;
   gap: 4px;
   font-family: 'Geist Mono', monospace;
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.65;
   color: var(--text-2);
 }
@@ -3458,12 +3500,19 @@ html[data-theme="dark"] .hv-card {
   grid-template-columns: 66px 16px 42px auto;
   gap: 6px;
   align-items: baseline;
-  padding: 1px 0;
+  padding: 6px 8px;
   border-radius: 4px;
   transition: background .1s;
+  border-bottom: 1px solid var(--surface-2);
+}
+.hv-log-row:last-child {
+  border-bottom: none;
+}
+.hv-log-row:nth-child(even) {
+  background: var(--surface-2);
 }
 .hv-log-row:hover {
-  background: var(--bg-2, rgba(128,128,128,.06));
+  background: var(--surface-3) !important;
 }
 
 /* Time cell */

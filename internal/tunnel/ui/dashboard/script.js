@@ -1234,9 +1234,10 @@ function renderTunnels(tunnels) {
       const t = lastTunnels.find(x => x.endpoint === current);
       if (t) _applyTunnelInfo(t);
     }
-  } else if (lastTunnels.length === 1) {
+  } else if (lastTunnels.length === 1 && !window._tunnelsAutoSelected) {
     selectTunnel(lastTunnels[0].endpoint);
   }
+  window._tunnelsAutoSelected = true;
 }
 
 // ── Event listeners ───────────────────────────────────────────

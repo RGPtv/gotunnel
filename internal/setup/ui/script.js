@@ -152,8 +152,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const input = document.getElementById(btn.dataset.target);
       const isPass = input.type === 'password';
       input.type = isPass ? 'text' : 'password';
-      btn.querySelector('.eye-show').classList.toggle('hidden', !isPass);
-      btn.querySelector('.eye-hide').classList.toggle('hidden', isPass);
+      btn.querySelector('.eye-show').classList.toggle('hidden', isPass);
+      btn.querySelector('.eye-hide').classList.toggle('hidden', !isPass);
       btn.setAttribute('aria-label', isPass ? 'Hide password' : 'Show password');
     });
   });
@@ -165,10 +165,16 @@ document.addEventListener('DOMContentLoaded', () => {
     httpsToggle.setAttribute('aria-checked', String(on));
     httpsFields.classList.toggle('open', on);
     httpsFields.setAttribute('aria-hidden', String(!on));
+    
     if (on && noTLSToggle.checked) {
       noTLSToggle.checked = false;
-      noTLSRow.classList.remove('on');
-      noTLSToggle.setAttribute('aria-checked', 'false');
+      noTLSToggle.dispatchEvent(new Event('change'));
+    }
+    
+    // Automatically disable wildcard if HTTPS is turned off
+    if (!on && wildcardToggle.checked) {
+      wildcardToggle.checked = false;
+      wildcardToggle.dispatchEvent(new Event('change'));
     }
   });
 
@@ -185,12 +191,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const on = noTLSToggle.checked;
     noTLSRow.classList.toggle('on', on);
     noTLSToggle.setAttribute('aria-checked', String(on));
+    
     if (on && httpsToggle.checked) {
       httpsToggle.checked = false;
-      httpsRow.classList.remove('on');
-      httpsToggle.setAttribute('aria-checked', 'false');
-      httpsFields.classList.remove('open');
-      httpsFields.setAttribute('aria-hidden', 'true');
+      httpsToggle.dispatchEvent(new Event('change'));
     }
   });
 

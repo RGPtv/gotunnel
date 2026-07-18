@@ -2,7 +2,7 @@
 
 > A self-hosted, zero-dependency reverse tunnel written in Go. Securely expose local HTTP, WebSocket, or TCP services to the public internet via a remote server without relying on third-party services.
 
-[![Go Version](https://img.shields.io/badge/Go-1.21%2B-007d9c.svg)](https://golang.org/)
+[![Go Version](https://img.shields.io/badge/Go-1.25%2B-007d9c.svg)](https://golang.org/)
 [![License](https://img.shields.io/badge/License-MIT-42b883.svg)](LICENSE)
 [![Zero Dependencies](https://img.shields.io/badge/Architecture-Standard%20Library%20Only-333333.svg)]()
 
@@ -99,6 +99,16 @@ go build -o gotunnel ./cmd/gotunnel
 
 If you run `./gotunnel` without an existing `config.yaml` file, it will automatically launch an interactive, web-based Setup Wizard. This wizard will guide you through generating the correct configuration for either Server or Client mode.
 
+**Accessing the Setup Wizard on a Remote Server:**
+For security, the Setup Wizard only listens on `localhost:3000`. If you are running `gotunnel` on a remote Linux server (like a VPS), you will not be able to access the setup page directly from your browser.
+Instead, you must create an SSH tunnel from your local machine to the server. Run this command on your local machine:
+```bash
+ssh -L 3000:localhost:3000 user@your_server_ip
+```
+*(If port 3000 is already in use locally, you can change the first number, e.g., `ssh -L 3001:localhost:3000 ...` and then visit `http://localhost:3001` instead).*
+
+Once connected, open your web browser and navigate to `http://localhost:3000` to complete the setup.
+
 Alternatively, you can manually create the configuration files as described below.
 
 ### 1. Server Configuration (VPS)
@@ -160,7 +170,6 @@ GoTunnel relies on a single `config.yaml` containing either a `serverConfig` or 
 | `token` | `""` | Shared authentication secret. Set to `"auto"` to generate automatically. |
 | `cert` | *(auto)* | Absolute path to the TLS certificate PEM file. |
 | `key` | *(auto)* | Absolute path to the TLS private key PEM file. |
-| `auth` | *(disabled)* | Global HTTP Basic Auth for all proxy traffic (format: `user:pass`). |
 | `domain` | *(disabled)* | Base domain for routing subdomains (e.g., `example.com`). |
 | `inspect` | `:4040` | Local Web Dashboard binding. Omit to disable. |
 | `inspectUser` | `admin` | Username for dashboard authentication. |
@@ -168,6 +177,8 @@ GoTunnel relies on a single `config.yaml` containing either a `serverConfig` or 
 | `noTLS` | `false` | Disables TLS on the tunnel layer. **Only use behind a TLS-terminating reverse proxy.** |
 | `poolSize` | `512` | Maximum idle connections allowed per tunnel pool. |
 | `allowedTCPPorts`| *(optional)* | Restricts the remote ports TCP tunnels are permitted to bind to (e.g. `[":22222"]`). |
+| `wildcard` | `false` | Setup Wizard only: if true, dashboard is served over HTTPS on port 443. |
+| `dashboard_port`| `0` | Setup Wizard only: explicit dashboard port when wildcard is false. |
 
 ### Client (`clientConfig`)
 

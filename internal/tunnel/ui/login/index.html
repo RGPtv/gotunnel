@@ -1,74 +1,45 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
 <title>GoTunnel — Sign In</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@500;600&display=swap" rel="stylesheet">
+<meta name="description" content="Secure dashboard login for GoTunnel.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M12 2L2 7l10 5 10-5-10-5z'/><path d='M2 17l10 5 10-5'/><path d='M2 12l10 5 10-5'/></svg>">
 <link rel="stylesheet" href="/login/styles.css">
 </head>
 <body>
-<main class="page">
-  <section class="login-shell" aria-label="GoTunnel sign in">
 
-    <!-- Brand panel -->
-    <aside class="brand-panel" aria-hidden="true">
-      <div class="brand-mark">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-          <path d="M2 17l10 5 10-5"/>
-          <path d="M2 12l10 5 10-5"/>
-        </svg>
-      </div>
+<nav>
+  <div class="nav-brand">
+    <div class="nav-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+      </svg>
+    </div>
+    <span class="nav-name">GoTunnel</span>
+  </div>
+  <button type="button" id="theme-toggle" class="theme-toggle" aria-label="Toggle light/dark theme" style="margin-left: auto;">
+    <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+    </svg>
+    <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="4"/>
+      <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+    </svg>
+  </button>
+</nav>
 
-      <div class="brand-body">
-        <p class="panel-kicker">Secure dashboard</p>
-        <h1 class="panel-heading">GoTunnel</h1>
-        <p class="panel-copy">Manage live tunnels, inspect traffic, and control access from one protected console.</p>
-        <ul class="panel-features">
-          <li>Real-time traffic inspection</li>
-          <li>API key &amp; Basic Auth protection</li>
-          <li>Live connection monitoring</li>
-        </ul>
-      </div>
-
-      <div class="panel-status">
-        <span class="status-dot"></span>
-        <span>Dashboard ready</span>
-      </div>
-    </aside>
-
-    <!-- Form card -->
-    <section class="card">
-      <button type="button" id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode" title="Toggle dark mode">
-        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-        </svg>
-        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <circle cx="12" cy="12" r="4"/>
-          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
-        </svg>
-      </button>
-
-      <div class="mobile-brand">
-        <div class="brand-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-            <path d="M2 17l10 5 10-5"/>
-            <path d="M2 12l10 5 10-5"/>
-          </svg>
-        </div>
-        <span class="brand-name">GoTunnel</span>
-      </div>
-
+<div class="layout">
+  <main class="login-container">
+    <section class="login-card">
       <div class="form-head">
         <h2 class="heading">Sign in</h2>
         <p class="sub">Enter your dashboard credentials to continue.</p>
       </div>
 
-      <div id="error-msg" class="error-msg hidden" role="alert" aria-live="assertive"></div>
+      <div id="error-msg" class="alert error hidden" role="alert" aria-live="assertive"></div>
 
       <form method="POST" action="/login" id="login-form" novalidate>
         <div class="field">
@@ -89,7 +60,7 @@
 
         <div class="field">
           <label for="password">Password</label>
-          <div class="password-wrap">
+          <div class="pass-wrap">
             <input
               type="password"
               id="password"
@@ -112,17 +83,21 @@
           </div>
         </div>
 
-        <button type="submit" id="submit-btn" class="submit-btn" aria-label="Sign in to GoTunnel">
-          <span id="submit-label">Sign in</span>
-          <span id="submit-spinner" class="spinner hidden" aria-hidden="true"></span>
-        </button>
+        <div class="form-actions">
+          <button type="submit" id="submit-btn" class="btn btn-primary" aria-label="Sign in to GoTunnel">
+            <span id="submit-label">Sign in</span>
+            <span id="submit-spinner" class="spinner hidden" aria-hidden="true"></span>
+          </button>
+        </div>
       </form>
-
-      <p class="card-footer">GoTunnel &mdash; Secure tunnel management</p>
+      
+      <div class="card-footer">
+        <p>GoTunnel — Secure tunnel management</p>
+      </div>
     </section>
+  </main>
+</div>
 
-  </section>
-</main>
 <script src="/login/script.js" defer></script>
 </body>
 </html>

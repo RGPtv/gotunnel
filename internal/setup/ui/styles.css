@@ -165,19 +165,24 @@ nav {
 html[data-theme="dark"] .theme-toggle .icon-moon { opacity: 0; transform: scale(0.5) translateY(-10px); }
 html[data-theme="dark"] .theme-toggle .icon-sun { opacity: 1; transform: scale(1); }
 
-/* ── Layout & Card ──────────────────────────────────────────────────── */
 .layout {
   display: flex;
   justify-content: center;
-  align-items: center;
-  min-height: 100vh;
+  align-items: flex-start;
+  height: 100vh;
   padding: 80px 20px 40px; /* offset for nav */
   overflow-y: auto;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+.layout::-webkit-scrollbar {
+  display: none; /* Chrome, Safari and Opera */
 }
 
 .setup-container {
   width: 100%;
   max-width: 520px;
+  margin: 0 auto;
 }
 
 .setup-card {

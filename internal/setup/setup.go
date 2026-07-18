@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -66,10 +67,13 @@ type setupRequest struct {
 // completes the wizard and config.yaml has been written.  It then restarts
 // the current process so the normal startup path runs with the new config.
 func RunSetupWizard() {
-	addr := fmt.Sprintf(":%d", setupPort)
+	// The wizard writes credentials and configuration, so it must never be
+	// reachable from the network without authentication.
+	addr := fmt.Sprintf("127.0.0.1:%d", setupPort)
 
 	mux := http.NewServeMux()
 	done := make(chan struct{})
+	var completeMu sync.Mutex
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
@@ -87,7 +91,7 @@ func RunSetupWizard() {
 	})
 
 	mux.HandleFunc("/api/setup/complete", func(w http.ResponseWriter, r *http.Request) {
-		handleComplete(w, r, done)
+		handleComplete(w, r, done, &completeMu)
 	})
 
 	srv := &http.Server{
@@ -132,10 +136,20 @@ func RunSetupWizard() {
 }
 
 // handleComplete validates the wizard payload, writes config.yaml, and signals done.
-func handleComplete(w http.ResponseWriter, r *http.Request, done chan struct{}) {
+func handleComplete(w http.ResponseWriter, r *http.Request, done chan struct{}, completeMu *sync.Mutex) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
+	}
+	// Serialize completion so concurrent submissions cannot race the config
+	// write or close(done) twice.
+	completeMu.Lock()
+	defer completeMu.Unlock()
+	select {
+	case <-done:
+		http.Error(w, "setup already completed", http.StatusConflict)
+		return
+	default:
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
@@ -201,24 +215,21 @@ func handleComplete(w http.ResponseWriter, r *http.Request, done chan struct{}) 
 		"redirect_url": redirectURL,
 	})
 
-	// Signal the wizard server to shut down after a brief delay so the HTTP
-	// response body is fully flushed to the browser first.
-	go func() {
-		time.Sleep(300 * time.Millisecond)
-		close(done)
-	}()
+	// Shutdown is graceful, so the completed response remains deliverable
+	// while RunSetupWizard stops accepting new configuration submissions.
+	close(done)
 }
 
 // validateSetupRequest returns a descriptive error if any required field is missing or invalid.
 // It also normalises optional fields (empty addresses → defaults, token mode).
 func validateSetupRequest(req *setupRequest) error {
 	req.Username = strings.TrimSpace(req.Username)
-	req.Domain   = strings.TrimSpace(req.Domain)
+	req.Domain = strings.TrimSpace(req.Domain)
 	req.CertFile = strings.TrimSpace(req.CertFile)
-	req.KeyFile  = strings.TrimSpace(req.KeyFile)
-	req.Token    = strings.TrimSpace(req.Token)
+	req.KeyFile = strings.TrimSpace(req.KeyFile)
+	req.Token = strings.TrimSpace(req.Token)
 	req.HTTPAddr = strings.TrimSpace(req.HTTPAddr)
-	req.TunAddr  = strings.TrimSpace(req.TunAddr)
+	req.TunAddr = strings.TrimSpace(req.TunAddr)
 
 	if req.Username == "" {
 		return fmt.Errorf("username is required")

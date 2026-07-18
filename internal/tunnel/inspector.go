@@ -494,6 +494,7 @@ func (ins *Inspector) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == http.MethodPost {
+		r.Body = http.MaxBytesReader(w, r.Body, maxAPIBodySize)
 		// Per-IP rate limiting on login attempts.
 		peerIP, _, _ := net.SplitHostPort(r.RemoteAddr)
 		if peerIP == "" {
@@ -933,9 +934,12 @@ func (ins *Inspector) handleToken(w http.ResponseWriter, r *http.Request) {
 	if !ins.validateCSRF(w, r) {
 		return
 	}
+	ins.mu.RLock()
+	token := ins.Token
+	ins.mu.RUnlock()
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
-	json.NewEncoder(w).Encode(map[string]string{"token": ins.Token})
+	json.NewEncoder(w).Encode(map[string]string{"token": token})
 }
 
 // handleTokenRegen generates a new token, updates config.yaml and the in-memory token.

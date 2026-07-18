@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -38,7 +39,7 @@ type ServerConfig struct {
 	PoolSize        int      `yaml:"poolSize"`
 	AllowedTCPPorts []string `yaml:"allowedTCPPorts"` // if set, only these remote addrs are allowed for TCP tunnels
 	// Setup-wizard fields
-	Wildcard      bool `yaml:"wildcard"`      // if true, dashboard served over HTTPS on port 443
+	Wildcard      bool `yaml:"wildcard"`       // if true, dashboard served over HTTPS on port 443
 	DashboardPort int  `yaml:"dashboard_port"` // explicit dashboard port when wildcard is false
 }
 
@@ -246,5 +247,38 @@ func UpdateTokenInConfig(newToken string) error {
 		return errors.New("could not find 'token:' field under 'serverConfig:' in " + filename)
 	}
 
-	return os.WriteFile(filename, []byte(strings.Join(lines, "\n")), 0644)
+	info, err := os.Stat(filename)
+	if err != nil {
+		return fmt.Errorf("stat %s: %w", filename, err)
+	}
+
+	// Write and sync a sibling temporary file before replacing the config.
+	// Direct writes truncate the only configuration copy if the process or
+	// machine stops mid-write.
+	tmp, err := os.CreateTemp(filepath.Dir(filename), "."+filepath.Base(filename)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("create temporary config: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+
+	if err := tmp.Chmod(info.Mode().Perm()); err != nil {
+		tmp.Close()
+		return fmt.Errorf("set temporary config permissions: %w", err)
+	}
+	if _, err := tmp.Write([]byte(strings.Join(lines, "\n"))); err != nil {
+		tmp.Close()
+		return fmt.Errorf("write temporary config: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return fmt.Errorf("sync temporary config: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temporary config: %w", err)
+	}
+	if err := os.Rename(tmpName, filename); err != nil {
+		return fmt.Errorf("replace %s: %w", filename, err)
+	}
+	return nil
 }

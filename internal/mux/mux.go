@@ -129,12 +129,29 @@ func writeFrameLocked(w io.Writer, typ byte, flags uint16, streamID, length uint
 	binary.BigEndian.PutUint16(hdr[2:], flags)
 	binary.BigEndian.PutUint32(hdr[4:], streamID)
 	binary.BigEndian.PutUint32(hdr[8:], length)
-	if _, err := w.Write(hdr[:]); err != nil {
+	if err := writeAll(w, hdr[:]); err != nil {
 		return err
 	}
 	if len(payload) > 0 {
-		_, err := w.Write(payload)
-		return err
+		return writeAll(w, payload)
+	}
+	return nil
+}
+
+// writeAll handles writers that make partial progress without returning an
+// error. Frame boundaries must never be truncated on the wire.
+func writeAll(w io.Writer, p []byte) error {
+	for len(p) > 0 {
+		n, err := w.Write(p)
+		if n > 0 {
+			p = p[n:]
+		}
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return io.ErrShortWrite
+		}
 	}
 	return nil
 }
@@ -246,11 +263,10 @@ func (s *Session) closeWithError(err error) error {
 			st.forceClose(err)
 		}
 
-		// Best-effort GoAway then hard-close the underlying connection.
-		s.writeMu.Lock()
-		writeFrameLocked(s.conn, typeGoAway, 0, 0, 0, nil) //nolint:errcheck
-		s.writeMu.Unlock()
-		s.conn.Close()
+		// Close the transport immediately. Waiting for writeMu here can
+		// deadlock shutdown when another goroutine is blocked in a network
+		// Write.
+		_ = s.conn.Close()
 	})
 	return nil
 }
@@ -438,10 +454,21 @@ func (s *Session) handlePing(flags uint16, seq uint32) error {
 func (s *Session) handleData(flags uint16, streamID uint32, payload []byte) error {
 	// ── SYN: new inbound stream ───────────────────────────────────────────────
 	if flags&flagSYN != 0 {
+		// A peer may only open streams using its own parity. Rejecting a
+		// duplicate ID also prevents a malformed peer from replacing a live
+		// stream in the session map.
+		peerUsesOddIDs := !s.isClient
+		if streamID == 0 || (streamID&1 == 1) != peerUsesOddIDs {
+			return errors.New("mux: invalid inbound stream ID")
+		}
 		st := s.newStream(streamID)
 
 		s.streamsMu.Lock()
 		if s.streams == nil {
+			s.streamsMu.Unlock()
+			return s.sendCtrl(streamID, typeData, flagRST, 0)
+		}
+		if _, exists := s.streams[streamID]; exists {
 			s.streamsMu.Unlock()
 			return s.sendCtrl(streamID, typeData, flagRST, 0)
 		}
@@ -625,12 +652,12 @@ type Stream struct {
 	// Receive side.
 	recvMu     sync.Mutex
 	recvBuf    []byte
-	recvWin    int64        // remaining receive window; protected by recvMu
+	recvWin    int64         // remaining receive window; protected by recvMu
 	recvNotify chan struct{} // capacity-1; pinged when data appended
 
 	// Send flow-control window.
-	sendWinMu sync.Mutex
-	sendWin   int64        // protected by sendWinMu
+	sendWinMu  sync.Mutex
+	sendWin    int64         // protected by sendWinMu
 	sendNotify chan struct{} // capacity-1; pinged when window grows
 
 	// Half-close state.
@@ -891,8 +918,14 @@ func (st *Stream) SetDeadline(t time.Time) error {
 	st.readDeadline = t
 	st.writeDeadline = t
 	st.deadlineMu.Unlock()
-	select { case st.recvNotify <- struct{}{}: default: }
-	select { case st.sendNotify <- struct{}{}: default: }
+	select {
+	case st.recvNotify <- struct{}{}:
+	default:
+	}
+	select {
+	case st.sendNotify <- struct{}{}:
+	default:
+	}
 	return nil
 }
 
@@ -900,7 +933,10 @@ func (st *Stream) SetReadDeadline(t time.Time) error {
 	st.deadlineMu.Lock()
 	st.readDeadline = t
 	st.deadlineMu.Unlock()
-	select { case st.recvNotify <- struct{}{}: default: }
+	select {
+	case st.recvNotify <- struct{}{}:
+	default:
+	}
 	return nil
 }
 
@@ -908,7 +944,10 @@ func (st *Stream) SetWriteDeadline(t time.Time) error {
 	st.deadlineMu.Lock()
 	st.writeDeadline = t
 	st.deadlineMu.Unlock()
-	select { case st.sendNotify <- struct{}{}: default: }
+	select {
+	case st.sendNotify <- struct{}{}:
+	default:
+	}
 	return nil
 }
 

@@ -56,7 +56,8 @@ type authBucket struct {
 	lastSeen time.Time
 }
 
-// allow returns true if the IP is within the rate limit.
+// allow reports whether the IP is within the rate limit without counting a
+// successful connection attempt.
 func (b *authBucket) allow() bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -71,11 +72,23 @@ func (b *authBucket) allow() bool {
 		}
 	}
 	b.attempts = valid
-	if len(b.attempts) >= authRateLimit {
-		return false
+	return len(b.attempts) < authRateLimit
+}
+
+// recordFailure adds an authentication failure to the sliding window.
+func (b *authBucket) recordFailure() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	now := time.Now()
+	b.lastSeen = now
+	cutoff := now.Add(-authRateWindow)
+	valid := b.attempts[:0]
+	for _, t := range b.attempts {
+		if t.After(cutoff) {
+			valid = append(valid, t)
+		}
 	}
-	b.attempts = append(b.attempts, now)
-	return true
+	b.attempts = append(valid, now)
 }
 
 // expired reports whether this bucket has been idle long enough to evict.
@@ -96,6 +109,7 @@ type TunnelMeta struct {
 	Endpoint         string
 	ProxyURL         string
 	ConnectedAt      time.Time
+	closedAt         time.Time
 	ClientIP         string
 	Session          *mux.Session
 }
@@ -574,6 +588,7 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 	// ── Detect WebSocket Upgrade vs direct AUTH ───────────────────────────────
 	peek, err := r.Peek(4)
 	if err != nil {
+		bucket.recordFailure()
 		s.srvLog(LevelWarn, "auth peek: %v", err)
 		conn.Close()
 		return
@@ -581,12 +596,14 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 	if string(peek) == "GET " {
 		req, err := http.ReadRequest(r)
 		if err != nil || strings.ToLower(req.Header.Get("Upgrade")) != "websocket" {
+			bucket.recordFailure()
 			fmt.Fprintf(conn, "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n")
 			conn.Close()
 			return
 		}
 		wsKey := req.Header.Get("Sec-WebSocket-Key")
 		if wsKey == "" {
+			bucket.recordFailure()
 			fmt.Fprintf(conn, "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n")
 			conn.Close()
 			return
@@ -617,6 +634,7 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 	// ── AUTH ──────────────────────────────────────────────────────────────────
 	line, err := r.ReadString('\n')
 	if err != nil {
+		bucket.recordFailure()
 		s.srvLog(LevelError, "auth read: %v", err)
 		conn.Close()
 		return
@@ -625,6 +643,7 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 	line = strings.TrimSpace(line)
 	parts := strings.Fields(line) // correctly handle spaces
 	if len(parts) < 2 || parts[0] != "AUTH" {
+		bucket.recordFailure()
 		fmt.Fprintf(conn, "ERROR unauthorized\n")
 		conn.Close()
 		s.srvLog(LevelWarn, "auth format fail from %s", conn.RemoteAddr())
@@ -650,6 +669,7 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 	expectedHmac := hex.EncodeToString(mac.Sum(nil))
 
 	if subtle.ConstantTimeCompare([]byte(clientHmac), []byte(expectedHmac)) != 1 {
+		bucket.recordFailure()
 		fmt.Fprintf(conn, "ERROR unauthorized\n")
 		// Brief delay to slow down brute-force scanners.
 		time.Sleep(authFailDelay)
@@ -1415,16 +1435,11 @@ func randomInt(n int) int {
 	return int(v.Int64())
 }
 
-// startJanitor periodically scans all pools and removes dead connections.
-// Named pools (subdomain / TCP) are only deleted after they have been
-// continuously empty for poolEmptyGrace — a transient empty pool (all
-// workers busy serving a request, or mid-reconnect) does not trigger deletion.
-//
-// Both s.mu and s.tunnelMetaMu are held simultaneously during map cleanup so
-// that handleTunnelConn cannot insert new metadata for an endpoint between
-// the moment we decide to delete its pool and the moment we delete its meta
-// (TOCTOU fix). Blocking I/O (listener close) and logging are deferred until
-// after the locks are released to avoid holding the write mutex during syscalls.
+// startJanitor periodically removes closed sessions. TCP listener metadata is
+// retained for poolEmptyGrace so its assigned public port survives a normal
+// client reconnect; HTTP entries can be removed immediately because they do
+// not own a listening socket. Listener close and logging happen after map
+// locks are released.
 const poolEmptyGrace = 30 * time.Second
 
 func (s *Server) startJanitor() {
@@ -1455,8 +1470,19 @@ func (s *Server) startJanitor() {
 		var closed []closedEntry
 		seenSessions := make(map[*mux.Session]bool)
 		s.tunnelMetaMu.Lock()
+		now := time.Now()
 		for ep, meta := range s.tunnelMeta {
 			if meta.Session != nil && meta.Session.IsClosed() {
+				// Keep TCP listeners through short reconnect gaps. Removing
+				// them immediately makes an assigned remote port flap even
+				// though its client is reconnecting normally.
+				if meta.Type == "tcp" && (meta.closedAt.IsZero() || now.Sub(meta.closedAt) < poolEmptyGrace) {
+					if meta.closedAt.IsZero() {
+						meta.closedAt = now
+						s.tunnelMeta[ep] = meta
+					}
+					continue
+				}
 				closed = append(closed, closedEntry{ep, meta.Session})
 				delete(s.tunnelMeta, ep)
 				if !seenSessions[meta.Session] {
@@ -1604,14 +1630,20 @@ func (s *Server) isTCPPortAllowed(remoteAddr string) bool {
 	}
 
 	for _, allowed := range s.allowedTCPPorts {
+		allowed = strings.TrimSpace(allowed)
 		// Exact match first (most common case).
 		if allowed == remoteAddr {
 			return true
 		}
-		// Normalise: strip leading colon and host part.
+		// A configured host is an exact bind-address constraint. Do not
+		// reduce it to a port-only rule, or (for example) 127.0.0.1:2222
+		// would accidentally permit a public :2222 listener.
 		allowedPort := strings.TrimLeft(allowed, ":")
-		_, allowedPortOnly, splitErr := net.SplitHostPort(allowed)
+		allowedHost, allowedPortOnly, splitErr := net.SplitHostPort(allowed)
 		if splitErr == nil {
+			if allowedHost != "" {
+				continue
+			}
 			allowedPort = allowedPortOnly
 		}
 		// Port-range: "20000-30000".

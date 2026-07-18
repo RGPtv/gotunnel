@@ -191,7 +191,6 @@ func RunClient(cfg *ClientConfig) {
 			remoteVal = t.Subdomain
 		}
 
-
 		name := t.Name
 		if name == "" {
 			name = fmt.Sprintf("tunnel-%d", idx+1)
@@ -577,6 +576,11 @@ func (c *Client) handleWebSocket(id int, tunnelConn net.Conn, tunnelReader *bufi
 	defer resp.Body.Close()
 	if err := resp.Write(tunnelConn); err != nil {
 		return fmt.Errorf("ws relay 101: %w", err)
+	}
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		// The gateway will translate a rejected upgrade into an HTTP error.
+		// Do not start raw bidirectional copying for a normal HTTP response.
+		return nil
 	}
 
 	log.Printf("[w%d] ws open: %s", id, req.URL.Path)

@@ -37,6 +37,9 @@ type ServerConfig struct {
 	NoTLS           bool     `yaml:"noTLS"`
 	PoolSize        int      `yaml:"poolSize"`
 	AllowedTCPPorts []string `yaml:"allowedTCPPorts"` // if set, only these remote addrs are allowed for TCP tunnels
+	// Setup-wizard fields
+	Wildcard      bool `yaml:"wildcard"`      // if true, dashboard served over HTTPS on port 443
+	DashboardPort int  `yaml:"dashboard_port"` // explicit dashboard port when wildcard is false
 }
 
 // ClientConfig holds all settings for running gotunnel in client mode.
@@ -78,6 +81,19 @@ func LoadConfig() (*AppConfig, error) {
 	}
 
 	return &cfg, nil
+}
+
+// ConfigFileExists returns true when at least one of config.yml / config.yaml
+// is present in the current working directory.  It is called by main before
+// LoadConfig so that a missing file can trigger the setup wizard instead of
+// printing an error and exiting.
+func ConfigFileExists() bool {
+	for _, name := range []string{"config.yml", "config.yaml"} {
+		if _, err := os.Stat(name); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // readConfigFile tries config.yml then config.yaml and returns the file
@@ -177,21 +193,7 @@ func validateClientConfig(c *ClientConfig) error {
 		if tunnelType != "http" && tunnelType != "tcp" {
 			return fmt.Errorf("invalid clientConfig: %s has unknown type %q (must be 'http' or 'tcp')", label, t.Type)
 		}
-		// Subdomain-only TCP: validate that the target has a port so we can
-		// derive the server listen address automatically.
-		if tunnelType == "tcp" && t.Remote == "" && t.Subdomain != "" {
-			target := t.Target
-			if !strings.Contains(target, "://") && !strings.HasPrefix(target, ":") {
-				// bare host:port — must have a colon
-				if !strings.Contains(target, ":") {
-					return fmt.Errorf(
-						"invalid clientConfig: %s (type 'tcp', subdomain-only) target %q has no port — "+
-							"specify a port in 'target' (e.g. \"localhost:22\") or set 'remote' explicitly",
-						label, target,
-					)
-				}
-			}
-		}
+
 	}
 
 	return nil

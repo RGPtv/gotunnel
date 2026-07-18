@@ -37,7 +37,7 @@ type Client struct {
 	token      string
 	tunnelType string
 	remoteAddr string
-	subdomain  string
+
 	targetAddr string
 	noTLS      bool
 	tlsConfig  *tls.Config
@@ -190,19 +190,7 @@ func RunClient(cfg *ClientConfig) {
 		if tunnelType == "http" && t.Subdomain != "" {
 			remoteVal = t.Subdomain
 		}
-		if tunnelType == "tcp" && t.Remote == "" && t.Subdomain != "" {
-			// No explicit remote port — derive it from the target address so
-			// the server opens the same port number locally.
-			// e.g. target: "localhost:22", subdomain: "ssh"
-			// → server listens on :22, exposed as ssh.example.com:22
-			normTarget := normalizeTargetAddr(t.Target)
-			_, derivedPort, pErr := net.SplitHostPort(targetHost(normTarget))
-			if pErr == nil && derivedPort != "" {
-				remoteVal = ":" + derivedPort
-			}
-			// If we cannot parse a port, remoteVal stays "" and the server
-			// will return an error — which is the right thing to do.
-		}
+
 
 		name := t.Name
 		if name == "" {
@@ -215,7 +203,7 @@ func RunClient(cfg *ClientConfig) {
 			token:      cfg.Token,
 			tunnelType: tunnelType,
 			remoteAddr: remoteVal,
-			subdomain:  t.Subdomain,
+
 			targetAddr: normalizeTargetAddr(t.Target),
 			noTLS:      cfg.NoTLS,
 			httpClient: &http.Client{
@@ -243,9 +231,6 @@ func RunClient(cfg *ClientConfig) {
 			// Single-tunnel mode: full banner.
 			fmt.Fprintf(os.Stderr, "  %-14s %s\n", "Type", tunnelType)
 			if tunnelType == "tcp" {
-				if t.Subdomain != "" {
-					fmt.Fprintf(os.Stderr, "  %-14s %s\n", "Subdomain", t.Subdomain)
-				}
 				remoteDisplay := remoteVal
 				if remoteDisplay == "" {
 					remoteDisplay = "(derived from target)"
@@ -264,9 +249,6 @@ func RunClient(cfg *ClientConfig) {
 			// Multi-tunnel mode: compact per-tunnel summary line.
 			fmt.Fprintf(os.Stderr, "  [%s] %s → %s\n", name, tunnelType, t.Target)
 			if tunnelType == "tcp" {
-				if t.Subdomain != "" {
-					fmt.Fprintf(os.Stderr, "         subdomain: %s\n", t.Subdomain)
-				}
 				fmt.Fprintf(os.Stderr, "         remote: %s\n", remoteVal)
 			}
 			if tunnelType == "http" && t.Subdomain != "" {
@@ -416,10 +398,7 @@ func (c *Client) connectAndServe() error {
 	if remote == "" {
 		remote = "-"
 	}
-	sub := c.subdomain
-	if sub == "" {
-		sub = "-"
-	}
+	sub := "-"
 	fmt.Fprintf(conn, "AUTH %s %s %s %s\n", clientHmac, c.tunnelType, remote, sub)
 
 	line, err := reader.ReadString('\n')

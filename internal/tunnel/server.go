@@ -636,10 +636,7 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 	if len(parts) > 3 && parts[3] != "-" {
 		remoteAddr = parts[3]
 	}
-	subdomain := ""
-	if len(parts) > 4 && parts[4] != "-" {
-		subdomain = parts[4]
-	}
+
 	s.mu.RLock()
 	serverToken := s.token
 	s.mu.RUnlock()
@@ -683,7 +680,7 @@ func (s *Server) handleTunnelConn(conn net.Conn) {
 		}
 		s.mu.Unlock()
 
-		proxyURL := s.buildTCPProxyURL(remoteAddr, subdomain)
+		proxyURL := s.buildTCPProxyURL(remoteAddr)
 		fmt.Fprintf(conn, "OK %s %s\n", remoteAddr, proxyURL)
 
 		session, err := mux.Client(&bufferedConn{Conn: conn, r: r}, mux.DefaultConfig())
@@ -1288,19 +1285,14 @@ func (s *Server) buildProxyURL(tunnelType, endpoint string) string {
 	return "http://" + endpoint + s.httpAddr
 }
 
-func (s *Server) buildTCPProxyURL(remoteAddr, subdomain string) string {
+func (s *Server) buildTCPProxyURL(remoteAddr string) string {
 	host, port, err := net.SplitHostPort(remoteAddr)
 	if err != nil {
 		port = strings.TrimLeft(remoteAddr, ":")
 	}
 
 	publicHost := ""
-	if subdomain != "" {
-		publicHost = subdomain
-		if s.domain != "" {
-			publicHost = subdomain + "." + s.domain
-		}
-	} else if s.domain != "" {
+	if s.domain != "" {
 		publicHost = s.domain
 	} else if host != "" && host != "0.0.0.0" && host != "::" && host != "[::]" {
 		publicHost = host

@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<title>GoTunnel — Setup Wizard</title>
+<meta name="description" content="First-time configuration wizard for GoTunnel. Set up your admin account and server settings.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/setup/styles.css">
+</head>
+<body>
+<div class="shell">
+
+  <!-- ════════════════════════════════════════════════════════════
+       BRAND PANEL
+       ════════════════════════════════════════════════════════════ -->
+  <aside class="brand" aria-hidden="true">
+    <div class="brand-bg">
+      <div class="orb orb-1"></div>
+      <div class="orb orb-2"></div>
+      <div class="orb orb-3"></div>
+    </div>
+
+    <div class="brand-inner">
+      <!-- Logo -->
+      <div class="brand-logo">
+        <div class="logo-mark">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5"/>
+            <path d="M2 12l10 5 10-5"/>
+          </svg>
+        </div>
+        <div class="logo-text">
+          <div class="logo-name">GoTunnel</div>
+          <div class="logo-tagline">Initial Setup</div>
+        </div>
+      </div>
+
+      <!-- Vertical stepper -->
+      <nav class="stepper" id="stepper">
+        <div class="stepper-item active" data-step="1">
+          <div class="stepper-dot">
+            <span class="stepper-num">1</span>
+            <div class="stepper-check">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="3 8 7 12 13 5"/>
+              </svg>
+            </div>
+          </div>
+          <div class="stepper-info">
+            <div class="stepper-label-name">Admin Account</div>
+            <div class="stepper-label-desc">Username &amp; password</div>
+          </div>
+        </div>
+
+        <div class="stepper-item" data-step="2">
+          <div class="stepper-dot">
+            <span class="stepper-num">2</span>
+            <div class="stepper-check">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="3 8 7 12 13 5"/>
+              </svg>
+            </div>
+          </div>
+          <div class="stepper-info">
+            <div class="stepper-label-name">Server Configuration</div>
+            <div class="stepper-label-desc">Network, TLS &amp; advanced</div>
+          </div>
+        </div>
+
+        <div class="stepper-item" data-step="3">
+          <div class="stepper-dot">
+            <span class="stepper-num">3</span>
+            <div class="stepper-check">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="3 8 7 12 13 5"/>
+              </svg>
+            </div>
+          </div>
+          <div class="stepper-info">
+            <div class="stepper-label-name">Review &amp; Deploy</div>
+            <div class="stepper-label-desc">Confirm and generate config</div>
+          </div>
+        </div>
+      </nav>
+    </div><!-- /brand-inner -->
+
+    <div class="brand-footer">
+      <div class="status-pill">
+        <span class="pulse-dot"></span>
+        Setup mode active
+      </div>
+    </div>
+  </aside><!-- /brand -->
+
+  <!-- ════════════════════════════════════════════════════════════
+       FORM PANEL
+       ════════════════════════════════════════════════════════════ -->
+  <main class="form-panel" id="form-panel">
+
+    <!-- Topbar -->
+    <div class="topbar">
+      <button type="button" id="theme-toggle" class="icon-btn" aria-label="Toggle light/dark theme">
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="4"/>
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- ── Step 1: Admin Account ─────────────────────────────── -->
+    <div class="step active" id="step-1" role="tabpanel">
+      <div>
+        <div class="step-eyebrow"><span class="step-eyebrow-dot"></span>Step 1 of 3</div>
+        <h2 class="step-heading">Administrator Account</h2>
+        <p class="step-sub">Create the login credentials you'll use to access the GoTunnel dashboard.</p>
+      </div>
+
+      <div id="step1-alert" class="alert error" role="alert" aria-live="assertive">
+        <svg class="alert-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span id="step1-alert-text"></span>
+      </div>
+
+      <!-- Username -->
+      <div class="field">
+        <label for="admin-username">Username</label>
+        <input type="text" id="admin-username" name="admin-username"
+          autocomplete="username" autocorrect="off" autocapitalize="off" spellcheck="false"
+          placeholder="e.g. admin" required aria-required="true">
+        <div class="field-error" id="err-username">Username cannot be empty.</div>
+      </div>
+
+      <!-- Password -->
+      <div class="field">
+        <label for="admin-password">Password</label>
+        <div class="pass-wrap">
+          <input type="password" id="admin-password" name="admin-password"
+            autocomplete="new-password" placeholder="Minimum 8 characters"
+            required aria-required="true">
+          <button type="button" class="pass-toggle" aria-label="Show password" data-target="admin-password">
+            <svg class="eye-show" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+            </svg>
+            <svg class="eye-hide hidden" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+              <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+              <line x1="1" y1="1" x2="23" y2="23"/>
+            </svg>
+          </button>
+        </div>
+        <div class="strength-row" aria-hidden="true">
+          <span class="str-seg" id="str-1"></span>
+          <span class="str-seg" id="str-2"></span>
+          <span class="str-seg" id="str-3"></span>
+          <span class="str-seg" id="str-4"></span>
+        </div>
+        <div class="strength-text" id="strength-label" aria-live="polite"></div>
+        <div class="field-error" id="err-password">Password must be at least 8 characters.</div>
+      </div>
+
+      <!-- Confirm -->
+      <div class="field">
+        <label for="admin-confirm">Confirm Password</label>
+        <div class="pass-wrap">
+          <input type="password" id="admin-confirm" name="admin-confirm"
+            autocomplete="new-password" placeholder="Re-enter password"
+            required aria-required="true">
+          <button type="button" class="pass-toggle" aria-label="Show confirm password" data-target="admin-confirm">
+            <svg class="eye-show" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+            </svg>
+            <svg class="eye-hide hidden" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+              <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+              <line x1="1" y1="1" x2="23" y2="23"/>
+            </svg>
+          </button>
+        </div>
+        <div class="field-error" id="err-confirm">Passwords do not match.</div>
+      </div>
+
+      <div class="step-nav">
+        <button type="button" class="btn btn-primary" id="btn-step1-next">
+          Continue
+          <svg class="btn-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10h12M12 5l5 5-5 5"/></svg>
+        </button>
+      </div>
+    </div><!-- /step-1 -->
+
+    <!-- ── Step 2: Server Configuration ──────────────────────── -->
+    <div class="step" id="step-2" role="tabpanel">
+      <div>
+        <div class="step-eyebrow"><span class="step-eyebrow-dot"></span>Step 2 of 3</div>
+        <h2 class="step-heading">Server Configuration</h2>
+        <p class="step-sub">Configure your server's network settings, TLS, authentication token, and performance options.</p>
+      </div>
+
+      <div id="step2-alert" class="alert error" role="alert" aria-live="assertive">
+        <svg class="alert-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span id="step2-alert-text"></span>
+      </div>
+
+      <!-- Domain & Network -->
+      <div class="section-sep"><span class="section-sep-text">Domain &amp; Network</span><div class="section-sep-line"></div></div>
+
+      <div class="field">
+        <label for="domain">Domain Name</label>
+        <input type="text" id="domain" name="domain" autocomplete="off" spellcheck="false"
+          placeholder="e.g. tunnel.example.com" required aria-required="true">
+        <p class="field-hint">Subdomains like <code>api.tunnel.example.com</code> will be routed through this.</p>
+        <div class="field-error" id="err-domain">Please enter a valid domain name.</div>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label for="http-addr">HTTP Proxy Address</label>
+          <input type="text" id="http-addr" name="http-addr" value=":80" placeholder=":80">
+          <p class="field-hint">Public HTTP listen port.</p>
+        </div>
+        <div class="field">
+          <label for="tun-addr">Tunnel Listen Address</label>
+          <input type="text" id="tun-addr" name="tun-addr" value=":2222" placeholder=":2222">
+          <p class="field-hint">Port clients connect to.</p>
+        </div>
+      </div>
+
+      <!-- SSL / TLS -->
+      <div class="section-sep"><span class="section-sep-text">SSL / TLS</span><div class="section-sep-line"></div></div>
+
+      <label class="toggle-field" id="https-row" for="https-toggle">
+        <div class="toggle-switch"><div class="toggle-thumb"></div></div>
+        <input type="checkbox" id="https-toggle" role="switch" aria-checked="false">
+        <div class="toggle-body">
+          <div class="toggle-title">Enable HTTPS</div>
+          <div class="toggle-desc">Serve public traffic over HTTPS on port 443. Requires a TLS certificate and private key.</div>
+        </div>
+      </label>
+
+      <div class="collapsible" id="https-fields" aria-hidden="true">
+        <div class="collapsible-pad">
+          <div class="field">
+            <label for="cert-file">Certificate File Path</label>
+            <input type="text" id="cert-file" name="cert-file" autocomplete="off" spellcheck="false"
+              placeholder="e.g. /etc/ssl/certs/fullchain.pem">
+            <div class="field-error" id="err-cert">Certificate path is required when HTTPS is enabled.</div>
+          </div>
+          <div class="field">
+            <label for="key-file">Private Key File Path</label>
+            <input type="text" id="key-file" name="key-file" autocomplete="off" spellcheck="false"
+              placeholder="e.g. /etc/ssl/private/privkey.pem">
+            <div class="field-error" id="err-key">Key path is required when HTTPS is enabled.</div>
+          </div>
+          <label class="toggle-field" id="wildcard-row" for="wildcard-toggle">
+            <div class="toggle-switch"><div class="toggle-thumb"></div></div>
+            <input type="checkbox" id="wildcard-toggle" role="switch" aria-checked="false">
+            <div class="toggle-body">
+              <div class="toggle-title">Wildcard Certificate</div>
+              <div class="toggle-desc">Enable SNI-based subdomain routing for <code>*.domain</code>. Dashboard will run on port 443 — no separate port needed.</div>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <label class="toggle-field" id="notls-row" for="notls-toggle">
+        <div class="toggle-switch"><div class="toggle-thumb"></div></div>
+        <input type="checkbox" id="notls-toggle" role="switch" aria-checked="false">
+        <div class="toggle-body">
+          <div class="toggle-title">No TLS Mode</div>
+          <div class="toggle-desc">Plain TCP tunnel — for use behind a TLS-terminating reverse proxy. Mutually exclusive with HTTPS.</div>
+        </div>
+      </label>
+
+      <!-- Dashboard -->
+      <div id="dashboard-section">
+        <div class="section-sep"><span class="section-sep-text">Dashboard</span><div class="section-sep-line"></div></div>
+        <div class="field">
+          <label for="dashboard-port">Dashboard Port</label>
+          <input type="number" id="dashboard-port" name="dashboard-port" value="4040" min="1" max="65535" placeholder="4040">
+          <p class="field-hint">The port the admin dashboard (<code>inspect</code>) listens on.</p>
+          <div class="field-error" id="err-port">Please enter a valid port (1–65535).</div>
+        </div>
+      </div>
+
+      <!-- Auth Token -->
+      <div class="section-sep"><span class="section-sep-text">Auth Token</span><div class="section-sep-line"></div></div>
+
+      <div class="field">
+        <label>Tunnel Auth Token</label>
+        <div class="tab-group" role="group" aria-label="Token mode">
+          <button type="button" class="tab-btn active" id="tab-auto">Auto-generate</button>
+          <button type="button" class="tab-btn" id="tab-custom">Custom</button>
+        </div>
+        <p class="field-hint" id="token-auto-hint">A cryptographically secure token is generated <em>once</em> during setup and written permanently to <code>config.yaml</code>.</p>
+        <div class="collapsible" id="token-custom-wrap" aria-hidden="true">
+          <div class="collapsible-pad">
+            <input type="text" id="token-custom-input" name="token" autocomplete="off" spellcheck="false"
+              placeholder="Enter your secret token">
+            <p class="field-hint">Shared secret — must match the token configured on all clients.</p>
+            <div class="field-error" id="err-token">Token cannot be empty.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Advanced -->
+      <div class="section-sep"><span class="section-sep-text">Advanced</span><div class="section-sep-line"></div></div>
+
+      <div class="field">
+        <label for="pool-size">Connection Pool Size</label>
+        <input type="number" id="pool-size" name="pool-size" value="512" min="1" max="100000" placeholder="512">
+        <p class="field-hint">Maximum idle tunnel connections per pool. Default: 512.</p>
+        <div class="field-error" id="err-pool">Pool size must be at least 1.</div>
+      </div>
+
+      <div class="step-nav">
+        <button type="button" class="btn btn-ghost" id="btn-step2-back">
+          <svg class="btn-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 10H4M8 5L3 10l5 5"/></svg>
+          Back
+        </button>
+        <button type="button" class="btn btn-primary" id="btn-step2-next">
+          Review Config
+          <svg class="btn-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10h12M12 5l5 5-5 5"/></svg>
+        </button>
+      </div>
+    </div><!-- /step-2 -->
+
+    <!-- ── Step 3: Review ────────────────────────────────────── -->
+    <div class="step" id="step-3" role="tabpanel">
+      <div>
+        <div class="step-eyebrow"><span class="step-eyebrow-dot"></span>Step 3 of 3</div>
+        <h2 class="step-heading">Review &amp; Deploy</h2>
+        <p class="step-sub">Everything looks good? Click <strong>Generate Config</strong> to write <code>config.yaml</code> and start the server.</p>
+      </div>
+
+      <div id="step3-alert" class="alert error" role="alert" aria-live="assertive">
+        <svg class="alert-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span id="step3-alert-text"></span>
+      </div>
+
+      <div id="review-grid" aria-label="Configuration summary">
+        <!-- JS-rendered review cards -->
+      </div>
+
+      <div class="step-nav">
+        <button type="button" class="btn btn-ghost" id="btn-step3-back">
+          <svg class="btn-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 10H4M8 5L3 10l5 5"/></svg>
+          Back
+        </button>
+        <button type="button" class="btn btn-primary" id="btn-finish">
+          <span id="finish-label">Generate Config</span>
+          <span id="finish-spinner" class="spinner hidden" aria-hidden="true"></span>
+        </button>
+      </div>
+    </div><!-- /step-3 -->
+
+    <!-- ── Success overlay ────────────────────────────────────── -->
+    <div class="success-overlay" id="success-overlay" role="status" aria-live="polite">
+      <div class="success-check">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+      </div>
+      <h2 class="success-title">Setup Complete!</h2>
+      <p class="success-body">
+        Your <code style="font-family:inherit;background:var(--surface-3);padding:1px 6px;border-radius:4px">config.yaml</code> has been generated.
+        GoTunnel is restarting with your new configuration&hellip;
+      </p>
+      <div class="redirect-chip">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+        </svg>
+        Redirecting to login in <span class="redirect-n" id="countdown">8</span>s
+      </div>
+    </div>
+
+  </main><!-- /form-panel -->
+</div><!-- /shell -->
+<script src="/setup/script.js" defer></script>
+</body>
+</html>

@@ -18,6 +18,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"github.com/RGPtv/gotunnel/internal/ipc"
 )
 
@@ -512,7 +514,16 @@ func (ins *Inspector) handleLogin(w http.ResponseWriter, r *http.Request) {
 		user := r.FormValue("username")
 		pass := r.FormValue("password")
 		userOK := subtle.ConstantTimeCompare([]byte(user), []byte(ins.Username)) == 1
-		passOK := subtle.ConstantTimeCompare([]byte(pass), []byte(ins.Password)) == 1
+		// Support both bcrypt-hashed passwords (written by the setup wizard) and
+		// legacy plaintext passwords for backward compatibility.
+		var passOK bool
+		if strings.HasPrefix(ins.Password, "$2") {
+			// bcrypt hash — use constant-time bcrypt comparison.
+			passOK = bcrypt.CompareHashAndPassword([]byte(ins.Password), []byte(pass)) == nil
+		} else {
+			// Plaintext fallback for existing configs that pre-date the wizard.
+			passOK = subtle.ConstantTimeCompare([]byte(pass), []byte(ins.Password)) == 1
+		}
 		if userOK && passOK {
 			b := make([]byte, 32)
 			if _, err := rand.Read(b); err != nil {
@@ -937,7 +948,7 @@ func (ins *Inspector) handleTokenRegen(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	b := make([]byte, 20)
+	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		http.Error(w, "failed to generate token", http.StatusInternalServerError)
 		return

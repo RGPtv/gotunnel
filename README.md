@@ -25,10 +25,11 @@ GoTunnel provides a robust infrastructure to expose internal services securely. 
 
 ## Key Features
 
+- **Interactive Setup Wizard:** Automatically launches a web-based configuration builder on first run if no `config.yaml` is present.
 - **Zero-Flag Execution:** Configuration is strictly managed via a declarative `config.yaml`.
 - **Multiplexed Concurrency:** Define and run any number of tunnels simultaneously within a single process.
 - **Protocol Agnostic:** Seamlessly routes HTTP, WebSockets, and raw TCP traffic.
-- **Subdomain Routing:** Map multiple local applications to distinct subdomains on a single public endpoint.
+- **Subdomain Routing (HTTP):** Map multiple HTTP services to distinct subdomains on a single public endpoint.
 - **Terminal User Interface (TUI):** Real-time traffic monitoring, state inspection, and structured HTTP event logging (Method, Path, Status, Duration) natively in the terminal.
 - **Headless Daemon:** Automatically detaches to the background. Persistent tunnels remain active, allowing you to reattach the TUI session at any time.
 - **Web Dashboard:** Embedded, protected web application at `localhost:4040` for live metrics, granular request inspection, and one-click request replays.
@@ -93,6 +94,12 @@ git clone https://github.com/RGPtv/gotunnel.git
 cd gotunnel
 go build -o gotunnel ./cmd/gotunnel
 ```
+
+### Interactive Setup Wizard
+
+If you run `./gotunnel` without an existing `config.yaml` file, it will automatically launch an interactive, web-based Setup Wizard. This wizard will guide you through generating the correct configuration for either Server or Client mode.
+
+Alternatively, you can manually create the configuration files as described below.
 
 ### 1. Server Configuration (VPS)
 
@@ -179,8 +186,8 @@ GoTunnel relies on a single `config.yaml` containing either a `serverConfig` or 
 | `name` | *(optional)* | Human-readable identifier displayed in logs. |
 | `target` | *(required)* | Local address and port to route traffic to (e.g., `localhost:3000`). |
 | `type` | `http` | Specifies the proxy protocol (`http` or `tcp`). |
-| `subdomain` | *(optional)* | Requests a specific subdomain from the server. Requires the server `domain` parameter. |
-| `remote` | *(required)* | Applicable for TCP tunnels only. Specifies the port to bind on the server (e.g., `:22222`). |
+| `subdomain` | *(optional)* | **HTTP tunnels only.** Requests a specific subdomain from the server (e.g., `"api"` → `api.example.com`). Requires the server `domain` parameter. |
+| `remote` | *(required for TCP)* | **TCP tunnels only.** Specifies the port to bind on the server (e.g., `:22222`). |
 
 ---
 
@@ -200,8 +207,11 @@ The embedded web interface provides powerful administrative and diagnostic capab
 
 ## Advanced Usage
 
-### Subdomain Routing
-Serve multiple disparate services from a unified server utilizing subdomains.
+### Subdomain Routing (HTTP)
+Serve multiple disparate HTTP services from a unified server utilizing subdomains.
+
+> [!NOTE]
+> Subdomain routing is supported for **HTTP tunnels only**. TCP tunnels always bind to a dedicated port on the server.
 
 **Server (`config.yaml`):**
 ```yaml
@@ -222,9 +232,11 @@ clientConfig:
   tunnels:
     - name:      "api-service"
       target:    "localhost:3000"
+      type:      "http"
       subdomain: "api"       # Routes to api.example.com:8080
     - name:      "documentation"
       target:    "localhost:4000"
+      type:      "http"
       subdomain: "docs"      # Routes to docs.example.com:8080
 ```
 

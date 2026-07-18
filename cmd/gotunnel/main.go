@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/RGPtv/gotunnel/internal/ipc"
+	"github.com/RGPtv/gotunnel/internal/setup"
 	"github.com/RGPtv/gotunnel/internal/tui"
 	"github.com/RGPtv/gotunnel/internal/tunnel"
 )
@@ -70,6 +71,14 @@ func main() {
 
 	cfg, err := tunnel.LoadConfig()
 	if err != nil {
+		// If no config file exists at all, this is a first run — launch the
+		// setup wizard instead of exiting with an error.
+		if !tunnel.ConfigFileExists() {
+			setup.RunSetupWizard()
+			// RunSetupWizard() restarts the process after writing config.yaml,
+			// so this line is only reached if restart itself failed.
+			os.Exit(1)
+		}
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

@@ -110,9 +110,14 @@ func main() {
 	ipcClient := ipc.NewClient(ipcPort)
 	if !ipcClient.Ping() {
 		// Start daemon
-		cmd := exec.Command(os.Args[0], "-daemon")
+		exePath, err := os.Executable()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "failed to get executable path: %v\n", err)
+			os.Exit(1)
+		}
+		cmd := exec.Command(exePath, "-daemon")
 		setDaemonAttr(cmd)
-		err := cmd.Start()
+		err = cmd.Start()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "failed to start daemon: %v\n", err)
 			os.Exit(1)

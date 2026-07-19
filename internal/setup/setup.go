@@ -243,6 +243,9 @@ func validateSetupRequest(req *setupRequest) error {
 	if req.EnableHTTPS && req.NoTLS {
 		return fmt.Errorf("enable_https and no_tls are mutually exclusive")
 	}
+	if req.Wildcard && !req.EnableHTTPS {
+		return fmt.Errorf("wildcard requires HTTPS to be enabled")
+	}
 	if req.EnableHTTPS {
 		if req.CertFile == "" {
 			return fmt.Errorf("cert_file is required when HTTPS is enabled")

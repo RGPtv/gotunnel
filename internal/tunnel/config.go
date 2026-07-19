@@ -153,6 +153,11 @@ func validateServerConfig(s *ServerConfig) error {
 			"invalid serverConfig: 'token' is required (set to 'auto' to generate one automatically)",
 		)
 	}
+	if (s.CertFile == "") != (s.KeyFile == "") {
+		return errors.New(
+			"invalid serverConfig: 'cert' and 'key' must be set together",
+		)
+	}
 	if s.HTTPSAddr != "" && (s.CertFile == "" || s.KeyFile == "") {
 		return errors.New(
 			"invalid serverConfig: 'https' requires both 'cert' and 'key' to be set",
@@ -262,7 +267,9 @@ func UpdateTokenInConfig(newToken string) error {
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
 
-	if err := tmp.Chmod(info.Mode().Perm()); err != nil {
+	// Config files contain the server token and may contain dashboard
+	// credentials. Never preserve group or world permissions when replacing one.
+	if err := tmp.Chmod(info.Mode().Perm() & 0600); err != nil {
 		tmp.Close()
 		return fmt.Errorf("set temporary config permissions: %w", err)
 	}

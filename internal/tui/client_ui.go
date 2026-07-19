@@ -113,19 +113,19 @@ func drawClientFrame(ipcClient *ipc.Client) {
 		padLen = 0
 	}
 	writeLine(&b, strings.Repeat(" ", padLen)+statsLine, w) // 1 line
-	writeLine(&b, "", w)                                      // 1 spacer
+	writeLine(&b, "", w)                                    // 1 spacer
 
 	// ── 3. Tunnels table ──────────────────────────────────────────────────────
 	//
 	// Column layout (all widths in visible runes, inside the panel: w-8):
 	//   NAME  TYPE  STATUS  REMOTE  TARGET  CONNS
 	innerW := w - 8
-	nameW    := 14
-	typeW    := 8
-	tstatsW  := 18 // "● RECONNECTING" fits in 16, pad to 18
-	remoteW  := 25
-	connsW   := 8
-	targetW  := innerW - nameW - typeW - tstatsW - remoteW - connsW
+	nameW := 14
+	typeW := 8
+	tstatsW := 18 // "● RECONNECTING" fits in 16, pad to 18
+	remoteW := 25
+	connsW := 8
+	targetW := innerW - nameW - typeW - tstatsW - remoteW - connsW
 	if targetW < 8 {
 		targetW = 8
 	}
@@ -181,7 +181,7 @@ func drawClientFrame(ipcClient *ipc.Client) {
 		panelRow(&b, row, w) // 1 line per tunnel
 	}
 
-	panelBottom(&b, w) // 1 line
+	panelBottom(&b, w)   // 1 line
 	writeLine(&b, "", w) // 1 spacer
 
 	// ── 4. HTTP Request Log ───────────────────────────────────────────────────
@@ -198,9 +198,9 @@ func drawClientFrame(ipcClient *ipc.Client) {
 	//   footer(1) = 1
 	//
 	// Variable budget for request rows = h - (8+nTunnels) - 4 - 1
-	fixedAbove  := 8 + nTunnels
+	fixedAbove := 8 + nTunnels
 	fixedInside := 4
-	fixedBelow  := 1
+	fixedBelow := 1
 
 	panelTop(&b, "HTTP Request Log", w) // counted in fixedInside
 
@@ -211,10 +211,10 @@ func drawClientFrame(ipcClient *ipc.Client) {
 
 	// Request table column widths.
 	tunnelColW := 14
-	methodW    := 8
-	rstatsW    := 8
-	durW       := 10
-	pathW      := innerW - tunnelColW - methodW - rstatsW - durW
+	methodW := 8
+	rstatsW := 8
+	durW := 10
+	pathW := innerW - tunnelColW - methodW - rstatsW - durW
 	if pathW < 8 {
 		pathW = 8
 	}

@@ -518,6 +518,9 @@ func RunServer(cfg *ServerConfig) {
 		if inspSrv != nil {
 			inspSrv.Shutdown(ctx)
 		}
+		if srv.inspector != nil {
+			srv.inspector.Stop()
+		}
 		// Close all TCP port listeners registered by tunnel clients.
 		srv.mu.Lock()
 		for addr, ln := range srv.tcpListeners {
@@ -1001,13 +1004,12 @@ func (s *Server) proxyHTTP(w http.ResponseWriter, r *http.Request, reqBody *capp
 		w.Header().Set("X-Accel-Buffering", "no")
 		w.Header().Set("Cache-Control", "no-cache, no-store")
 		// CORS — Open WebUI and similar browser clients call the API directly.
-		// Only set ACAO when the request carries an Origin header: combining
-		// Access-Control-Allow-Origin: * with Allow-Credentials: true is
-		// forbidden by the Fetch spec and browsers will reject it.
+		// Do not reflect arbitrary origins while allowing credentials: a hostile
+		// origin could otherwise read a response authenticated with the browser's
+		// cached HTTP Basic credentials. Bearer/API-key clients can still make
+		// cross-origin requests without browser-managed credentials.
 		if origin := r.Header.Get("Origin"); origin != "" {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			w.Header().Set("Access-Control-Allow-Origin", "*")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key")
 			// Handle CORS preflight so the browser doesn't block the actual request.
 			if r.Method == http.MethodOptions {
@@ -1252,16 +1254,31 @@ func (s *Server) getEndpointKey(host string) string {
 	}
 	s.tunnelMetaMu.RLock()
 	defer s.tunnelMetaMu.RUnlock()
+	return s.getEndpointKeyForHost(hostOnly)
+}
+
+// getEndpointKeyForHost resolves hostOnly while tunnelMetaMu is already held.
+func (s *Server) getEndpointKeyForHost(hostOnly string) string {
+	hostOnly = strings.TrimSuffix(strings.ToLower(hostOnly), ".")
 	// Primary: strict domain match.
-	if s.domain != "" && strings.HasSuffix(hostOnly, "."+s.domain) {
-		sub := strings.TrimSuffix(hostOnly, "."+s.domain)
-		if _, ok := s.tunnelMeta[sub]; ok {
-			return sub
+	if s.domain != "" {
+		domain := strings.TrimSuffix(strings.ToLower(s.domain), ".")
+		if strings.HasSuffix(hostOnly, "."+domain) {
+			sub := strings.TrimSuffix(hostOnly, "."+domain)
+			for endpoint := range s.tunnelMeta {
+				if strings.EqualFold(endpoint, sub) {
+					return endpoint
+				}
+			}
 		}
+		// A configured domain is an authority boundary. Do not route an
+		// unrelated Host header merely because it begins with a tunnel name.
+		return "(default)"
 	}
-	// Fallback: prefix match against known pool keys.
+	// Without a configured domain, retain the legacy prefix match against known
+	// pool keys.
 	for sub := range s.tunnelMeta {
-		if strings.HasPrefix(hostOnly, sub+".") {
+		if strings.HasPrefix(hostOnly, strings.ToLower(sub)+".") {
 			return sub
 		}
 	}
@@ -1278,20 +1295,7 @@ func (s *Server) getEndpointKeyLocked(host string) string {
 	if err != nil {
 		hostOnly = host
 	}
-	// Primary: strict domain match.
-	if s.domain != "" && strings.HasSuffix(hostOnly, "."+s.domain) {
-		sub := strings.TrimSuffix(hostOnly, "."+s.domain)
-		if _, ok := s.tunnelMeta[sub]; ok {
-			return sub
-		}
-	}
-	// Fallback: prefix match against known pool keys.
-	for sub := range s.tunnelMeta {
-		if strings.HasPrefix(hostOnly, sub+".") {
-			return sub
-		}
-	}
-	return "(default)"
+	return s.getEndpointKeyForHost(hostOnly)
 }
 
 // buildProxyURL constructs the public-facing proxy URL for a given tunnel.

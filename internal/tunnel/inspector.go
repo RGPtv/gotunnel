@@ -561,7 +561,7 @@ func (ins *Inspector) handleLogin(w http.ResponseWriter, r *http.Request) {
 		}
 		// Brief delay on failed login to slow brute-force.
 		time.Sleep(loginFailDelay)
-		http.Redirect(w, r, "/login?error=1", http.StatusFound)
+		http.Redirect(w, r, "/login?error=invalid", http.StatusFound)
 		return
 	}
 	data, err := staticFiles.ReadFile("ui/login/index.html")

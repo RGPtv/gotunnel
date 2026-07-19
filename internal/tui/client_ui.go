@@ -9,6 +9,7 @@ import (
 )
 
 func RunClientUI(ipcPort int) error {
+	initTerminal()
 	ipcClient := ipc.NewClient(ipcPort)
 	quit := make(chan struct{})
 

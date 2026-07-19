@@ -1041,7 +1041,6 @@ function _populateDetail(detail, r) {
     bodyHtml = `<span style="color:var(--text-3);font-size:11px">No body captured</span>`;
   }
 
-  const contentType = (r.req_headers?.['Content-Type'] || r.req_headers?.['content-type'] || '');
   const size = r.req_body ? Math.ceil((r.req_body.length * 3) / 4) : 0;
   const sizeTxt = size > 0 ? esc(`${size < 1024 ? size + ' B' : (size/1024).toFixed(1) + ' KB'}`) : '';
 

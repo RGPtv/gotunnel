@@ -44,11 +44,10 @@ func drawClientFrame(ipcClient *ipc.Client) {
 	w, h := termSize()
 	w--
 	h--
-	if w < 60 {
-		w = 60
-	}
-	if h < 10 {
-		h = 10
+	if w < 60 || h < 10 {
+		var b strings.Builder
+		renderTerminalTooSmall(&b, w, h)
+		return
 	}
 
 	var b strings.Builder

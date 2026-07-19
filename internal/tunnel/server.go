@@ -316,10 +316,14 @@ func RunServer(cfg *ServerConfig) {
 		// the auto-generated password without needing the TUI or dashboard.
 		adminFile := ".gotunnel-admin"
 		inspectURL := inspect
+		scheme := "http://"
+		if cfg.HTTPSAddr != "" && inspect == cfg.HTTPSAddr {
+			scheme = "https://"
+		}
 		if strings.HasPrefix(inspectURL, ":") {
-			inspectURL = "http://localhost" + inspectURL
+			inspectURL = scheme + "localhost" + inspectURL
 		} else {
-			inspectURL = "http://" + inspectURL
+			inspectURL = scheme + inspectURL
 		}
 		contents := fmt.Sprintf(
 			"# GoTunnel dashboard credentials (auto-generated)\n"+

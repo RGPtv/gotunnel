@@ -45,11 +45,10 @@ func drawServerFrame(ipcClient *ipc.Client) {
 	// Leave the rightmost column and bottom row empty to prevent scroll/wrap.
 	w--
 	h--
-	if w < 60 {
-		w = 60
-	}
-	if h < 10 {
-		h = 10
+	if w < 60 || h < 10 {
+		var b strings.Builder
+		renderTerminalTooSmall(&b, w, h)
+		return
 	}
 
 	var b strings.Builder
@@ -92,10 +91,14 @@ func drawServerFrame(ipcClient *ipc.Client) {
 	// ── 3. Config panel ───────────────────────────────────────────────────────
 	inspectUrl := "—"
 	if state.InspectAddr != "" {
+		scheme := "http://"
+		if state.HTTPSAddr != "" && state.InspectAddr == state.HTTPSAddr {
+			scheme = "https://"
+		}
 		if strings.HasPrefix(state.InspectAddr, ":") {
-			inspectUrl = "http://localhost" + state.InspectAddr
+			inspectUrl = scheme + "localhost" + state.InspectAddr
 		} else {
-			inspectUrl = "http://" + state.InspectAddr
+			inspectUrl = scheme + state.InspectAddr
 		}
 	}
 

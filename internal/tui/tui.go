@@ -236,6 +236,36 @@ func renderSplash(b *strings.Builder, w, h int, msg string) {
 	writeLine(b, strings.Repeat(" ", padding)+msg, w)
 }
 
+func terminalTooSmallMessage(w int) string {
+	const msg = "Terminal too small; resize to at least 60x10."
+	if w < 1 {
+		return ""
+	}
+	r := []rune(msg)
+	if len(r) <= w {
+		return msg
+	}
+	if w == 1 {
+		return string(r[:1])
+	}
+	return string(r[:w-1]) + "…"
+}
+
+// renderTerminalTooSmall keeps a narrow terminal from wrapping the normal
+// dashboard layout and scrolling its alternate screen buffer.
+func renderTerminalTooSmall(b *strings.Builder, w, h int) {
+	if w < 1 {
+		w = 1
+	}
+	if h < 1 {
+		h = 1
+	}
+	b.WriteString("\x1b[H")
+	renderSplash(b, w, h, terminalTooSmallMessage(w))
+	b.WriteString("\x1b[J")
+	flush(b)
+}
+
 // cfgCell renders a label+value info cell padded to `width` visible chars.
 // Long values are truncated with an ellipsis so the box never overflows.
 func cfgCell(label, value string, width int) string {
